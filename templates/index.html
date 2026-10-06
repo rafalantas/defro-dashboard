@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Defro ST-9730</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -11,10 +13,10 @@
     --text: #1a1a18; --text-sub: #6b6960; --text-muted: #a09e97;
     --accent: #d85a2a; --accent-bg: #fdf0eb;
     --green: #2d9c5a; --green-bg: #e8f7ef;
-    --amber: #b87a14; --amber-bg: #fef5e4;
+    --amber-bg: #fef5e4;
   }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem; }
-  .dashboard { max-width: 860px; margin: 0 auto; }
+  .dashboard { max-width: 920px; margin: 0 auto; }
   .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
   .header-left { display: flex; align-items: center; gap: 14px; }
   .logo { width: 48px; height: 48px; background: var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
@@ -27,7 +29,8 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .temps-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 10px; }
   .temp-card { background: var(--surface); border-radius: 14px; padding: 1.1rem; border: 1px solid var(--border); }
-  .temp-label { font-size: 12px; color: var(--text-sub); margin-bottom: 8px; }
+  .temp-label { font-size: 12px; color: var(--text-sub); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+  .temp-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .temp-value { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; line-height: 1; }
   .temp-unit { font-size: 14px; font-weight: 400; color: var(--text-sub); }
   .mode-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.25rem; border: 1px solid var(--border); display: flex; align-items: center; gap: 1rem; margin-bottom: 10px; flex-wrap: wrap; }
@@ -53,10 +56,18 @@
   .valve-row:last-child { border-bottom: none; }
   .valve-key { color: var(--text-sub); }
   .valve-val { font-weight: 500; }
-  .status-row { background: var(--surface); border-radius: 14px; padding: .875rem 1.25rem; border: 1px solid var(--border); display: flex; gap: 2rem; flex-wrap: wrap; }
+  .status-row { background: var(--surface); border-radius: 14px; padding: .875rem 1.25rem; border: 1px solid var(--border); display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 10px; }
   .status-item { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-sub); }
   .status-dot-sm { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
-  .updated { text-align: right; font-size: 11px; color: var(--text-muted); margin-top: .75rem; }
+  .chart-card { background: var(--surface); border-radius: 14px; padding: 1.25rem; border: 1px solid var(--border); margin-bottom: 10px; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .chart-title { font-size: 14px; font-weight: 500; }
+  .chart-tabs { display: flex; gap: 4px; }
+  .chart-tab { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-sub); cursor: pointer; font-family: inherit; transition: all .15s; }
+  .chart-tab.active { background: var(--bg); color: var(--text); font-weight: 500; border-color: #ccc; }
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-empty { display: flex; align-items: center; justify-content: center; height: 220px; font-size: 13px; color: var(--text-muted); }
+  .updated { text-align: right; font-size: 11px; color: var(--text-muted); margin-top: .5rem; }
   .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--text); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 10px; opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; z-index: 100; }
   .toast.show { opacity: 1; transform: translateY(0); }
   @media (max-width: 600px) {
@@ -89,10 +100,22 @@
   </div>
 
   <div class="temps-grid">
-    <div class="temp-card"><div class="temp-label">CO</div><div class="temp-value" id="t-co">—<span class="temp-unit">°C</span></div></div>
-    <div class="temp-card"><div class="temp-label">C.W.U.</div><div class="temp-value" id="t-cwu">—<span class="temp-unit">°C</span></div></div>
-    <div class="temp-card"><div class="temp-label">Spaliny</div><div class="temp-value" id="t-spaliny">—<span class="temp-unit">°C</span></div></div>
-    <div class="temp-card"><div class="temp-label">Zewnętrzna</div><div class="temp-value" id="t-zewn">—<span class="temp-unit">°C</span></div></div>
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#d85a2a"></span>CO</div>
+      <div class="temp-value" id="t-co">—<span class="temp-unit">°C</span></div>
+    </div>
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#2563eb"></span>C.W.U.</div>
+      <div class="temp-value" id="t-cwu">—<span class="temp-unit">°C</span></div>
+    </div>
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#7c3aed"></span>Spaliny</div>
+      <div class="temp-value" id="t-spaliny">—<span class="temp-unit">°C</span></div>
+    </div>
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#2d9c5a"></span>Zewnętrzna</div>
+      <div class="temp-value" id="t-zewn">—<span class="temp-unit">°C</span></div>
+    </div>
   </div>
 
   <div class="mode-card">
@@ -139,6 +162,19 @@
     <div class="status-item"><span class="status-dot-sm"></span><span id="lbl-ogien">Czujnik ognia: —</span></div>
   </div>
 
+  <div class="chart-card">
+    <div class="chart-header">
+      <span class="chart-title">Historia temperatur</span>
+      <div class="chart-tabs">
+        <button class="chart-tab active" onclick="loadChart('day', this)">Dziś</button>
+        <button class="chart-tab" onclick="loadChart('week', this)">Tydzień</button>
+        <button class="chart-tab" onclick="loadChart('month', this)">Miesiąc</button>
+      </div>
+    </div>
+    <div id="chart-container" class="chart-wrap"><canvas id="tempChart"></canvas></div>
+    <div id="chart-empty" class="chart-empty" style="display:none">Brak danych historycznych</div>
+  </div>
+
   <div class="updated" id="updated">—</div>
 </div>
 <div class="toast" id="toast"></div>
@@ -146,6 +182,8 @@
 <script>
 const MODES = ['Ogrzewanie domu', 'Priorytet kotła', 'Pompy równoległe', 'Tryb letni'];
 const STATUS_TO_MODE = { 814: 0, 815: 1, 816: 2, 811: 3 };
+let chart = null;
+let currentRange = 'day';
 
 function temp(raw) { return (raw / 10).toFixed(1); }
 
@@ -160,21 +198,16 @@ function setStatus(state) {
   const dot = document.getElementById('status-dot');
   const txt = document.getElementById('status-text');
   const badge = document.getElementById('status-badge');
-  if (state === 'loading') {
-    dot.className = 'status-dot loading';
-    dot.style.background = '#a09e97';
-    txt.textContent = 'Ładowanie';
-  } else if (state === 'ok') {
-    dot.className = 'status-dot';
-    dot.style.background = 'var(--green)';
-    txt.textContent = 'Online';
-    badge.style.cssText = 'background:var(--green-bg);color:var(--green)';
-  } else {
-    dot.className = 'status-dot';
-    dot.style.background = '#e24b4a';
-    txt.textContent = 'Offline';
-    badge.style.cssText = 'background:#fcebeb;color:#a32d2d';
-  }
+  const states = {
+    loading: ['#a09e97', 'loading', 'Ładowanie', ''],
+    ok:      ['var(--green)', '', 'Online',  'background:var(--green-bg);color:var(--green)'],
+    error:   ['#e24b4a', '', 'Offline', 'background:#fcebeb;color:#a32d2d'],
+  };
+  const [bg, cls, label, badgeStyle] = states[state] || states.error;
+  dot.className = 'status-dot' + (cls ? ` ${cls}` : '');
+  dot.style.background = bg;
+  txt.textContent = label;
+  if (badgeStyle) badge.style.cssText = badgeStyle;
 }
 
 function updateModeButtons(active) {
@@ -188,15 +221,15 @@ async function loadData() {
     const res = await fetch('/api/data');
     const json = await res.json();
     if (json.error) throw new Error(json.error);
-    const tiles = json.data.tiles || [];
-    const byId = Object.fromEntries(tiles.map(t => [t.id, t]));
+    const byId = Object.fromEntries((json.data.tiles || []).map(t => [t.id, t]));
 
-    const set = (id, elId, fn) => { if (byId[id]) document.getElementById(elId).innerHTML = fn(byId[id]); };
-
-    set(1006, 't-co', t => `${temp(t.params.value)}<span class="temp-unit">°C</span>`);
-    set(1007, 't-cwu', t => `${temp(t.params.value)}<span class="temp-unit">°C</span>`);
-    set(1008, 't-spaliny', t => `${temp(t.params.value)}<span class="temp-unit">°C</span>`);
-    set(1009, 't-zewn', t => `${temp(t.params.value)}<span class="temp-unit">°C</span>`);
+    const setT = (id, elId) => {
+      if (byId[id]) document.getElementById(elId).innerHTML = `${temp(byId[id].params.value)}<span class="temp-unit">°C</span>`;
+    };
+    setT(1006, 't-co');
+    setT(1007, 't-cwu');
+    setT(1008, 't-spaliny');
+    setT(1009, 't-zewn');
 
     if (byId[1010]) {
       const p = byId[1010].params;
@@ -225,6 +258,78 @@ async function loadData() {
   }
 }
 
+async function loadChart(range, btn) {
+  currentRange = range;
+  if (btn) {
+    document.querySelectorAll('.chart-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  try {
+    const res = await fetch(`/api/history?range=${range}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    const container = document.getElementById('chart-container');
+    const empty = document.getElementById('chart-empty');
+
+    if (!json.series?.length) {
+      container.style.display = 'none';
+      empty.style.display = 'flex';
+      return;
+    }
+    container.style.display = 'block';
+    empty.style.display = 'none';
+
+    const timeUnit = range === 'day' ? 'hour' : range === 'week' ? 'day' : 'week';
+    const timeFmt  = range === 'day' ? 'HH:mm' : 'dd.MM HH:mm';
+
+    const datasets = json.series.map(s => ({
+      label: s.label,
+      data: s.points.map(p => ({ x: p.x, y: p.y })),
+      borderColor: s.color,
+      backgroundColor: 'transparent',
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 2,
+    }));
+
+    if (chart) {
+      chart.data.datasets = datasets;
+      chart.options.scales.x.time.unit = timeUnit;
+      chart.update();
+    } else {
+      const ctx = document.getElementById('tempChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 }, color: '#6b6960' } },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}°C` } },
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: { unit: timeUnit, displayFormats: { hour: 'HH:mm', day: 'dd.MM', week: 'dd.MM' } },
+              ticks: { color: '#a09e97', font: { size: 11 }, maxTicksLimit: 10 },
+              grid: { color: '#f0ede8' },
+            },
+            y: {
+              ticks: { color: '#a09e97', font: { size: 11 }, callback: v => `${v}°C` },
+              grid: { color: '#f0ede8' },
+            },
+          },
+        },
+      });
+    }
+  } catch(e) {
+    console.error('Chart error', e);
+  }
+}
+
 async function setMode(value) {
   document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
   try {
@@ -242,7 +347,8 @@ async function setMode(value) {
 }
 
 loadData();
-setInterval(loadData, 30000);
+loadChart('day');
+setInterval(() => { loadData(); loadChart(currentRange); }, 60000);
 </script>
 </body>
 </html>
