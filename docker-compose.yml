@@ -1,0 +1,17 @@
+services:
+  defro-dashboard:
+    image: ghcr.io/${GITHUB_USERNAME}/defro-dashboard:latest
+    container_name: defro-dashboard
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    environment:
+      - EMODUL_TOKEN=${EMODUL_TOKEN}
+      - EMODUL_USER_ID=${EMODUL_USER_ID}
+      - EMODUL_UDID=${EMODUL_UDID}
+      - REFRESH_INTERVAL=${REFRESH_INTERVAL:-30}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/data"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
