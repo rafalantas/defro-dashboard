@@ -5,18 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Defro ST-9730</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #f2f0ec; --surface: #ffffff; --border: #e4e2de;
-    --text: #1a1a18; --text-sub: #6b6960; --text-muted: #a09e97;
-    --accent: #d85a2a; --accent-bg: #fdf0eb;
-    --green: #2d9c5a; --green-bg: #e8f7ef;
+    --bg: #f2f0ec;
+    --surface: #ffffff;
+    --border: #e4e2de;
+    --text: #1a1a18;
+    --text-sub: #6b6960;
+    --text-muted: #a09e97;
+    --accent: #d85a2a;
+    --accent-bg: #fdf0eb;
+    --green: #2d9c5a;
+    --green-bg: #e8f7ef;
     --amber-bg: #fef5e4;
+    --amber: #b87a14;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
   }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem; }
-  .dashboard { max-width: 920px; margin: 0 auto; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem;
+  }
+  .dashboard { max-width: 980px; margin: 0 auto; }
+
+  /* Header */
   .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
   .header-left { display: flex; align-items: center; gap: 14px; }
   .logo { width: 48px; height: 48px; background: var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
@@ -27,12 +43,36 @@
   .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
   .status-dot.loading { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .temps-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 10px; }
-  .temp-card { background: var(--surface); border-radius: 14px; padding: 1.1rem; border: 1px solid var(--border); }
-  .temp-label { font-size: 12px; color: var(--text-sub); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+
+  /* Section title */
+  .section-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; margin: 1.5rem 0 .6rem; }
+
+  /* Temps grid - 4 col */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
+
+  /* Temp card */
+  .temp-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.1rem; border: 1px solid var(--border); }
+  .temp-label { font-size: 12px; color: var(--text-sub); margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
   .temp-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-  .temp-value { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; line-height: 1; }
-  .temp-unit { font-size: 14px; font-weight: 400; color: var(--text-sub); }
+  .temp-value { font-size: 26px; font-weight: 600; letter-spacing: -0.5px; line-height: 1; }
+  .temp-unit { font-size: 13px; font-weight: 400; color: var(--text-sub); }
+
+  /* Status card - dla pomp, przekaźników */
+  .status-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.1rem; border: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .status-card-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .status-card-icon svg { width: 18px; height: 18px; }
+  .status-card-label { font-size: 12px; color: var(--text-sub); }
+  .status-card-value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .on { color: var(--accent); }
+  .off { color: var(--text-muted); }
+  .icon-on { background: var(--accent-bg); }
+  .icon-off { background: var(--bg); }
+  .icon-green { background: var(--green-bg); }
+  .icon-amber { background: var(--amber-bg); }
+
+  /* Mode card */
   .mode-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.25rem; border: 1px solid var(--border); display: flex; align-items: center; gap: 1rem; margin-bottom: 10px; flex-wrap: wrap; }
   .mode-icon { width: 42px; height: 42px; border-radius: 10px; background: var(--amber-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .mode-icon svg { width: 22px; height: 22px; }
@@ -43,22 +83,35 @@
   .mode-btn:hover { background: var(--bg); color: var(--text); }
   .mode-btn.active { background: var(--accent-bg); color: var(--accent); border-color: #f0c4ae; font-weight: 600; }
   .mode-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-  .pellet-card, .valve-card { background: var(--surface); border-radius: 14px; padding: 1.1rem 1.25rem; border: 1px solid var(--border); }
-  .section-label { font-size: 12px; color: var(--text-sub); margin-bottom: 10px; }
+
+  /* Pellet card */
+  .pellet-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.25rem; border: 1px solid var(--border); }
   .pellet-bar-bg { height: 5px; background: var(--bg); border-radius: 3px; overflow: hidden; margin: 8px 0; }
   .pellet-bar-fill { height: 5px; background: var(--accent); border-radius: 3px; transition: width .6s ease; }
   .pellet-row { display: flex; justify-content: space-between; align-items: baseline; }
-  .pellet-pct { font-size: 26px; font-weight: 600; letter-spacing: -0.5px; }
-  .pellet-pct span { font-size: 14px; font-weight: 400; color: var(--text-sub); }
+  .pellet-pct { font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+  .pellet-pct span { font-size: 13px; font-weight: 400; color: var(--text-sub); }
   .pellet-hours { font-size: 12px; color: var(--text-muted); }
-  .valve-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+
+  /* Valve card */
+  .valve-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.25rem; border: 1px solid var(--border); }
+  .valve-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
   .valve-row:last-child { border-bottom: none; }
   .valve-key { color: var(--text-sub); }
   .valve-val { font-weight: 500; }
-  .status-row { background: var(--surface); border-radius: 14px; padding: .875rem 1.25rem; border: 1px solid var(--border); display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 10px; }
-  .status-item { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-sub); }
-  .status-dot-sm { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+
+  /* Fan card */
+  .fan-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.1rem; border: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .fan-ring { width: 44px; height: 44px; border-radius: 50%; border: 3px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--text-sub); }
+  .fan-ring.active { border-color: var(--accent); color: var(--accent); }
+
+  /* Controller state card */
+  .state-card { background: var(--surface); border-radius: 14px; padding: 1rem 1.25rem; border: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .state-icon { width: 38px; height: 38px; border-radius: 9px; background: var(--amber-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .state-label { font-size: 12px; color: var(--text-sub); }
+  .state-value { font-size: 14px; font-weight: 600; margin-top: 2px; }
+
+  /* Chart */
   .chart-card { background: var(--surface); border-radius: 14px; padding: 1.25rem; border: 1px solid var(--border); margin-bottom: 10px; }
   .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .chart-title { font-size: 14px; font-weight: 500; }
@@ -67,19 +120,23 @@
   .chart-tab.active { background: var(--bg); color: var(--text); font-weight: 500; border-color: #ccc; }
   .chart-wrap { position: relative; height: 220px; }
   .chart-empty { display: flex; align-items: center; justify-content: center; height: 220px; font-size: 13px; color: var(--text-muted); }
+
   .updated { text-align: right; font-size: 11px; color: var(--text-muted); margin-top: .5rem; }
   .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--text); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 10px; opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; z-index: 100; }
   .toast.show { opacity: 1; transform: translateY(0); }
-  @media (max-width: 600px) {
+
+  @media (max-width: 640px) {
     body { padding: 1rem; }
-    .temps-grid { grid-template-columns: repeat(2,1fr); }
-    .bottom-grid { grid-template-columns: 1fr; }
+    .grid-4 { grid-template-columns: repeat(2,1fr); }
+    .grid-3 { grid-template-columns: repeat(2,1fr); }
     .mode-btns { margin-left: 0; }
   }
 </style>
 </head>
 <body>
 <div class="dashboard">
+
+  <!-- Header -->
   <div class="header">
     <div class="header-left">
       <div class="logo">
@@ -99,7 +156,9 @@
     </button>
   </div>
 
-  <div class="temps-grid">
+  <!-- Temperatury -->
+  <div class="section-title">Temperatury</div>
+  <div class="grid-4">
     <div class="temp-card">
       <div class="temp-label"><span class="temp-dot" style="background:#d85a2a"></span>CO</div>
       <div class="temp-value" id="t-co">—<span class="temp-unit">°C</span></div>
@@ -118,6 +177,8 @@
     </div>
   </div>
 
+  <!-- Tryb pracy -->
+  <div class="section-title">Tryb pracy</div>
   <div class="mode-card">
     <div class="mode-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="#b87a14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -129,7 +190,7 @@
     </div>
     <div>
       <div class="mode-name" id="mode-name">—</div>
-      <div class="mode-label">Tryb pracy</div>
+      <div class="mode-label">Tryb pracy · <span id="controller-state">—</span></div>
     </div>
     <div class="mode-btns">
       <button class="mode-btn" onclick="setMode(0)" id="btn-0">Ogrzewanie</button>
@@ -139,32 +200,123 @@
     </div>
   </div>
 
-  <div class="bottom-grid">
+  <!-- Urządzenia -->
+  <div class="section-title">Urządzenia</div>
+  <div class="grid-3">
+    <div class="status-card" id="card-fire">
+      <div class="status-card-icon icon-off" id="icon-fire">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2c0 6-6 8-6 14a6 6 0 0 0 12 0c0-6-6-8-6-14z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="status-card-label">Czujnik ognia</div>
+        <div class="status-card-value off" id="val-fire">—</div>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon icon-off" id="icon-heater">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a5 5 0 0 1 5 5c0 3-5 11-5 11S7 10 7 7a5 5 0 0 1 5-5z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="status-card-label">Palnik</div>
+        <div class="status-card-value off" id="val-heater">—</div>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon icon-off" id="icon-feeder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 8V6a2 2 0 0 1 4 0v2M13 8V6a2 2 0 0 1 4 0v2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="status-card-label">Podajnik</div>
+        <div class="status-card-value off" id="val-feeder">—</div>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon icon-off" id="icon-pump-co">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/>
+        </svg>
+      </div>
+      <div>
+        <div class="status-card-label">Pompa CO</div>
+        <div class="status-card-value off" id="val-pump-co">—</div>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon icon-off" id="icon-pump-cwu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/>
+        </svg>
+      </div>
+      <div>
+        <div class="status-card-label">Pompa C.W.U.</div>
+        <div class="status-card-value off" id="val-pump-cwu">—</div>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon icon-off" id="icon-pump-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/>
+        </svg>
+      </div>
+      <div>
+        <div class="status-card-label">Pompa dodatkowa</div>
+        <div class="status-card-value off" id="val-pump-add">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wentylator + zawór + pellet -->
+  <div class="grid-3">
+    <!-- Wentylator -->
+    <div class="fan-card">
+      <div class="fan-ring" id="fan-ring">—</div>
+      <div>
+        <div class="status-card-label">Wentylator</div>
+        <div class="status-card-value off" id="val-fan">—</div>
+      </div>
+    </div>
+
+    <!-- Pellet -->
     <div class="pellet-card">
-      <div class="section-label">Poziom pelletu</div>
+      <div class="temp-label">Poziom pelletu</div>
       <div class="pellet-bar-bg"><div class="pellet-bar-fill" id="pellet-bar" style="width:0%"></div></div>
       <div class="pellet-row">
         <div class="pellet-pct" id="pellet-pct">—<span>%</span></div>
         <div class="pellet-hours" id="pellet-hours"></div>
       </div>
     </div>
-    <div class="valve-card">
-      <div class="section-label">Zawór mieszający</div>
-      <div class="valve-row"><span class="valve-key">Aktualna</span><span class="valve-val" id="v-akt">—</span></div>
-      <div class="valve-row"><span class="valve-key">Powrotna</span><span class="valve-val" id="v-pow">—</span></div>
-      <div class="valve-row"><span class="valve-key">Zadana</span><span class="valve-val" id="v-zad">—</span></div>
+
+
+  </div>
+
+  <!-- Zawór mieszający -->
+  <div class="section-title">Zawór mieszający</div>
+  <div class="grid-3">
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#0ea5e9"></span>Aktualna</div>
+      <div class="temp-value" id="v-akt">—<span class="temp-unit">°C</span></div>
+    </div>
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#64748b"></span>Powrotna</div>
+      <div class="temp-value" id="v-pow">—<span class="temp-unit">°C</span></div>
+    </div>
+    <div class="temp-card">
+      <div class="temp-label"><span class="temp-dot" style="background:#f59e0b"></span>Zadana</div>
+      <div class="temp-value" id="v-zad">—<span class="temp-unit">°C</span></div>
     </div>
   </div>
 
-  <div class="status-row">
-    <div class="status-item"><span class="status-dot-sm"></span><span id="lbl-czuwanie">Czuwanie</span></div>
-    <div class="status-item"><span class="status-dot-sm"></span><span id="lbl-wentylator">Wentylator: —</span></div>
-    <div class="status-item"><span class="status-dot-sm"></span><span id="lbl-ogien">Czujnik ognia: —</span></div>
-  </div>
-
+  <!-- Historia temperatur -->
+  <div class="section-title" style="margin-top:1.5rem">Historia temperatur</div>
   <div class="chart-card">
     <div class="chart-header">
-      <span class="chart-title">Historia temperatur</span>
+      <span class="chart-title">Wykres</span>
       <div class="chart-tabs">
         <button class="chart-tab active" onclick="loadChart('day', this)">Dziś</button>
         <button class="chart-tab" onclick="loadChart('week', this)">Tydzień</button>
@@ -182,6 +334,14 @@
 <script>
 const MODES = ['Ogrzewanie domu', 'Priorytet kotła', 'Pompy równoległe', 'Tryb letni'];
 const STATUS_TO_MODE = { 814: 0, 815: 1, 816: 2, 811: 3 };
+// statusId → czytelna nazwa stanu sterownika
+const CONTROLLER_STATES = {
+  233: 'Czuwanie', 234: 'Rozpalanie', 235: 'Praca', 236: 'Wygaszanie',
+  237: 'Brak pelletu', 238: 'Błąd podajnika', 811: 'Tryb letni',
+  812: 'Ogrzewanie domu', 813: 'Priorytet kotła', 814: 'Ogrzewanie',
+  815: 'Priorytet kotła', 816: 'Pompy równoległe',
+};
+
 let chart = null;
 let currentRange = 'day';
 
@@ -198,16 +358,30 @@ function setStatus(state) {
   const dot = document.getElementById('status-dot');
   const txt = document.getElementById('status-text');
   const badge = document.getElementById('status-badge');
-  const states = {
-    loading: ['#a09e97', 'loading', 'Ładowanie', ''],
-    ok:      ['var(--green)', '', 'Online',  'background:var(--green-bg);color:var(--green)'],
-    error:   ['#e24b4a', '', 'Offline', 'background:#fcebeb;color:#a32d2d'],
-  };
-  const [bg, cls, label, badgeStyle] = states[state] || states.error;
-  dot.className = 'status-dot' + (cls ? ` ${cls}` : '');
-  dot.style.background = bg;
-  txt.textContent = label;
-  if (badgeStyle) badge.style.cssText = badgeStyle;
+  if (state === 'loading') {
+    dot.className = 'status-dot loading';
+    dot.style.background = '#a09e97';
+    txt.textContent = 'Ładowanie';
+  } else if (state === 'ok') {
+    dot.className = 'status-dot';
+    dot.style.background = 'var(--green)';
+    txt.textContent = 'Online';
+    badge.style.cssText = 'background:var(--green-bg);color:var(--green)';
+  } else {
+    dot.className = 'status-dot';
+    dot.style.background = '#e24b4a';
+    txt.textContent = 'Offline';
+    badge.style.cssText = 'background:#fee2e2;color:#dc2626';
+  }
+}
+
+function setDeviceCard(iconId, valId, active, labelOn, labelOff) {
+  const icon = document.getElementById(iconId);
+  const val  = document.getElementById(valId);
+  if (!icon || !val) return;
+  icon.className = 'status-card-icon ' + (active ? 'icon-on' : 'icon-off');
+  val.className  = 'status-card-value ' + (active ? 'on' : 'off');
+  val.textContent = active ? labelOn : labelOff;
 }
 
 function updateModeButtons(active) {
@@ -218,39 +392,88 @@ function updateModeButtons(active) {
 async function loadData() {
   setStatus('loading');
   try {
-    const res = await fetch('/api/data');
+    const res  = await fetch('/api/data');
     const json = await res.json();
     if (json.error) throw new Error(json.error);
+
     const byId = Object.fromEntries((json.data.tiles || []).map(t => [t.id, t]));
 
+    // Temperatury
     const setT = (id, elId) => {
-      if (byId[id]) document.getElementById(elId).innerHTML = `${temp(byId[id].params.value)}<span class="temp-unit">°C</span>`;
+      if (byId[id]) document.getElementById(elId).innerHTML =
+        `${temp(byId[id].params.value)}<span class="temp-unit">°C</span>`;
     };
     setT(1006, 't-co');
     setT(1007, 't-cwu');
     setT(1008, 't-spaliny');
     setT(1009, 't-zewn');
 
+    // Tryb pracy
+    if (byId[1001]) updateModeButtons(STATUS_TO_MODE[byId[1001].params.statusId] ?? -1);
+
+    // Stan sterownika (tile 2040)
+    if (byId[2040]) {
+      const sid = byId[2040].params.statusId;
+      document.getElementById('controller-state').textContent =
+        CONTROLLER_STATES[sid] ?? `Status ${sid}`;
+    }
+
+    // Czujnik ognia (1016)
+    if (byId[1016]) setDeviceCard('icon-fire', 'val-fire',
+      byId[1016].params.workingStatus, 'Aktywny', 'Brak');
+
+    // Przekaźniki: 1002=palnik, 1003=pompa CO, 1004=pompa CWU, 1005=podajnik
+    if (byId[1002]) setDeviceCard('icon-heater', 'val-heater',
+      byId[1002].params.workingStatus, 'Aktywny', 'Wyłączony');
+    if (byId[1003]) setDeviceCard('icon-pump-co', 'val-pump-co',
+      byId[1003].params.workingStatus, 'Pracuje', 'Zatrzymana');
+    if (byId[1004]) setDeviceCard('icon-pump-cwu', 'val-pump-cwu',
+      byId[1004].params.workingStatus, 'Pracuje', 'Zatrzymana');
+    if (byId[1005]) setDeviceCard('icon-feeder', 'val-feeder',
+      byId[1005].params.workingStatus, 'Aktywny', 'Zatrzymany');
+
+    // Pompa dodatkowa (1000)
+    if (byId[1000]) setDeviceCard('icon-pump-add', 'val-pump-add',
+      byId[1000].params.workingStatus,
+      byId[1000].params.txtId ? 'Pracuje' : 'Pracuje',
+      'Zatrzymana');
+
+    // Wentylator (1011)
+    if (byId[1011]) {
+      const fan = byId[1011];
+      const ring = document.getElementById('fan-ring');
+      const val  = document.getElementById('val-fan');
+      const active = fan.params.workingStatus;
+      ring.textContent = active ? `${fan.params.gear}%` : '—';
+      ring.className = 'fan-ring' + (active ? ' active' : '');
+      val.textContent = active ? `Bieg ${fan.params.gear}%` : 'Wyłączony';
+      val.className = 'status-card-value ' + (active ? 'on' : 'off');
+    }
+
+    // Pellet (1010)
     if (byId[1010]) {
       const p = byId[1010].params;
       document.getElementById('pellet-pct').innerHTML = `${p.percentage}<span>%</span>`;
       document.getElementById('pellet-bar').style.width = `${p.percentage}%`;
-      document.getElementById('pellet-hours').textContent = p.hours < 0 ? `${Math.abs(p.hours)} h do zera` : `${p.hours} h`;
+      document.getElementById('pellet-hours').textContent =
+        p.hours < 0 ? `${Math.abs(p.hours)} h do zera` : `${p.hours} h`;
     }
+
+    // Zawór mieszający (1012)
     if (byId[1012]) {
       const v = byId[1012].params;
-      document.getElementById('v-akt').textContent = `${temp(v.currentTemp)}°C`;
-      document.getElementById('v-pow').textContent = `${temp(v.returnTemp)}°C`;
-      document.getElementById('v-zad').textContent = `${v.setTemp}°C`;
+      document.getElementById('v-akt').innerHTML = `${temp(v.currentTemp)}<span class="temp-unit">°C</span>`;
+      document.getElementById('v-pow').innerHTML = `${temp(v.returnTemp)}<span class="temp-unit">°C</span>`;
+      document.getElementById('v-zad').innerHTML = `${v.setTemp}<span class="temp-unit">°C</span>`;
     }
-    if (byId[1001]) updateModeButtons(STATUS_TO_MODE[byId[1001].params.statusId] ?? -1);
-    if (byId[1011]) document.getElementById('lbl-wentylator').textContent = byId[1011].params.workingStatus ? `Wentylator: bieg ${byId[1011].params.gear}` : 'Wentylator: wyłączony';
-    if (byId[1016]) document.getElementById('lbl-ogien').textContent = byId[1016].params.workingStatus ? 'Czujnik ognia: aktywny' : 'Czujnik ognia: brak';
-    if (byId[2040]) document.getElementById('lbl-czuwanie').textContent = byId[2040].params.statusId === 233 ? 'Czuwanie' : 'Aktywny';
-    if (byId[2000]) document.getElementById('device-sub').textContent = `Gamma 40 kW · ${byId[2000].params.controllerName}`;
+
+    // Info urządzenia
+    if (byId[2000]) document.getElementById('device-sub').textContent =
+      `Gamma 40 kW · ${byId[2000].params.controllerName} · v${byId[2000].params.version}`;
 
     const ts = json.data.tilesLastUpdate?.replace(/\.\d+[+-]\d+:\d+$/, '') ?? '';
-    document.getElementById('updated').textContent = `ostatnia aktualizacja: ${ts} · cache: ${json.age}s`;
+    document.getElementById('updated').textContent =
+      `ostatnia aktualizacja: ${ts} · cache: ${json.age}s`;
     setStatus('ok');
   } catch(e) {
     setStatus('error');
@@ -265,12 +488,12 @@ async function loadChart(range, btn) {
     btn.classList.add('active');
   }
   try {
-    const res = await fetch(`/api/history?range=${range}`);
+    const res  = await fetch(`/api/history?range=${range}`);
     const json = await res.json();
     if (json.error) throw new Error(json.error);
 
     const container = document.getElementById('chart-container');
-    const empty = document.getElementById('chart-empty');
+    const empty     = document.getElementById('chart-empty');
 
     if (!json.series?.length) {
       container.style.display = 'none';
@@ -280,25 +503,21 @@ async function loadChart(range, btn) {
     container.style.display = 'block';
     empty.style.display = 'none';
 
-    // Konwertuj timestamps na czytelne etykiety
-    const fmt = (ts, range) => {
+    const fmt = (ts, r) => {
       const d = new Date(ts);
-      if (range === 'day') return d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'});
-      return d.toLocaleDateString('pl-PL', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+      if (r === 'day') return d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'});
+      return d.toLocaleDateString('pl-PL', {month:'2-digit', day:'2-digit'}) + ' ' +
+             d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'});
     };
 
-    // Zbierz wszystkie unikalne timestampy jako etykiety osi X
     const allTs = [...new Set(json.series.flatMap(s => s.points.map(p => p.x)))].sort((a,b) => a-b);
-    // Ogranicz do max 500 punktów dla czytelności
     const step = Math.max(1, Math.floor(allTs.length / 300));
-    const labels = allTs.filter((_,i) => i % step === 0).map(ts => fmt(ts, range));
     const tsFiltered = allTs.filter((_,i) => i % step === 0);
+    const labels = tsFiltered.map(ts => fmt(ts, range));
 
     const datasets = json.series.map(s => {
-      // Dla każdego punktu z osi X znajdź najbliższą wartość
       const pointMap = new Map(s.points.map(p => [p.x, p.y]));
       const data = tsFiltered.map(ts => {
-        // Znajdź najbliższy punkt w oknie ±5min
         let best = null, bestDiff = Infinity;
         for (const [t, y] of pointMap) {
           const diff = Math.abs(t - ts);
@@ -306,48 +525,29 @@ async function loadChart(range, btn) {
         }
         return best;
       });
-      return {
-        label: s.label,
-        data,
-        borderColor: s.color,
-        backgroundColor: 'transparent',
-        tension: 0.3,
-        pointRadius: 0,
-        borderWidth: 2,
-        spanGaps: true,
-      };
+      return { label: s.label, data, borderColor: s.color, backgroundColor: 'transparent',
+               tension: 0.3, pointRadius: 0, borderWidth: 2, spanGaps: true };
     });
 
-    if (chart) {
-      chart.destroy();
-      chart = null;
-    }
-    {
-      const ctx = document.getElementById('tempChart').getContext('2d');
-      chart = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 }, color: '#6b6960' } },
-            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y + '°C' : '—'}` } },
-          },
-          scales: {
-            x: {
-              ticks: { color: '#a09e97', font: { size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
-              grid: { color: '#f0ede8' },
-            },
-            y: {
-              ticks: { color: '#a09e97', font: { size: 11 }, callback: v => `${v}°C` },
-              grid: { color: '#f0ede8' },
-            },
-          },
+    if (chart) { chart.destroy(); chart = null; }
+    const ctx = document.getElementById('tempChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 }, color: '#6b6960' } },
+          tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y !== null ? c.parsed.y + '°C' : '—'}` } },
         },
-      });
-    }
+        scales: {
+          x: { ticks: { color: '#a09e97', font: { size: 11 }, maxTicksLimit: 8, maxRotation: 0 }, grid: { color: '#f0ede8' } },
+          y: { ticks: { color: '#a09e97', font: { size: 11 }, callback: v => `${v}°C` }, grid: { color: '#f0ede8' } },
+        },
+      },
+    });
   } catch(e) {
     console.error('Chart error', e);
   }
@@ -356,7 +556,8 @@ async function loadChart(range, btn) {
 async function setMode(value) {
   document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
   try {
-    const res = await fetch('/api/mode', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({value}) });
+    const res  = await fetch('/api/mode', { method: 'POST',
+      headers: {'Content-Type':'application/json'}, body: JSON.stringify({value}) });
     const json = await res.json();
     if (json.error) throw new Error(json.error);
     updateModeButtons(value);
@@ -371,7 +572,7 @@ async function setMode(value) {
 
 loadData();
 loadChart('day');
-setInterval(() => { loadData(); loadChart(currentRange); }, 60000);
+setInterval(() => { loadData(); loadChart(currentRange); }, 30000);
 </script>
 </body>
 </html>
