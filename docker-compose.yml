@@ -1,6 +1,6 @@
 services:
   defro-dashboard:
-    image: ghcr.io/${GITHUB_USERNAME}/defro-dashboard:latest
+    image: ghcr.io/rafalantas/defro-dashboard:latest
     container_name: defro-dashboard
     restart: unless-stopped
     ports:
