@@ -329,7 +329,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       </span>
     </div>
 
-    <!-- Reguła 1: temperatura zewnętrzna -->
     <div class="auto-row">
       <span class="auto-label">Jeśli temp. zewnętrzna ≥</span>
       <input class="auto-input" type="number" id="auto-temp-threshold" value="15" min="-20" max="30" onchange="saveAuto()">
@@ -341,22 +340,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <option value="0">Ogrzewanie</option>
       </select>
     </div>
-
-    <!-- Reguła 2: harmonogram miesięczny -->
     <div class="auto-row">
-      <span class="auto-label">Miesiące trybu letniego (od–do)</span>
-      <select class="auto-select" id="auto-month-from" onchange="saveAuto()">
-        <option value="1">Sty</option><option value="2">Lut</option><option value="3">Mar</option>
-        <option value="4">Kwi</option><option value="5" selected>Maj</option><option value="6">Cze</option>
-        <option value="7">Lip</option><option value="8">Sie</option><option value="9">Wrz</option>
-        <option value="10">Paź</option><option value="11">Lis</option><option value="12">Gru</option>
-      </select>
-      <span class="auto-label" style="flex:0">–</span>
-      <select class="auto-select" id="auto-month-to" onchange="saveAuto()">
-        <option value="1">Sty</option><option value="2">Lut</option><option value="3">Mar</option>
-        <option value="4">Kwi</option><option value="5">Maj</option><option value="6">Cze</option>
-        <option value="7">Lip</option><option value="8">Sie</option><option value="9" selected>Wrz</option>
-        <option value="10">Paź</option><option value="11">Lis</option><option value="12">Gru</option>
+      <span class="auto-label">Jeśli temp. zewnętrzna &lt;</span>
+      <span class="auto-label" style="flex:0;font-weight:500" id="auto-below-label">—°C → ustaw</span>
+      <select class="auto-select" id="auto-temp-below-mode" onchange="saveAuto()">
+        <option value="0">Ogrzewanie</option>
+        <option value="1">Priorytet kotła</option>
+        <option value="2">Pompy równoległe</option>
+        <option value="3">Tryb letni</option>
       </select>
     </div>
 
@@ -411,68 +402,50 @@ function updateThemeIcon(isDark) {
 }
 
 // ── Auto settings ──────────────────────────────────────────────────
-function loadAutoSettings() {
-  const s = JSON.parse(localStorage.getItem('autoSettings') || '{}');
-  document.getElementById('auto-enabled').checked = s.enabled ?? false;
-  document.getElementById('auto-temp-threshold').value = s.tempThreshold ?? 15;
-  document.getElementById('auto-temp-mode').value = s.tempMode ?? 3;
-  document.getElementById('auto-month-from').value = s.monthFrom ?? 5;
-  document.getElementById('auto-month-to').value = s.monthTo ?? 9;
+async function loadAutoSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const s   = await res.json();
+    document.getElementById('auto-enabled').checked          = s.auto_enabled ?? false;
+    document.getElementById('auto-temp-threshold').value     = s.auto_temp_threshold ?? 15;
+    document.getElementById('auto-temp-mode').value          = s.auto_temp_mode ?? 3;
+    document.getElementById('auto-temp-below-mode').value    = s.auto_temp_below_mode ?? 0;
+    updateAutoStatus(s);
+  } catch(e) { console.error('Settings load error', e); }
 }
 
-function saveAuto() {
+async function saveAuto() {
+  const thr = parseFloat(document.getElementById('auto-temp-threshold').value);
+  document.getElementById('auto-below-label').textContent = `${thr}°C → ustaw`;
   const s = {
-    enabled: document.getElementById('auto-enabled').checked,
-    tempThreshold: parseFloat(document.getElementById('auto-temp-threshold').value),
-    tempMode: parseInt(document.getElementById('auto-temp-mode').value),
-    monthFrom: parseInt(document.getElementById('auto-month-from').value),
-    monthTo: parseInt(document.getElementById('auto-month-to').value),
+    auto_enabled:          document.getElementById('auto-enabled').checked,
+    auto_temp_threshold:   thr,
+    auto_temp_mode:        parseInt(document.getElementById('auto-temp-mode').value),
+    auto_temp_below_mode:  parseInt(document.getElementById('auto-temp-below-mode').value),
   };
-  localStorage.setItem('autoSettings', JSON.stringify(s));
-  updateAutoStatus();
+  try {
+    const res  = await fetch('/api/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(s) });
+    const json = await res.json();
+    updateAutoStatus(json);
+    showToast('Ustawienia zapisane');
+  } catch(e) { showToast('Błąd zapisu ustawień'); }
 }
 
-function updateAutoStatus() {
-  const s = JSON.parse(localStorage.getItem('autoSettings') || '{}');
+function updateAutoStatus(s) {
+  if (!s) return;
   const el = document.getElementById('auto-status');
-  if (!s.enabled) {
+  if (!s.auto_enabled) {
     el.textContent = 'Automatyzacja wyłączona';
     el.className = 'auto-status';
     return;
   }
-  const month = new Date().getMonth() + 1;
-  const inSeason = month >= s.monthFrom && month <= s.monthTo;
-  const tempOk = currentTempExtern !== null && currentTempExtern >= s.tempThreshold;
-
-  let reasons = [];
-  if (inSeason) reasons.push(`sezon letni (${s.monthFrom}–${s.monthTo})`);
-  if (tempOk) reasons.push(`temp. zewn. ${currentTempExtern}°C ≥ ${s.tempThreshold}°C`);
-
-  if (reasons.length > 0) {
-    el.textContent = `Aktywna: ${reasons.join(' · ')} → ${MODES[inSeason ? 3 : s.tempMode]}`;
-    el.className = 'auto-status active';
-  } else {
-    el.textContent = `Monitoruje: temp. zewn. ${currentTempExtern ?? '—'}°C, miesiąc ${month}`;
-    el.className = 'auto-status';
-  }
-}
-
-async function runAutoLogic() {
-  const s = JSON.parse(localStorage.getItem('autoSettings') || '{}');
-  if (!s.enabled || currentTempExtern === null) return;
-
-  const month = new Date().getMonth() + 1;
-  const inSeason = month >= s.monthFrom && month <= s.monthTo;
-  const tempOk = currentTempExtern >= s.tempThreshold;
-
-  let targetMode = null;
-  if (inSeason) targetMode = 3; // tryb letni
-  else if (tempOk) targetMode = s.tempMode;
-
-  if (targetMode !== null && targetMode !== currentMode) {
-    await setMode(targetMode);
-    showToast(`Auto: zmieniono na ${MODES[targetMode]}`);
-  }
+  const thr   = s.auto_temp_threshold;
+  const above = MODES[s.auto_temp_mode];
+  const below = MODES[s.auto_temp_below_mode];
+  const curr  = currentTempExtern ?? '—';
+  const active = currentTempExtern !== null && currentTempExtern >= thr;
+  el.textContent = `Aktywna · temp. zewn. ${curr}°C · ${active ? '≥' : '<'} ${thr}°C → ${active ? above : below}`;
+  el.className = 'auto-status active';
 }
 
 // ── Utils ──────────────────────────────────────────────────────────
@@ -611,8 +584,7 @@ async function loadData() {
     document.getElementById('updated').textContent = `ostatnia aktualizacja: ${ts} · cache: ${json.age}s`;
     setStatus('ok');
 
-    updateAutoStatus();
-    runAutoLogic();
+    fetch('/api/settings').then(r=>r.json()).then(s => { updateAutoStatus(s); });
   } catch(e) {
     setStatus('error');
     showToast('Błąd połączenia');
@@ -698,14 +670,14 @@ const initTheme = savedTheme ?? (systemDark ? 'dark' : 'light');
 document.documentElement.setAttribute('data-theme', initTheme);
 updateThemeIcon(initTheme === 'dark');
 
-// Śledź zmiany systemowe (gdy brak override od użytkownika)
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-  if (localStorage.getItem('theme')) return; // użytkownik wybrał ręcznie — ignoruj
+  if (localStorage.getItem('theme')) return;
   const t = e.matches ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', t);
   updateThemeIcon(e.matches);
   if (chart) { chart.destroy(); chart = null; loadChart(currentRange); }
 });
+
 loadAutoSettings();
 loadData();
 loadChart('day');
