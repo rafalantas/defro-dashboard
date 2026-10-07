@@ -49,9 +49,71 @@ def fetch_tiles():
             cache['error'] = str(e)
 
 
+SETTINGS_PATH = '/data/settings.json'
+DEFAULT_SETTINGS = {
+    'auto_enabled': False,
+    'auto_temp_threshold': float(os.environ.get('AUTO_TEMP_THRESHOLD_DEFAULT', '15')),
+    'auto_temp_mode': int(os.environ.get('AUTO_TEMP_MODE_DEFAULT', '3')),
+    'auto_temp_below_mode': int(os.environ.get('AUTO_TEMP_BELOW_MODE_DEFAULT', '0')),
+}
+
+def load_settings():
+    try:
+        os.makedirs('/data', exist_ok=True)
+        with open(SETTINGS_PATH) as f:
+            s = json.load(f)
+            return {**DEFAULT_SETTINGS, **s}
+    except Exception:
+        return dict(DEFAULT_SETTINGS)
+
+def save_settings(s):
+    os.makedirs('/data', exist_ok=True)
+    with open(SETTINGS_PATH, 'w') as f:
+        json.dump(s, f)
+
+last_auto_mode = None
+
+
+def run_auto_logic(tiles_by_id):
+    global last_auto_mode
+    s = load_settings()
+    if not s['auto_enabled']:
+        return
+
+    ext_tile  = tiles_by_id.get(1009)
+    mode_tile = tiles_by_id.get(1001)
+    if not ext_tile or not mode_tile:
+        return
+
+    temp_ext = ext_tile['params']['value'] / 10
+    target   = s['auto_temp_mode'] if temp_ext >= s['auto_temp_threshold'] else s['auto_temp_below_mode']
+
+    mode_map = {814: 0, 815: 1, 816: 2, 811: 3}
+    current  = mode_map.get(mode_tile['params']['statusId'], -1)
+
+    if target != current and target != last_auto_mode:
+        try:
+            res = requests.post(
+                f'{BASE}/menu/MU/ido/2011',
+                headers=HEADERS,
+                json={'value': target},
+                timeout=10,
+            )
+            res.raise_for_status()
+            last_auto_mode = target
+            print(f'[AUTO] Zmieniono tryb na {target} (temp_ext={temp_ext}°C, próg={s["auto_temp_threshold"]}°C)')
+        except Exception as e:
+            print(f'[AUTO] Błąd zmiany trybu: {e}')
+
+
 def background_refresh():
     while True:
         fetch_tiles()
+        with lock:
+            data = cache['data']
+        if data:
+            tiles_by_id = {t['id']: t for t in data.get('tiles', [])}
+            run_auto_logic(tiles_by_id)
         time.sleep(REFRESH)
 
 
@@ -70,11 +132,10 @@ def index():
 @app.route('/api/data')
 def get_data():
     with lock:
-        age = time.time() - cache['ts']
-        data = cache['data']
+        age   = time.time() - cache['ts']
+        data  = cache['data']
         error = cache['error']
 
-    # Jeśli dane są starsze niż 2x REFRESH — odśwież synchronicznie
     if age > REFRESH * 2 or data is None:
         fetch_tiles()
         with lock:
@@ -85,11 +146,7 @@ def get_data():
     if error and data is None:
         return jsonify({'error': error}), 502
 
-    return jsonify({
-        'data':      data,
-        'cached_at': cache['ts'],
-        'age':       round(age, 1),
-    })
+    return jsonify({'data': data, 'cached_at': cache['ts'], 'age': round(age, 1)})
 
 
 @app.route('/api/history')
@@ -128,6 +185,27 @@ def get_history():
         return jsonify({'error': str(e)}), 502
 
 
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    return jsonify(load_settings())
+
+
+@app.route('/api/settings', methods=['POST'])
+def post_settings():
+    body = request.get_json()
+    s = load_settings()
+    if 'auto_enabled' in body:
+        s['auto_enabled'] = bool(body['auto_enabled'])
+    if 'auto_temp_threshold' in body:
+        s['auto_temp_threshold'] = float(body['auto_temp_threshold'])
+    if 'auto_temp_mode' in body:
+        s['auto_temp_mode'] = int(body['auto_temp_mode'])
+    if 'auto_temp_below_mode' in body:
+        s['auto_temp_below_mode'] = int(body['auto_temp_below_mode'])
+    save_settings(s)
+    return jsonify(s)
+
+
 @app.route('/api/mode', methods=['POST'])
 def set_mode():
     body  = request.get_json()
@@ -148,6 +226,5 @@ def set_mode():
         return jsonify({'error': str(e)}), 502
 
 
-# Start background refresh
 t = threading.Thread(target=background_refresh, daemon=True)
 t.start()
