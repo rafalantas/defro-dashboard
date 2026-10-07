@@ -10,8 +10,11 @@ services:
       - EMODUL_USER_ID=${EMODUL_USER_ID}
       - EMODUL_UDID=${EMODUL_UDID}
       - REFRESH_INTERVAL=${REFRESH_INTERVAL:-30}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/data"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
+      - AUTO_TEMP_THRESHOLD_DEFAULT=${AUTO_TEMP_THRESHOLD:-15}
+      - AUTO_TEMP_MODE_DEFAULT=${AUTO_TEMP_MODE:-3}
+      - AUTO_TEMP_BELOW_MODE_DEFAULT=${AUTO_TEMP_BELOW_MODE:-0}
+    volumes:
+      - defro-data:/data
+
+volumes:
+  defro-data:
