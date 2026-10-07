@@ -385,10 +385,22 @@ let autoCheckInterval = null;
 // ── Theme ──────────────────────────────────────────────────────────
 function toggleTheme() {
   const html = document.documentElement;
+  const hasOverride = localStorage.getItem('theme');
   const dark = html.getAttribute('data-theme') === 'dark';
-  html.setAttribute('data-theme', dark ? 'light' : 'dark');
-  localStorage.setItem('theme', dark ? 'light' : 'dark');
-  updateThemeIcon(!dark);
+
+  if (hasOverride) {
+    // Drugi klik — wróć do systemowego
+    localStorage.removeItem('theme');
+    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    html.setAttribute('data-theme', systemDark ? 'dark' : 'light');
+    updateThemeIcon(systemDark);
+    showToast('Motyw: automatyczny (systemowy)');
+  } else {
+    // Pierwszy klik — przełącz i zapisz override
+    html.setAttribute('data-theme', dark ? 'light' : 'dark');
+    localStorage.setItem('theme', dark ? 'light' : 'dark');
+    updateThemeIcon(!dark);
+  }
   if (chart) { chart.destroy(); chart = null; loadChart(currentRange); }
 }
 
@@ -680,9 +692,20 @@ async function setModeManual(value) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────
-const savedTheme = localStorage.getItem('theme') || 'light';
-document.documentElement.setAttribute('data-theme', savedTheme);
-updateThemeIcon(savedTheme === 'dark');
+const savedTheme = localStorage.getItem('theme');
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+const initTheme = savedTheme ?? (systemDark ? 'dark' : 'light');
+document.documentElement.setAttribute('data-theme', initTheme);
+updateThemeIcon(initTheme === 'dark');
+
+// Śledź zmiany systemowe (gdy brak override od użytkownika)
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+  if (localStorage.getItem('theme')) return; // użytkownik wybrał ręcznie — ignoruj
+  const t = e.matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+  updateThemeIcon(e.matches);
+  if (chart) { chart.destroy(); chart = null; loadChart(currentRange); }
+});
 loadAutoSettings();
 loadData();
 loadChart('day');
