@@ -330,8 +330,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     </div>
 
     <div class="auto-row">
-      <span class="auto-label">Jeśli temp. zewnętrzna ≥</span>
-      <input class="auto-input" type="number" id="auto-temp-threshold" value="15" min="-20" max="30" onchange="saveAuto()">
+      <span class="auto-label">Temp. zewnętrzna ≥</span>
+      <input class="auto-input" type="number" id="auto-temp-threshold" value="15" min="-20" max="30" step="0.5" onchange="saveAuto()">
       <span class="auto-label" style="flex:0">°C → ustaw</span>
       <select class="auto-select" id="auto-temp-mode" onchange="saveAuto()">
         <option value="3">Tryb letni</option>
@@ -341,14 +341,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       </select>
     </div>
     <div class="auto-row">
-      <span class="auto-label">Jeśli temp. zewnętrzna &lt;</span>
-      <span class="auto-label" style="flex:0;font-weight:500" id="auto-below-label">—°C → ustaw</span>
+      <span class="auto-label">Temp. zewnętrzna &lt; <span id="lbl-below">—</span>°C → ustaw</span>
       <select class="auto-select" id="auto-temp-below-mode" onchange="saveAuto()">
         <option value="0">Ogrzewanie</option>
         <option value="1">Priorytet kotła</option>
         <option value="2">Pompy równoległe</option>
         <option value="3">Tryb letni</option>
       </select>
+    </div>
+    <div class="auto-row">
+      <span class="auto-label">Histereza</span>
+      <input class="auto-input" type="number" id="auto-temp-hysteresis" value="2" min="0" max="10" step="0.5" onchange="saveAuto()">
+      <span class="auto-label" style="flex:0">°C</span>
     </div>
 
     <div class="auto-status" id="auto-status">Automatyzacja wyłączona</div>
@@ -406,22 +410,28 @@ async function loadAutoSettings() {
   try {
     const res = await fetch('/api/settings');
     const s   = await res.json();
+    const thr = s.auto_temp_threshold ?? 15;
+    const hys = s.auto_temp_hysteresis ?? 2;
     document.getElementById('auto-enabled').checked          = s.auto_enabled ?? false;
-    document.getElementById('auto-temp-threshold').value     = s.auto_temp_threshold ?? 15;
+    document.getElementById('auto-temp-threshold').value     = thr;
+    document.getElementById('auto-temp-hysteresis').value    = hys;
     document.getElementById('auto-temp-mode').value          = s.auto_temp_mode ?? 3;
     document.getElementById('auto-temp-below-mode').value    = s.auto_temp_below_mode ?? 0;
+    document.getElementById('lbl-below').textContent         = (thr - hys).toFixed(1);
     updateAutoStatus(s);
   } catch(e) { console.error('Settings load error', e); }
 }
 
 async function saveAuto() {
   const thr = parseFloat(document.getElementById('auto-temp-threshold').value);
-  document.getElementById('auto-below-label').textContent = `${thr}°C → ustaw`;
+  const hys = parseFloat(document.getElementById('auto-temp-hysteresis').value);
+  document.getElementById('lbl-below').textContent = (thr - hys).toFixed(1);
   const s = {
-    auto_enabled:          document.getElementById('auto-enabled').checked,
-    auto_temp_threshold:   thr,
-    auto_temp_mode:        parseInt(document.getElementById('auto-temp-mode').value),
-    auto_temp_below_mode:  parseInt(document.getElementById('auto-temp-below-mode').value),
+    auto_enabled:         document.getElementById('auto-enabled').checked,
+    auto_temp_threshold:  thr,
+    auto_temp_hysteresis: hys,
+    auto_temp_mode:       parseInt(document.getElementById('auto-temp-mode').value),
+    auto_temp_below_mode: parseInt(document.getElementById('auto-temp-below-mode').value),
   };
   try {
     const res  = await fetch('/api/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(s) });
@@ -440,11 +450,14 @@ function updateAutoStatus(s) {
     return;
   }
   const thr   = s.auto_temp_threshold;
+  const hys   = s.auto_temp_hysteresis ?? 2;
   const above = MODES[s.auto_temp_mode];
   const below = MODES[s.auto_temp_below_mode];
   const curr  = currentTempExtern ?? '—';
-  const active = currentTempExtern !== null && currentTempExtern >= thr;
-  el.textContent = `Aktywna · temp. zewn. ${curr}°C · ${active ? '≥' : '<'} ${thr}°C → ${active ? above : below}`;
+  const inAbove = currentTempExtern !== null && currentTempExtern >= thr;
+  const inBelow = currentTempExtern !== null && currentTempExtern < thr - hys;
+  const zone  = inAbove ? `≥ ${thr}°C → ${above}` : inBelow ? `< ${(thr-hys).toFixed(1)}°C → ${below}` : `strefa histerezy (${(thr-hys).toFixed(1)}–${thr}°C)`;
+  el.textContent = `Aktywna · temp. zewn. ${curr}°C · ${zone}`;
   el.className = 'auto-status active';
 }
 
