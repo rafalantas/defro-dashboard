@@ -51,9 +51,10 @@ def fetch_tiles():
 
 SETTINGS_PATH = '/data/settings.json'
 DEFAULT_SETTINGS = {
-    'auto_enabled': False,
-    'auto_temp_threshold': float(os.environ.get('AUTO_TEMP_THRESHOLD_DEFAULT', '15')),
-    'auto_temp_mode': int(os.environ.get('AUTO_TEMP_MODE_DEFAULT', '3')),
+    'auto_enabled':         False,
+    'auto_temp_threshold':  float(os.environ.get('AUTO_TEMP_THRESHOLD', '15')),
+    'auto_temp_hysteresis': float(os.environ.get('AUTO_TEMP_HYSTERESIS', '2')),
+    'auto_temp_mode':       int(os.environ.get('AUTO_TEMP_MODE_DEFAULT', '3')),
     'auto_temp_below_mode': int(os.environ.get('AUTO_TEMP_BELOW_MODE_DEFAULT', '0')),
 }
 
@@ -86,10 +87,17 @@ def run_auto_logic(tiles_by_id):
         return
 
     temp_ext = ext_tile['params']['value'] / 10
-    target   = s['auto_temp_mode'] if temp_ext >= s['auto_temp_threshold'] else s['auto_temp_below_mode']
-
+    thr      = s['auto_temp_threshold']
+    hys      = s['auto_temp_hysteresis']
     mode_map = {814: 0, 815: 1, 816: 2, 811: 3}
     current  = mode_map.get(mode_tile['params']['statusId'], -1)
+
+    if temp_ext >= thr:
+        target = s['auto_temp_mode']
+    elif temp_ext < thr - hys:
+        target = s['auto_temp_below_mode']
+    else:
+        return  # strefa histerezy — nie rób nic
 
     if target != current and target != last_auto_mode:
         try:
@@ -101,7 +109,7 @@ def run_auto_logic(tiles_by_id):
             )
             res.raise_for_status()
             last_auto_mode = target
-            print(f'[AUTO] Zmieniono tryb na {target} (temp_ext={temp_ext}°C, próg={s["auto_temp_threshold"]}°C)')
+            print(f'[AUTO] Zmieniono tryb na {target} (temp_ext={temp_ext}°C, próg={thr}°C ±{hys}°C)')
         except Exception as e:
             print(f'[AUTO] Błąd zmiany trybu: {e}')
 
@@ -187,7 +195,10 @@ def get_history():
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    return jsonify(load_settings())
+    s = load_settings()
+    s['auto_temp_threshold']  = AUTO_TEMP_THRESHOLD
+    s['auto_temp_hysteresis'] = AUTO_TEMP_HYSTERESIS
+    return jsonify(s)
 
 
 @app.route('/api/settings', methods=['POST'])
@@ -198,6 +209,8 @@ def post_settings():
         s['auto_enabled'] = bool(body['auto_enabled'])
     if 'auto_temp_threshold' in body:
         s['auto_temp_threshold'] = float(body['auto_temp_threshold'])
+    if 'auto_temp_hysteresis' in body:
+        s['auto_temp_hysteresis'] = float(body['auto_temp_hysteresis'])
     if 'auto_temp_mode' in body:
         s['auto_temp_mode'] = int(body['auto_temp_mode'])
     if 'auto_temp_below_mode' in body:
