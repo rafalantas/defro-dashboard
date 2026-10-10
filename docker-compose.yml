@@ -2,7 +2,7 @@ services:
   thermoflow:
     image: ghcr.io/rafalantas/defro-dashboard:latest
     pull_policy: always
-    container_name: thermoflow-demo
+    container_name: defro-dashboard
     ports:
       - "5001:80"
     depends_on:
