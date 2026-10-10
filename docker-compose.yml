@@ -12,7 +12,7 @@ services:
   api:
     image: ghcr.io/rafalantas/defro-dashboard-api:latest
     pull_policy: always
-    container_name: thermoflow-api
+    container_name: defro-dashboard-api
     environment:
       TECH_API_TOKEN: ${TECH_API_TOKEN:-}
       TECH_MODULE_ID: ${TECH_MODULE_ID:-}

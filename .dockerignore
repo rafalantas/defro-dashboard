@@ -1,0 +1,5 @@
+.env
+secrets/tech_api_token
+__pycache__/
+.git/
+.DS_Store

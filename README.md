@@ -24,4 +24,4 @@ Skopiuj `.env.example` do `.env`, ustaw `TECH_API_TOKEN` i opcjonalnie `TECH_MOD
 docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d
 ```
 
-Otwórz [http://localhost:8080](http://localhost:8080). Bez tokenu strona działa w trybie demo. Status backendu: `/api/health`. Zatrzymanie: `docker compose down`.
+Otwórz [http://localhost:5001](http://localhost:5001). Bez tokenu strona działa w trybie demo. Status backendu: `/api/health`. Zatrzymanie: `docker compose down`.
