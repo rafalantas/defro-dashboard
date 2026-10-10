@@ -1,0 +1,10 @@
+services:
+  thermoflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
