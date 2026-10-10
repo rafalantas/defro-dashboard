@@ -1,20 +1,21 @@
 services:
-  defro-dashboard:
+  thermoflow:
     image: ghcr.io/rafalantas/defro-dashboard:latest
-    container_name: defro-dashboard
-    restart: unless-stopped
+    pull_policy: always
+    container_name: thermoflow-demo
     ports:
-      - "5001:5000"
-    environment:
-      - EMODUL_TOKEN=${EMODUL_TOKEN}
-      - EMODUL_USER_ID=${EMODUL_USER_ID}
-      - EMODUL_UDID=${EMODUL_UDID}
-      - REFRESH_INTERVAL=${REFRESH_INTERVAL:-30}
-      - AUTO_TEMP_THRESHOLD_DEFAULT=${AUTO_TEMP_THRESHOLD:-15}
-      - AUTO_TEMP_MODE_DEFAULT=${AUTO_TEMP_MODE:-3}
-      - AUTO_TEMP_BELOW_MODE_DEFAULT=${AUTO_TEMP_BELOW_MODE:-0}
-    volumes:
-      - defro-data:/data
+      - "5001:80"
+    depends_on:
+      - api
+    restart: unless-stopped
 
-volumes:
-  defro-data:
+  api:
+    image: ghcr.io/rafalantas/defro-dashboard-api:latest
+    pull_policy: always
+    container_name: thermoflow-api
+    environment:
+      TECH_API_TOKEN: ${TECH_API_TOKEN:-}
+      TECH_MODULE_ID: ${TECH_MODULE_ID:-}
+    expose:
+      - "8000"
+    restart: unless-stopped
