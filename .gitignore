@@ -1,0 +1,4 @@
+.env
+/secrets/tech_api_token
+
+.DS_Store
