@@ -112,7 +112,6 @@ def _read_snapshot() -> dict:
         "setpoints": {"co": None, "dhw": None},
         "other_tiles": [],
     }
-
     for tile in details.get("tiles", []):
         params = tile.get("params") or {}
         kind = tile.get("type")
@@ -224,6 +223,39 @@ def _read_snapshot() -> dict:
     }
 
 
+def _read_modules() -> dict:
+    """Return controller names and IDs so an installer can select a module."""
+    token = _token()
+    if not token:
+        return {"configured": False, "connected": False, "error": "Brak tokenu eModul", "modules": []}
+
+    uid = _user_id(token)
+    modules = _get(f"users/{uid}/modules", token)
+    if not isinstance(modules, list):
+        raise RuntimeError("Konto eModul zwróciło nieprawidłową listę sterowników")
+
+    selected_id = os.getenv("TECH_MODULE_ID", "").strip()
+    default_id = str(modules[0].get("udid", "")) if modules and isinstance(modules[0], dict) else ""
+    selected_id = selected_id or default_id
+    return {
+        "configured": True,
+        "connected": True,
+        "source": "eModul",
+        "selected_id": selected_id or None,
+        "modules": [
+            {
+                "name": module.get("name") or "Sterownik bez nazwy",
+                "udid": module.get("udid"),
+                "type": module.get("type"),
+                "version": module.get("version"),
+                "selected": str(module.get("udid", "")) == selected_id,
+            }
+            for module in modules
+            if isinstance(module, dict)
+        ],
+    }
+
+
 def snapshot() -> dict:
     now = time.monotonic()
     with _cache_lock:
@@ -248,12 +280,22 @@ def snapshot() -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/api/status", "/api/health"):
+        if self.path not in ("/api/status", "/api/health", "/api/modules"):
             self.send_error(404)
             return
-        payload = snapshot()
-        if self.path == "/api/health":
-            payload = {key: payload.get(key) for key in ("configured", "connected", "source", "error", "fetched_at")}
+        if self.path == "/api/modules":
+            try:
+                payload = _read_modules()
+            except HTTPError as error:
+                payload = {"configured": True, "connected": False, "error": f"eModul odrzucił żądanie (HTTP {error.code})", "modules": []}
+            except (URLError, TimeoutError, OSError):
+                payload = {"configured": bool(_token()), "connected": False, "error": "Brak połączenia z eModul", "modules": []}
+            except Exception as error:
+                payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180], "modules": []}
+        else:
+            payload = snapshot()
+            if self.path == "/api/health":
+                payload = {key: payload.get(key) for key in ("configured", "connected", "source", "error", "fetched_at")}
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
