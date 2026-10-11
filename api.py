@@ -109,6 +109,7 @@ def _read_snapshot() -> dict:
         "disinfection": {"active": None, "percent": None},
         "mode": None,
         "controller_status": None,
+        "status_tiles": [],
         "setpoints": {"co": None, "dhw": None},
         "other_tiles": [],
     }
@@ -174,6 +175,8 @@ def _read_snapshot() -> dict:
         elif kind == 40:
             header = translations.get(str(params.get("headerId", "")), "")
             status = translations.get(str(params.get("statusId", "")), "")
+            if header or status:
+                data["status_tiles"].append({"header": header, "status": status})
             if "tryb pracy" in header.casefold():
                 data["mode"] = status
             elif "stan sterownika" in header.casefold():
