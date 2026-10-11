@@ -112,6 +112,7 @@ def _read_snapshot() -> dict:
         "controller_status": None,
         "status_tiles": [],
         "setpoints": {"co": None, "dhw": None},
+        "hysteresis": {"boiler": None, "dhw": None, "valve": None},
         "other_tiles": [],
     }
     for tile in details.get("tiles", []):
@@ -210,6 +211,14 @@ def _read_snapshot() -> dict:
             normalized = re.sub(r"\s+", " ", label.casefold().replace(".", ""))
             raw_value = params.get("value")
             value = _number(raw_value, 10 if params.get("format") == 2 else 1)
+            # ST-9730 menu values: the built-in valve hysteresis is item 2250
+            # and uses format 2 (tenths of a degree).
+            if item.get("id") == 2062 or "histereza kot" in normalized:
+                data["hysteresis"]["boiler"] = value
+            elif item.get("id") == 2063 or "histereza cwu" in normalized:
+                data["hysteresis"]["dhw"] = value
+            elif item.get("id") == 2250:
+                data["hysteresis"]["valve"] = value
             if "zadana" in normalized or "zadanej" in normalized or "nastawa" in normalized:
                 if any(term in normalized for term in ("cwu", "cieplej wody", "ciepłej wody")):
                     data["setpoints"]["dhw"] = value
