@@ -105,6 +105,7 @@ def _read_snapshot() -> dict:
         "valve": {"current": None, "return": None, "set": None, "opening": None},
         "fuel": {"percent": None, "hours": None},
         "fire": None,
+        "fire_signal": None,
         "fan": {"running": None, "percent": None, "rpm": None},
         "disinfection": {"active": None, "percent": None},
         "mode": None,
@@ -174,7 +175,8 @@ def _read_snapshot() -> dict:
         elif kind == 31:
             data["fuel"] = {"percent": params.get("percentage"), "hours": params.get("hours")}
         elif kind == 2:
-            data["fire"] = bool(params.get("value"))
+            data["fire"] = params.get("workingStatus")
+            data["fire_signal"] = params.get("value")
         elif kind == 32:
             data["disinfection"] = {
                 "active": bool(params.get("percentage")),
