@@ -80,8 +80,10 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/health` | Status konfiguracji i połączenia |
 | `/api/status` | Bieżące dane sterownika używane przez dashboard |
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
+| `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
 
 Backend pobiera dane eModul co około 30 sekund; odpowiedź jest buforowana przez 20 sekund.
+Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
 
