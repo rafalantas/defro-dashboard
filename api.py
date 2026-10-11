@@ -119,6 +119,14 @@ def _read_snapshot() -> dict:
         label = _label(params, translations)
         normalized = label.casefold()
 
+        # Readiness notices may be returned either as plain text (type 40)
+        # or as the status badge on a universal widget tile (type 6).
+        if kind in (6, 40):
+            header = translations.get(str(params.get("headerId", "")), "")
+            status = translations.get(str(params.get("statusId", "")), "")
+            if header or status:
+                data["status_tiles"].append({"header": header, "status": status})
+
         if kind == 1:
             value = _number(params.get("value"), 10)
             if "temperatura co" in normalized:
@@ -175,8 +183,6 @@ def _read_snapshot() -> dict:
         elif kind == 40:
             header = translations.get(str(params.get("headerId", "")), "")
             status = translations.get(str(params.get("statusId", "")), "")
-            if header or status:
-                data["status_tiles"].append({"header": header, "status": status})
             if "tryb pracy" in header.casefold():
                 data["mode"] = status
             elif "stan sterownika" in header.casefold():
