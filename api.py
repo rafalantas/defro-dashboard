@@ -384,6 +384,22 @@ def _read_diagnostics() -> dict:
 
     zones_body = details.get("zones") or {}
     zones = zones_body.get("elements", []) if isinstance(zones_body, dict) else []
+    # Statistics endpoints include time-series that are not part of the live
+    # tile snapshot (for example the upper buffer sensor). Keep this probe in
+    # diagnostics only; the dashboard's regular polling should stay lightweight.
+    statistics = {"available": None, "latest": {}, "error": None}
+    try:
+        available = _get(f"modules/{udid}/statistics/available", token)
+        linear = _get(f"modules/{udid}/statistics/linear/range/day", token)
+        history = (linear.get("data") or {}).get("history") or {}
+        statistics["available"] = available
+        statistics["latest"] = {
+            name: points[-1]
+            for name, points in history.items()
+            if isinstance(points, list) and points
+        }
+    except Exception as error:
+        statistics["error"] = str(error)[:180]
     return {
         "configured": True,
         "connected": True,
@@ -398,6 +414,7 @@ def _read_diagnostics() -> dict:
         "tiles": tiles,
         "zones": zones,
         "menus": menus,
+        "statistics": statistics,
     }
 
 
