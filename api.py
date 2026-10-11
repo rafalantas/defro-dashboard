@@ -200,10 +200,10 @@ def _read_snapshot() -> dict:
         elif kind == 2:
             data["fire"] = params.get("workingStatus")
             data["fire_signal"] = _number(params.get("value"))
-            # eModul's tile gives a coarse signal. Three user-provided pairs
-            # indicate the panel brightness is approximately signal * 80.
+            # Match eModul's own fire-tile rendering: values above 100 are
+            # already brightness readings; lower raw values are scaled by 82.
             signal = data["fire_signal"]
-            data["fire_brightness_estimate"] = round(signal * 80) if signal is not None else None
+            data["fire_brightness"] = (signal if signal > 100 else signal * 82) if signal is not None else None
         elif kind == 32:
             data["disinfection"] = {
                 "active": bool(params.get("percentage")),
