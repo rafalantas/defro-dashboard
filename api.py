@@ -256,6 +256,107 @@ def _read_modules() -> dict:
     }
 
 
+def _read_diagnostics() -> dict:
+    """Expose the controller's available read-only tiles, zones, and menus."""
+    token = _token()
+    if not token:
+        return {"configured": False, "connected": False, "error": "Brak tokenu eModul"}
+
+    uid = _user_id(token)
+    modules = _get(f"users/{uid}/modules", token)
+    if not isinstance(modules, list) or not modules:
+        raise RuntimeError("Konto eModul nie zwróciło sterowników")
+
+    wanted = os.getenv("TECH_MODULE_ID", "").strip()
+    module = next((item for item in modules if str(item.get("udid", "")) == wanted), None) if wanted else modules[0]
+    if module is None:
+        raise RuntimeError("TECH_MODULE_ID nie pasuje do sterownika na koncie eModul")
+
+    udid = module.get("udid")
+    details = _get(f"users/{uid}/modules/{udid}", token)
+    translations = _translations(token)
+    tile_types = {
+        1: "temperatura",
+        2: "czujnik ognia",
+        6: "status z widgetami",
+        11: "przekaźnik / pompa",
+        21: "pompa dodatkowa",
+        22: "wentylator",
+        23: "zawór mieszający",
+        24: "zewnętrzny zawór mieszający",
+        31: "paliwo",
+        32: "dezynfekcja",
+        40: "status tekstowy",
+        50: "wersja oprogramowania",
+        252: "OpenTherm",
+    }
+    unit_divisors = {4: 10, 5: 100, 7: 10, 23: 10, 26: 10, 33: 10}
+
+    tiles = []
+    for tile in details.get("tiles", []):
+        params = tile.get("params") or {}
+        entry = {
+            "id": tile.get("id"),
+            "type": tile.get("type"),
+            "type_name": tile_types.get(tile.get("type"), "inny"),
+            "visible": tile.get("visibility"),
+            "label": _label(params, translations),
+            "header": _label(params, translations, "headerId"),
+            "status": _label(params, translations, "statusId"),
+            "params": params,
+        }
+        if tile.get("type") == 6:
+            entry["widgets"] = []
+            for slot in ("widget1", "widget2"):
+                widget = params.get(slot)
+                if not isinstance(widget, dict):
+                    continue
+                raw_value = widget.get("value")
+                divisor = unit_divisors.get(widget.get("unit"), 1)
+                entry["widgets"].append({
+                    "slot": slot,
+                    "label": _label(widget, translations),
+                    "type": widget.get("type"),
+                    "unit_code": widget.get("unit"),
+                    "raw_value": raw_value,
+                    "value": _number(raw_value, divisor),
+                })
+        tiles.append(entry)
+
+    menus = []
+    for menu_type in ("MU", "MI"):
+        try:
+            menu_body = _get(f"users/{uid}/modules/{udid}/menu/{menu_type}/", token)
+        except Exception:
+            continue
+        for item in menu_body.get("data", {}).get("elements", []):
+            menus.append({
+                "menu": menu_type,
+                "id": item.get("id"),
+                "type": item.get("type"),
+                "label": translations.get(str(item.get("txtId", "")), ""),
+                "params": item.get("params") or {},
+            })
+
+    zones_body = details.get("zones") or {}
+    zones = zones_body.get("elements", []) if isinstance(zones_body, dict) else []
+    return {
+        "configured": True,
+        "connected": True,
+        "source": "eModul",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "controller": {
+            "name": module.get("name"),
+            "type": module.get("type"),
+            "version": module.get("version"),
+        },
+        "counts": {"tiles": len(tiles), "zones": len(zones), "menu_items": len(menus)},
+        "tiles": tiles,
+        "zones": zones,
+        "menus": menus,
+    }
+
+
 def snapshot() -> dict:
     now = time.monotonic()
     with _cache_lock:
@@ -280,18 +381,18 @@ def snapshot() -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/api/status", "/api/health", "/api/modules"):
+        if self.path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics"):
             self.send_error(404)
             return
-        if self.path == "/api/modules":
+        if self.path in ("/api/modules", "/api/diagnostics"):
             try:
-                payload = _read_modules()
+                payload = _read_modules() if self.path == "/api/modules" else _read_diagnostics()
             except HTTPError as error:
-                payload = {"configured": True, "connected": False, "error": f"eModul odrzucił żądanie (HTTP {error.code})", "modules": []}
+                payload = {"configured": True, "connected": False, "error": f"eModul odrzucił żądanie (HTTP {error.code})"}
             except (URLError, TimeoutError, OSError):
-                payload = {"configured": bool(_token()), "connected": False, "error": "Brak połączenia z eModul", "modules": []}
+                payload = {"configured": bool(_token()), "connected": False, "error": "Brak połączenia z eModul"}
             except Exception as error:
-                payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180], "modules": []}
+                payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
         else:
             payload = snapshot()
             if self.path == "/api/health":
