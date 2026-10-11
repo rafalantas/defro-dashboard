@@ -106,6 +106,7 @@ def _read_snapshot() -> dict:
         "fuel": {"percent": None, "hours": None},
         "fire": None,
         "fire_signal": None,
+        "fire_brightness_estimate": None,
         "fan": {"running": None, "percent": None, "rpm": None},
         "disinfection": {"active": None, "percent": None},
         "mode": None,
@@ -198,7 +199,11 @@ def _read_snapshot() -> dict:
             data["fuel"] = {"percent": params.get("percentage"), "hours": params.get("hours")}
         elif kind == 2:
             data["fire"] = params.get("workingStatus")
-            data["fire_signal"] = params.get("value")
+            data["fire_signal"] = _number(params.get("value"))
+            # eModul's tile gives a coarse signal. Three user-provided pairs
+            # indicate the panel brightness is approximately signal * 80.
+            signal = data["fire_signal"]
+            data["fire_brightness_estimate"] = round(signal * 80) if signal is not None else None
         elif kind == 32:
             data["disinfection"] = {
                 "active": bool(params.get("percentage")),
