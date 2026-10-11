@@ -128,6 +128,27 @@ def _read_snapshot() -> dict:
             status = translations.get(str(params.get("statusId", "")), "")
             if header or status:
                 data["status_tiles"].append({"header": header, "status": status})
+            if kind == 6:
+                unit_divisors = {4: 10, 5: 100, 7: 10, 23: 10, 26: 10, 33: 10}
+                for slot in ("widget1", "widget2"):
+                    widget = params.get(slot)
+                    if not isinstance(widget, dict) or widget.get("txtId", 0) == 0:
+                        continue
+                    if widget.get("unit") in (6, 8):
+                        continue
+                    if widget.get("unit") == -1 and widget.get("type") == 0:
+                        continue
+                    widget_label = _label(widget, translations)
+                    widget_value = _number(
+                        widget.get("value"),
+                        unit_divisors.get(widget.get("unit"), 1),
+                    )
+                    if widget_label and widget_value is not None:
+                        data["other_tiles"].append({
+                            "label": widget_label,
+                            "value": widget_value,
+                            "unit": "°C",
+                        })
 
         if kind == 1:
             value = _number(params.get("value"), 10)
