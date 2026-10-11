@@ -62,7 +62,6 @@
         <div class="telemetry-tile"><div class="telemetry-label">Podajnik</div><div class="telemetry-value small" id="tileFeeder">—</div></div>
         <div class="telemetry-tile"><div class="telemetry-label">Grzałka</div><div class="telemetry-value small" id="tileHeater">—</div></div>
         <div class="telemetry-tile"><div class="telemetry-label">Pompa CO</div><div class="telemetry-value small" id="tilePumpCo">—</div></div>
-        <div class="telemetry-tile"><div class="telemetry-label">Pompa podłogowa</div><div class="telemetry-value small" id="tilePumpFloor">—</div></div>
         <div class="telemetry-tile"><div class="telemetry-label">Pompa CWU</div><div class="telemetry-value small" id="tilePumpDhw">—</div></div>
         <div class="telemetry-tile"><div class="telemetry-label">Pompa cyrkulacyjna</div><div class="telemetry-value small" id="tilePumpCirc">—</div></div>
         <div class="telemetry-tile"><div class="telemetry-label">Wentylator</div><div class="telemetry-value small" id="tileFan">—</div><div class="telemetry-meta" id="tileFanMeta">obroty niedostępne</div></div>
@@ -107,7 +106,7 @@ function applyLive(payload){showConnection(payload);if(!payload.connected||!payl
   $('tileRoomState').textContent=roomReady?'Pokój dogrzany':'Brak danych';$('tileRoomStateMeta').textContent=roomReady?'komunikat sterownika':'sterownik nie zwraca stref ani temperatury pokoju';
   $('mRad').textContent=v.current==null?'—':Number(v.current).toFixed(1)+'°';$('mFloor').textContent='—';$('radTemp').textContent=rad+' / '+temp(v.set);$('valve3Temp').textContent='RĘCZNY · ZAWÓR 3D';$('floorTemp').textContent='brak odczytu';$('returnTempSvg').textContent=ret;
   setTile('tileCo',co);setTile('tileDhw',dhw);setTile('tileFlue',temp(t.flue));setTile('tileOutdoor',temp(t.outdoor));$('sensorOutdoorSvg').textContent=temp(t.outdoor);$('sensorFlueSvg').textContent=temp(t.flue);setTile('tileFire',d.fire==null?'Brak odczytu':d.fire?'Płomień wykryty':'Brak płomienia');$('tileFireMeta').textContent=d.fire_brightness!=null?`jasność płomienia: ${Number(d.fire_brightness).toLocaleString('pl-PL')} · przeliczanie jak w eModul`:'jasność płomienia niedostępna';
-  setTile('tileFeeder',state(out.feeder));setTile('tileHeater',state(out.heater));setTile('tilePumpCo',state(p.radiator));setTile('tilePumpFloor',state(p.floor));setTile('tilePumpDhw',state(p.dhw));setTile('tilePumpCirc',state(p.circulation));
+  setTile('tileFeeder',state(out.feeder));setTile('tileHeater',state(out.heater));setTile('tilePumpCo',state(p.radiator));setTile('tilePumpDhw',state(p.dhw));setTile('tilePumpCirc',state(p.circulation));
   const fanPercent=fan.percent??fan.gear;setTile('tileFan',fanPercent!=null?`${fanPercent}%`:fan.rpm!=null?`${fan.rpm} obr./min`:fan.running==null?'Brak odczytu':fan.running?'Pracuje':'Wyłączony');$('tileFanMeta').textContent=fanPercent!=null?'moc pracy wentylatora':fan.rpm!=null?'obroty wentylatora':'sterownik nie udostępnia mocy wentylatora';
   setTile('tileValve',v.current==null?'Brak odczytu':temp(v.current));$('tileValveMeta').textContent=`zadana ${temp(v.set)} · otwarcie ${v.opening==null?'—':v.opening+'%'} · powrót ${temp(v.return)} · histereza ${temp(h.valve)}`;
   setTile('tileFuel',fuel.percent==null?'Brak odczytu':`${fuel.percent}%`);$('tileFuelMeta').textContent=fuel.hours==null?'zapas paliwa':`szacowany zapas · ${fuel.hours} h`;
