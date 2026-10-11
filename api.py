@@ -106,6 +106,7 @@ def _read_snapshot() -> dict:
         "fuel": {"percent": None, "hours": None},
         "fire": None,
         "fire_signal": None,
+        "fire_brightness": None,
         "fan": {"running": None, "percent": None, "rpm": None},
         "disinfection": {"active": None, "percent": None},
         "mode": None,
@@ -151,6 +152,11 @@ def _read_snapshot() -> dict:
                         })
 
         if kind == 1:
+            if any(term in normalized for term in ("jasność płomienia", "jasnosc plomienia", "jasność ognia", "jasnosc ognia")):
+                # Flame brightness is a raw controller reading (for example 2870),
+                # not a temperature scaled in tenths of a degree.
+                data["fire_brightness"] = _number(params.get("value"))
+                continue
             value = _number(params.get("value"), 10)
             if "temperatura co" in normalized:
                 data["temperatures"]["co"] = value
