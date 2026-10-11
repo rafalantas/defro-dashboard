@@ -145,11 +145,9 @@ def _read_snapshot() -> dict:
             elif label:
                 data.setdefault("outputs", {})[label] = running
         elif kind == 21:
-            pump_name = _label(params, translations)
-            if "cyrkul" in pump_name.casefold():
-                data["pumps"]["circulation"] = bool(params.get("workingStatus"))
-            else:
-                data["pumps"]["additional"] = bool(params.get("workingStatus"))
+            # In this installation TECH's "additional pump" is the DHW
+            # circulation pump; expose one unambiguous live status.
+            data["pumps"]["circulation"] = bool(params.get("workingStatus"))
         elif kind == 22:
             data["fan"] = {
                 "running": bool(params.get("workingStatus")),
