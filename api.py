@@ -17,8 +17,12 @@ from urllib.request import Request, urlopen
 
 API_BASE = "https://emodul.eu/api/v1/"
 POLL_CACHE_SECONDS = 20
+STATISTICS_CACHE_SECONDS = 90
+BUFFER_UPPER_SERIES_ID = "1856"  # eModul: "Temperatura bufora górna" (C1)
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
+_statistics_cache: dict[str, tuple[float, float | None, str | None]] = {}
+_statistics_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
 
 
@@ -76,6 +80,35 @@ def _label(params: dict, translations: dict[str, str], key: str = "txtId") -> st
     return translations.get(str(params.get(key, "")), "")
 
 
+def _buffer_upper_temperature(udid: str, token: str) -> tuple[float | None, str | None]:
+    """Read the newest C1 / upper-buffer value from today's statistics."""
+    now = time.monotonic()
+    with _statistics_lock:
+        cached = _statistics_cache.get(udid)
+        if cached and now - cached[0] < STATISTICS_CACHE_SECONDS:
+            return cached[1], cached[2]
+
+    value = None
+    sampled_at = None
+    try:
+        body = _get(f"modules/{udid}/statistics/linear/range/day", token)
+        history = (body.get("data") or {}).get("history") or {}
+        points = history.get(BUFFER_UPPER_SERIES_ID) or []
+        points = [point for point in points if isinstance(point, dict) and point.get("y") is not None]
+        if points:
+            latest = max(points, key=lambda point: str(point.get("x", "")))
+            value = _number(latest.get("y"))
+            sampled_at = str(latest.get("x", "")) or None
+    except Exception:
+        # Statistics are supplementary; a chart endpoint failure must not
+        # interrupt the ordinary live telemetry.
+        pass
+
+    with _statistics_lock:
+        _statistics_cache[udid] = (now, value, sampled_at)
+    return value, sampled_at
+
+
 def _read_snapshot() -> dict:
     token = _token()
     if not token:
@@ -100,7 +133,7 @@ def _read_snapshot() -> dict:
     translations = _translations(token)
 
     data = {
-        "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None},
+        "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None, "buffer_upper": None},
         "pumps": {"floor": None, "radiator": None, "dhw": None, "circulation": None},
         "valve": {"current": None, "return": None, "set": None, "opening": None},
         "fuel": {"percent": None, "hours": None},
@@ -223,6 +256,10 @@ def _read_snapshot() -> dict:
                 "module_version": params.get("version"),
                 "version": module.get("version"),
             }
+
+    buffer_upper, buffer_upper_at = _buffer_upper_temperature(udid, token)
+    data["temperatures"]["buffer_upper"] = buffer_upper
+    data["temperatures"]["buffer_upper_at"] = buffer_upper_at
 
     # User/installer menus are read-only here. They can expose boiler/DHW
     # setpoints that are not included in the dashboard temperature tiles.
