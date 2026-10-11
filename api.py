@@ -178,9 +178,17 @@ def _read_snapshot() -> dict:
             elif label:
                 data.setdefault("outputs", {})[label] = running
         elif kind == 21:
-            # In this installation TECH's "additional pump" is the DHW
-            # circulation pump; expose one unambiguous live status.
-            data["pumps"]["circulation"] = bool(params.get("workingStatus"))
+            # TECH uses type 21 for configurable additional pumps. Resolve the
+            # circuit from its translated tile label instead of assuming it is
+            # always the DHW circulation pump.
+            status = params.get("workingStatus")
+            status = bool(status) if status is not None else None
+            if "podłog" in normalized or "podlog" in normalized:
+                data["pumps"]["floor"] = status
+            elif "cyrkul" in normalized:
+                data["pumps"]["circulation"] = status
+            elif label:
+                data.setdefault("additional_pumps", []).append({"label": label, "working": status})
         elif kind == 22:
             data["fan"] = {
                 "running": bool(params.get("workingStatus")),
