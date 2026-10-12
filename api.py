@@ -134,7 +134,7 @@ def _read_snapshot() -> dict:
 
     data = {
         "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None, "buffer_upper": None},
-        "pumps": {"floor": None, "radiator": None, "dhw": None, "circulation": None},
+        "pumps": {"floor": None, "valve4d": None, "dhw": None, "circulation": None},
         "valve": {
             "current": None,
             "return": None,
@@ -212,7 +212,9 @@ def _read_snapshot() -> dict:
         elif kind == 11:
             running = bool(params.get("workingStatus"))
             if "pompa co" in normalized:
-                data["pumps"]["radiator"] = running
+                # In this installation the controller's CO output drives the
+                # underfloor loop, as confirmed by the user's wiring diagram.
+                data["pumps"]["floor"] = running
             elif "pompa cwu" in normalized or "pompa c.w.u" in normalized:
                 data["pumps"]["dhw"] = running
             elif "podajnik" in normalized:
@@ -232,6 +234,11 @@ def _read_snapshot() -> dict:
                 "rpm": params.get("rpm", params.get("speed")),
             }
         elif kind == 23:
+            # valvePump is the live state of the pump assigned to the built-in
+            # 4D valve; the CO relay above is wired to the underfloor pump.
+            valve_pump = params.get("valvePump")
+            if valve_pump is not None:
+                data["pumps"]["valve4d"] = bool(valve_pump)
             data["valve"] = {
                 "current": _number(params.get("currentTemp"), 10),
                 "return": _number(params.get("returnTemp"), 10),
