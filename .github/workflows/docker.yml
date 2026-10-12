@@ -47,6 +47,19 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build and push
+        if: matrix.dockerfile == 'Dockerfile'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: APP_COMMIT=${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push API image
+        if: matrix.dockerfile == 'Dockerfile.api'
         uses: docker/build-push-action@v6
         with:
           context: .
