@@ -135,7 +135,14 @@ def _read_snapshot() -> dict:
     data = {
         "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None, "buffer_upper": None},
         "pumps": {"floor": None, "radiator": None, "dhw": None, "circulation": None},
-        "valve": {"current": None, "return": None, "set": None, "opening": None},
+        "valve": {
+            "current": None,
+            "return": None,
+            "set": None,
+            "opening": None,
+            "set_correction": None,
+            "room_reduction": None,
+        },
         "fuel": {"percent": None, "hours": None},
         "fire": None,
         "fire_signal": None,
@@ -226,6 +233,7 @@ def _read_snapshot() -> dict:
                 "return": _number(params.get("returnTemp"), 10),
                 "set": _number(params.get("setTemp")),
                 "opening": params.get("openingPercentage"),
+                "set_correction": _number(params.get("setTempCorrection")),
                 "working": bool(params.get("workingStatus")),
             }
         elif kind == 31:
@@ -282,6 +290,9 @@ def _read_snapshot() -> dict:
                 data["hysteresis"]["dhw"] = value
             elif item.get("id") == 2250:
                 data["hysteresis"]["valve"] = value
+            elif item.get("id") == 2208 or "obnizenie pokojowki" in normalized:
+                # Built-in valve 1 → Room regulator → Room thermostat setback.
+                data["valve"]["room_reduction"] = value
             if "zadana" in normalized or "zadanej" in normalized or "nastawa" in normalized:
                 if any(term in normalized for term in ("cwu", "cieplej wody", "ciepłej wody")):
                     data["setpoints"]["dhw"] = value
