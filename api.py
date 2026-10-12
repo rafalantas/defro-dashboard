@@ -167,8 +167,12 @@ def _read_snapshot() -> dict:
         if kind in (6, 40):
             header = translations.get(str(params.get("headerId", "")), "")
             status = translations.get(str(params.get("statusId", "")), "")
+            option_ids = params.get("options")
+            option_ids = option_ids if isinstance(option_ids, list) else []
+            options = [translations.get(str(option_id), "") for option_id in option_ids]
+            options = [option for option in options if option]
             if header or status:
-                data["status_tiles"].append({"header": header, "status": status})
+                data["status_tiles"].append({"header": header, "status": status, "options": options})
             if kind == 6:
                 unit_divisors = {4: 10, 5: 100, 7: 10, 23: 10, 26: 10, 33: 10}
                 for slot in ("widget1", "widget2"):
@@ -397,6 +401,13 @@ def _read_diagnostics() -> dict:
             "status": _label(params, translations, "statusId"),
             "params": params,
         }
+        if tile.get("type") in (6, 40):
+            option_ids = params.get("options")
+            option_ids = option_ids if isinstance(option_ids, list) else []
+            entry["options"] = [
+                {"id": option_id, "label": translations.get(str(option_id), "")}
+                for option_id in option_ids
+            ]
         if tile.get("type") == 6:
             entry["widgets"] = []
             for slot in ("widget1", "widget2"):
