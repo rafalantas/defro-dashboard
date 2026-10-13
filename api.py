@@ -11,6 +11,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -23,6 +24,8 @@ _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
 _statistics_cache: dict[str, tuple[float, float | None, str | None]] = {}
 _statistics_lock = threading.Lock()
+_chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
+_chart_cache_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
 
 
@@ -107,6 +110,126 @@ def _buffer_upper_temperature(udid: str, token: str) -> tuple[float | None, str 
     with _statistics_lock:
         _statistics_cache[udid] = (now, value, sampled_at)
     return value, sampled_at
+
+
+def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
+    """Fetch linear temperature history, combining monthly data if yearly range is unsupported."""
+    now = time.monotonic()
+    cache_key = (udid, period, year, month if period in ("month", "year") else 0)
+    with _chart_cache_lock:
+        cached = _chart_cache.get(cache_key)
+        if cached and now - cached[0] < 300:
+            return cached[1]
+
+    base = f"modules/{udid}/statistics/linear/range/"
+
+    def get_month(month_number: int) -> dict:
+        return _get(f"{base}month/month/{month_number}/year/{year}", token)
+
+    if period == "month":
+        body = get_month(month)
+    else:
+        try:
+            body = _get(f"{base}{period}", token)
+        except HTTPError as error:
+            if period != "year" or error.code != 422:
+                raise
+            # Some controller models document a yearly range but reject it.
+            # Assemble the calendar year from the explicit monthly endpoint.
+            import concurrent.futures
+            month_range = range(1, month + 1) if year == datetime.now().year else range(1, 13)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                months = list(pool.map(get_month, month_range))
+            history: dict[str, dict[str, float]] = {}
+            descriptions: dict[str, str] = {}
+            for monthly in months:
+                data = monthly.get("data") or {}
+                month_history = data.get("history") or {}
+                month_descriptions = data.get("descriptions") or []
+                for index, (series_id, points) in enumerate(month_history.items()):
+                    if isinstance(month_descriptions, list) and index < len(month_descriptions):
+                        descriptions[str(series_id)] = str(month_descriptions[index])
+                    target = history.setdefault(str(series_id), {})
+                    for point in points if isinstance(points, list) else []:
+                        if isinstance(point, dict) and point.get("x") is not None and point.get("y") is not None:
+                            target[str(point["x"])] = point["y"]
+            body = {"data": {"history": history, "descriptions": descriptions}}
+
+    data = body.get("data") or {}
+    history = data.get("history") or {}
+    raw_descriptions = data.get("descriptions") or []
+    if isinstance(raw_descriptions, list):
+        descriptions = {
+            str(series_id): str(raw_descriptions[index])
+            for index, series_id in enumerate(history)
+            if index < len(raw_descriptions)
+        }
+    elif isinstance(raw_descriptions, dict):
+        descriptions = {str(key): str(value) for key, value in raw_descriptions.items()}
+    else:
+        descriptions = {}
+
+    translations = _translations(token)
+    known_labels = {BUFFER_UPPER_SERIES_ID: "Temperatura bufora górna (C1)"}
+    series = []
+    for series_id, points in history.items():
+        if not isinstance(points, list):
+            continue
+        description = descriptions.get(str(series_id), str(series_id))
+        if description.startswith("|&^4fdkl|"):
+            label = description.split("|", 2)[-1]
+        else:
+            match = re.fullmatch(r"(\d+)(?::(\d+))?", description)
+            if match:
+                label = translations.get(match.group(1), known_labels.get(str(series_id), f"Seria {series_id}"))
+                if match.group(2):
+                    label = f"{label} · {match.group(2)}"
+            else:
+                label = description or known_labels.get(str(series_id), f"Seria {series_id}")
+        cleaned = []
+        for point in points:
+            if not isinstance(point, dict) or point.get("x") is None:
+                continue
+            value = _number(point.get("y"))
+            if value is not None:
+                cleaned.append({"x": str(point["x"]), "y": value})
+        if cleaned:
+            series.append({"id": str(series_id), "label": label, "points": cleaned})
+
+    result = {
+        "configured": True,
+        "connected": True,
+        "period": period,
+        "year": year,
+        "month": month if period == "month" else None,
+        "series": series,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _chart_cache_lock:
+        _chart_cache[cache_key] = (now, result)
+    return result
+
+
+def _read_statistics(period: str, year: int | None = None, month: int | None = None) -> dict:
+    if period not in ("day", "week", "month", "year"):
+        return {"configured": bool(_token()), "connected": False, "error": "Nieobsługiwany zakres statystyk"}
+    token = _token()
+    if not token:
+        return {"configured": False, "connected": False, "error": "Brak tokenu eModul"}
+    uid = _user_id(token)
+    modules = _get(f"users/{uid}/modules", token)
+    if not isinstance(modules, list) or not modules:
+        raise RuntimeError("Konto eModul nie zwróciło sterowników")
+    wanted = os.getenv("TECH_MODULE_ID", "").strip()
+    module = next((item for item in modules if str(item.get("udid", "")) == wanted), None) if wanted else modules[0]
+    if module is None or not module.get("udid"):
+        raise RuntimeError("TECH_MODULE_ID nie pasuje do sterownika na koncie eModul")
+    today = datetime.now()
+    selected_year = year or today.year
+    selected_month = month or today.month
+    if not 2000 <= selected_year <= 2100 or not 1 <= selected_month <= 12:
+        return {"configured": True, "connected": False, "error": "Nieprawidłowa data statystyk"}
+    return _linear_statistics(str(module["udid"]), token, period, selected_year, selected_month)
 
 
 def _read_snapshot() -> dict:
@@ -508,12 +631,27 @@ def snapshot() -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics"):
+        parsed = urlsplit(self.path)
+        path = parsed.path
+        if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics"):
             self.send_error(404)
             return
-        if self.path in ("/api/modules", "/api/diagnostics"):
+        if path == "/api/statistics":
+            query = parse_qs(parsed.query)
             try:
-                payload = _read_modules() if self.path == "/api/modules" else _read_diagnostics()
+                period = query.get("period", ["day"])[0]
+                year = int(query.get("year", [str(datetime.now().year)])[0])
+                month = int(query.get("month", [str(datetime.now().month)])[0])
+                payload = _read_statistics(period, year, month)
+            except (HTTPError, URLError, TimeoutError, OSError) as error:
+                status = error.code if isinstance(error, HTTPError) else None
+                message = f"eModul odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z eModul"
+                payload = {"configured": bool(_token()), "connected": False, "error": message}
+            except Exception as error:
+                payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
+        elif path in ("/api/modules", "/api/diagnostics"):
+            try:
+                payload = _read_modules() if path == "/api/modules" else _read_diagnostics()
             except HTTPError as error:
                 payload = {"configured": True, "connected": False, "error": f"eModul odrzucił żądanie (HTTP {error.code})"}
             except (URLError, TimeoutError, OSError):
@@ -522,7 +660,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
         else:
             payload = snapshot()
-            if self.path == "/api/health":
+            if path == "/api/health":
                 payload = {key: payload.get(key) for key in ("configured", "connected", "source", "error", "fetched_at")}
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
