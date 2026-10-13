@@ -20,6 +20,19 @@ API_BASE = "https://emodul.eu/api/v1/"
 POLL_CACHE_SECONDS = 20
 STATISTICS_CACHE_SECONDS = 90
 BUFFER_UPPER_SERIES_ID = "1856"  # eModul: "Temperatura bufora górna" (C1)
+# Stable Polish text IDs used by this controller's standard telemetry tiles.
+# Keep these as a fallback: a transient failure of /i18n/pl must not make live
+# temperatures and relay states disappear from the dashboard.
+FALLBACK_LABELS = {
+    "550": "Podajnik",
+    "571": "Pompa CO",
+    "573": "Pompa CWU",
+    "575": "Pompa cyrkulacyjna",
+    "791": "Temperatura spalin",
+    "795": "Temperatura zewnętrzna",
+    "1041": "Temperatura C.W.U.",
+    "1050": "Temperatura CO",
+}
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
 _statistics_cache: dict[str, tuple[float, float | None, str | None]] = {}
@@ -80,7 +93,8 @@ def _number(value, divisor: float = 1):
 
 
 def _label(params: dict, translations: dict[str, str], key: str = "txtId") -> str:
-    return translations.get(str(params.get(key, "")), "")
+    text_id = str(params.get(key, ""))
+    return translations.get(text_id) or FALLBACK_LABELS.get(text_id, "")
 
 
 def _buffer_upper_temperature(udid: str, token: str) -> tuple[float | None, str | None]:
