@@ -94,7 +94,7 @@ def _number(value, divisor: float = 1):
 
 def _label(params: dict, translations: dict[str, str], key: str = "txtId") -> str:
     text_id = str(params.get(key, ""))
-    return translations.get(text_id) or FALLBACK_LABELS.get(text_id, "")
+    return FALLBACK_LABELS.get(text_id) or translations.get(text_id, "")
 
 
 def _buffer_upper_temperature(udid: str, token: str) -> tuple[float | None, str | None]:
