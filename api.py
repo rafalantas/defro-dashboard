@@ -28,10 +28,17 @@ FALLBACK_LABELS = {
     "571": "Pompa CO",
     "573": "Pompa CWU",
     "575": "Pompa cyrkulacyjna",
+    "587": "Pompy równoległe",
     "791": "Temperatura spalin",
     "795": "Temperatura zewnętrzna",
+    "814": "Tryb pracy",
+    "233": "Czuwanie",
+    "1039": "Stan sterownika",
     "1041": "Temperatura C.W.U.",
+    "1042": "Grzałka",
     "1050": "Temperatura CO",
+    "1666": "Pokój dogrzany",
+    "1667": "CWU dogrzane",
 }
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
@@ -302,11 +309,11 @@ def _read_snapshot() -> dict:
         # Readiness notices may be returned either as plain text (type 40)
         # or as the status badge on a universal widget tile (type 6).
         if kind in (6, 40):
-            header = translations.get(str(params.get("headerId", "")), "")
-            status = translations.get(str(params.get("statusId", "")), "")
+            header = _label(params, translations, "headerId")
+            status = _label(params, translations, "statusId")
             option_ids = params.get("options")
             option_ids = option_ids if isinstance(option_ids, list) else []
-            options = [translations.get(str(option_id), "") for option_id in option_ids]
+            options = [FALLBACK_LABELS.get(str(option_id)) or translations.get(str(option_id), "") for option_id in option_ids]
             options = [option for option in options if option]
             if header or status:
                 data["status_tiles"].append({"header": header, "status": status, "options": options})
@@ -385,7 +392,11 @@ def _read_snapshot() -> dict:
                 "working": bool(params.get("workingStatus")),
             }
         elif kind == 31:
-            data["fuel"] = {"percent": params.get("percentage"), "hours": params.get("hours")}
+            hours = params.get("hours")
+            data["fuel"] = {
+                "percent": params.get("percentage"),
+                "hours": hours if isinstance(hours, (int, float)) and hours >= 0 else None,
+            }
         elif kind == 2:
             data["fire"] = params.get("workingStatus")
             data["fire_signal"] = _number(params.get("value"))
@@ -399,8 +410,8 @@ def _read_snapshot() -> dict:
                 "percent": params.get("percentage"),
             }
         elif kind == 40:
-            header = translations.get(str(params.get("headerId", "")), "")
-            status = translations.get(str(params.get("statusId", "")), "")
+            header = _label(params, translations, "headerId")
+            status = _label(params, translations, "statusId")
             if "tryb pracy" in header.casefold():
                 data["mode"] = status
             elif "stan sterownika" in header.casefold():
@@ -426,7 +437,7 @@ def _read_snapshot() -> dict:
             continue
         for item in menu_body.get("data", {}).get("elements", []):
             params = item.get("params") or {}
-            label = translations.get(str(item.get("txtId", "")), "")
+            label = FALLBACK_LABELS.get(str(item.get("txtId", ""))) or translations.get(str(item.get("txtId", "")), "")
             normalized = re.sub(r"\s+", " ", label.casefold().replace(".", ""))
             raw_value = params.get("value")
             value = _number(raw_value, 10 if params.get("format") == 2 else 1)
@@ -441,6 +452,10 @@ def _read_snapshot() -> dict:
             elif item.get("id") == 2208 or "obnizenie pokojowki" in normalized:
                 # Built-in valve 1 → Room regulator → Room thermostat setback.
                 data["valve"]["room_reduction"] = value
+            if item.get("id") == 2060:
+                data["setpoints"]["co"] = value
+            elif item.get("id") == 2061:
+                data["setpoints"]["dhw"] = value
             if "zadana" in normalized or "zadanej" in normalized or "nastawa" in normalized:
                 if any(term in normalized for term in ("cwu", "cieplej wody", "ciepłej wody")):
                     data["setpoints"]["dhw"] = value
@@ -549,7 +564,10 @@ def _read_diagnostics() -> dict:
             option_ids = params.get("options")
             option_ids = option_ids if isinstance(option_ids, list) else []
             entry["options"] = [
-                {"id": option_id, "label": translations.get(str(option_id), "")}
+                {
+                    "id": option_id,
+                    "label": FALLBACK_LABELS.get(str(option_id)) or translations.get(str(option_id), ""),
+                }
                 for option_id in option_ids
             ]
         if tile.get("type") == 6:
