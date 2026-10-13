@@ -40,6 +40,16 @@ FALLBACK_LABELS = {
     "1666": "Pokój dogrzany",
     "1667": "CWU dogrzane",
 }
+STATISTICS_LABELS = {
+    "789": "Temperatura pokoju bieżąca",
+    "791": "Temperatura spalin",
+    "795": "Temperatura zewnętrzna",
+    "992": "Zawór wbudowany 1",
+    "1041": "Temperatura C.W.U.",
+    "1050": "Temperatura CO",
+    "1856": "Temperatura bufora górna (C1)",
+    "3159": "Moc chwilowa",
+}
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
 _statistics_cache: dict[str, tuple[float, float | None, str | None]] = {}
@@ -191,7 +201,6 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         descriptions = {}
 
     translations = _translations(token)
-    known_labels = {BUFFER_UPPER_SERIES_ID: "Temperatura bufora górna (C1)"}
     series = []
     for series_id, points in history.items():
         if not isinstance(points, list):
@@ -202,11 +211,13 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         else:
             match = re.fullmatch(r"(\d+)(?::(\d+))?", description)
             if match:
-                label = translations.get(match.group(1), known_labels.get(str(series_id), f"Seria {series_id}"))
+                label = STATISTICS_LABELS.get(match.group(1)) or translations.get(
+                    match.group(1), STATISTICS_LABELS.get(str(series_id), f"Seria {series_id}")
+                )
                 if match.group(2):
                     label = f"{label} · {match.group(2)}"
             else:
-                label = description or known_labels.get(str(series_id), f"Seria {series_id}")
+                label = description or STATISTICS_LABELS.get(str(series_id), f"Seria {series_id}")
         cleaned = []
         for point in points:
             if not isinstance(point, dict) or point.get("x") is None:
