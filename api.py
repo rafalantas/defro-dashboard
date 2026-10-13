@@ -124,7 +124,7 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
     base = f"modules/{udid}/statistics/linear/range/"
 
     def get_month(month_number: int) -> dict:
-        return _get(f"{base}month/month/{month_number}/year/{year}", token)
+        return _get(f"{base}month/{month_number}/year/{year}", token)
 
     if period == "month":
         body = get_month(month)
