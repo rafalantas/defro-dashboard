@@ -10,6 +10,7 @@ Integracja z eModul działa tylko do odczytu. Dashboard nie steruje kotłem, pom
 
 - Animowany, responsywny schemat instalacji i przepływów.
 - Temperatury oraz stany dostępne z kafelków eModul.
+- Wykres historii temperatur i pozostałych serii eModul dla dnia, tygodnia, miesiąca i roku, z eksportem zaznaczonych serii do CSV.
 - Stan pomp, wentylatora, podajnika, zaworu, zasobnika CWU i sterownika — zależnie od danych udostępnionych dla danego urządzenia.
 - Tryb demonstracyjny bez tokenu eModul.
 - Odczyt nazw sterowników i ich identyfikatorów przez `/api/modules`.
@@ -79,10 +80,11 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | --- | --- |
 | `/api/health` | Status konfiguracji i połączenia |
 | `/api/status` | Bieżące dane sterownika używane przez dashboard |
+| `/api/statistics?period=day\|week\|month\|year` | Historyczne serie liniowe eModul do wykresów |
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
 | `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
 
-Backend pobiera dane eModul co około 30 sekund; odpowiedź jest buforowana przez 20 sekund.
+Backend pobiera dane eModul co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów jest buforowana osobno przez 5 minut.
 Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
