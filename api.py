@@ -28,6 +28,7 @@ FALLBACK_LABELS = {
     "571": "Pompa CO",
     "573": "Pompa CWU",
     "575": "Pompa cyrkulacyjna",
+    "789": "Temperatura pokoju bieżąca",
     "587": "Pompy równoległe",
     "791": "Temperatura spalin",
     "795": "Temperatura zewnętrzna",
@@ -288,7 +289,7 @@ def _read_snapshot() -> dict:
     translations = _translations(token)
 
     data = {
-        "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None, "buffer_upper": None},
+        "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None, "room": None, "buffer_upper": None},
         "pumps": {"floor": None, "valve4d": None, "dhw": None, "circulation": None},
         "valve": {
             "current": None,
@@ -307,7 +308,7 @@ def _read_snapshot() -> dict:
         "mode": None,
         "controller_status": None,
         "status_tiles": [],
-        "setpoints": {"co": None, "dhw": None},
+        "setpoints": {"co": None, "dhw": None, "room": None},
         "hysteresis": {"boiler": None, "dhw": None, "valve": None},
         "other_tiles": [],
     }
@@ -360,6 +361,8 @@ def _read_snapshot() -> dict:
                 data["temperatures"]["flue"] = value
             elif "zewnętrz" in normalized or "zewnetrz" in normalized:
                 data["temperatures"]["outdoor"] = value
+            elif "temperatura pokoju" in normalized or "temperatura pomieszczenia" in normalized:
+                data["temperatures"]["room"] = value
             elif "powrot" in normalized:
                 data["temperatures"]["return"] = value
             elif label:
@@ -467,6 +470,8 @@ def _read_snapshot() -> dict:
                 data["setpoints"]["co"] = value
             elif item.get("id") == 2061:
                 data["setpoints"]["dhw"] = value
+            elif item.get("id") == 2089:
+                data["setpoints"]["room"] = value
             if "zadana" in normalized or "zadanej" in normalized or "nastawa" in normalized:
                 if any(term in normalized for term in ("cwu", "cieplej wody", "ciepłej wody")):
                     data["setpoints"]["dhw"] = value
