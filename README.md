@@ -84,7 +84,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
 | `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
 
-Backend pobiera dane eModul co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów jest buforowana osobno przez 5 minut.
+Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów eModul jest buforowana przez 5 minut. Otwarcie zaworu 4D (`openingPercentage`) jest dodatkowo zapisywane co około 30 sekund do woluminu `api_history` i widoczne na wykresach od momentu wdrożenia tej funkcji; wcześniejszych próbek sterownik nie udostępnia. Wartość lokalnej bazy można zmienić zmienną `THERMOFLOW_HISTORY_DB` (domyślnie `/data/thermoflow.sqlite3`).
 Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
@@ -93,6 +93,7 @@ Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul 
 | --- | --- | --- |
 | `TECH_API_TOKEN` | Tak dla danych live | Token Bearer eModul. Bez niego dashboard działa w trybie demo. |
 | `TECH_MODULE_ID` | Nie | `udid` sterownika wybranego z `/api/modules`. Puste pole wybiera pierwszy sterownik. |
+| `THERMOFLOW_HISTORY_DB` | Nie | Ścieżka bazy SQLite dla próbek otwarcia zaworu 4D; domyślnie `/data/thermoflow.sqlite3`. |
 | `PORTAINER_WEBHOOK_URL` | Nie | Sekret GitHub Actions do wywołania webhooka po publikacji obrazów; wymaga osiągalnego adresu z runnera. |
 
 ## Struktura repozytorium
