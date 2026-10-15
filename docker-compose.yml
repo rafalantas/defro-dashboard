@@ -18,4 +18,9 @@ services:
       TECH_MODULE_ID: ${TECH_MODULE_ID:-}
     expose:
       - "8000"
+    volumes:
+      - api_history:/data
     restart: unless-stopped
+
+volumes:
+  api_history:

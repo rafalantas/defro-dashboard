@@ -7,9 +7,11 @@ import binascii
 import json
 import os
 import re
+import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from urllib.error import HTTPError, URLError
@@ -58,6 +60,9 @@ _statistics_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
+_history_lock = threading.Lock()
+VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
+VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
 
 
 def _token() -> str:
@@ -144,6 +149,61 @@ def _buffer_upper_temperature(udid: str, token: str) -> tuple[float | None, str 
     return value, sampled_at
 
 
+def _history_connection():
+    path = os.getenv("THERMOFLOW_HISTORY_DB", "/data/thermoflow.sqlite3")
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    return sqlite3.connect(path, timeout=10)
+
+
+def _record_valve_opening(payload: dict) -> None:
+    """Persist the live 4D valve opening because eModul omits it from history."""
+    data = payload.get("data") or {}
+    valve = data.get("valve") or {}
+    opening = _number(valve.get("opening"))
+    if opening is None:
+        return
+    try:
+        sampled_at = datetime.fromisoformat(payload["fetched_at"]).timestamp()
+    except (KeyError, TypeError, ValueError):
+        sampled_at = time.time()
+    try:
+        with _history_lock, _history_connection() as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS valve_opening (sampled_at REAL NOT NULL, value REAL NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO valve_opening (sampled_at, value) VALUES (?, ?)",
+                (sampled_at, opening),
+            )
+    except (OSError, sqlite3.Error):
+        # Dashboard status remains available even if local history storage fails.
+        return
+
+
+def _valve_opening_points(period: str, year: int, month: int) -> list[dict]:
+    local_tz = ZoneInfo("Europe/Warsaw")
+    start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
+    if period == "year":
+        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
+    elif month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=local_tz)
+    try:
+        with _history_lock, _history_connection() as connection:
+            rows = connection.execute(
+                "SELECT sampled_at, value FROM valve_opening "
+                "WHERE sampled_at >= ? AND sampled_at < ? ORDER BY sampled_at",
+                (start.timestamp(), end.timestamp()),
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return []
+    return [
+        {"x": datetime.fromtimestamp(sampled_at, timezone.utc).isoformat(), "y": value}
+        for sampled_at, value in rows
+    ]
+
+
 def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
     """Fetch linear temperature history, combining monthly data if yearly range is unsupported."""
     now = time.monotonic()
@@ -228,6 +288,14 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
                 cleaned.append({"x": str(point["x"]), "y": value})
         if cleaned:
             series.append({"id": str(series_id), "label": label, "points": cleaned})
+
+    opening_points = _valve_opening_points(period, year, month)
+    if opening_points:
+        series.append({
+            "id": VALVE_OPENING_SERIES_ID,
+            "label": VALVE_OPENING_SERIES_LABEL,
+            "points": opening_points,
+        })
 
     result = {
         "configured": True,
@@ -662,6 +730,8 @@ def snapshot() -> dict:
             return _cache["payload"]
         try:
             payload = _read_snapshot()
+            if payload.get("connected"):
+                _record_valve_opening(payload)
         except HTTPError as error:
             payload = {
                 "configured": True,
@@ -723,6 +793,14 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+def _poll_forever() -> None:
+    """Keep live-derived history recording even when no dashboard tab is open."""
+    while True:
+        snapshot()
+        time.sleep(30)
+
+
 if __name__ == "__main__":
+    threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", 8000), Handler)
     server.serve_forever()
