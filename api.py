@@ -50,7 +50,7 @@ STATISTICS_LABELS = {
     "992": "Zawór wbudowany 1",
     "1041": "Temperatura C.W.U.",
     "1050": "Temperatura CO",
-    "1856": "Temperatura bufora górna (C1)",
+    "1856": "Temperatura podłogówki (C1)",
     "3159": "Moc chwilowa",
 }
 _cache: dict = {"updated": 0.0, "payload": None}
