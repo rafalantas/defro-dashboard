@@ -475,9 +475,14 @@ def _read_snapshot() -> dict:
             }
         elif kind == 31:
             hours = params.get("hours")
+            # eModul sends this type-31 total-hours field as a signed byte.
+            # Convert wrapped values (for example -106 => 150 h) back to
+            # their unsigned total before the dashboard formats days/hours.
+            if isinstance(hours, (int, float)) and not isinstance(hours, bool) and -128 <= hours < 0:
+                hours += 256
             data["fuel"] = {
                 "percent": params.get("percentage"),
-                "hours": hours if isinstance(hours, (int, float)) and hours >= 0 else None,
+                "hours": hours if isinstance(hours, (int, float)) and not isinstance(hours, bool) and hours >= 0 else None,
             }
         elif kind == 2:
             data["fire"] = params.get("workingStatus")
