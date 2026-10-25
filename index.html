@@ -37,9 +37,9 @@
           <path id="floorDhwReturnPath" d="M1035 500 H350"/>
           <path id="radiatorLoop" d="M250 115 H450 V155 V255 V350 H500 H585 V390 V420 H700 V220 H490 H410 H350 V500 H250 V265 H225 V220 H250 V115"/>
           <path id="dhwLoop" d="M250 115 H1120 V204 V254 V400 H1155 V462 C1155 466 1095 466 1095 474 S1155 482 1155 486 S1095 500 1080 500 H1055 H350 H250 V265 H225 V220 H250 V115"/>
-          <path id="circLoop" d="M1170 430 H1250 V315 H1290 H1320 V335 V530 H1252 H1230 H1208 H1170 V530 H1145 V430 H1170"/>
+          <path id="circLoop" d="M1170 430 H1250 V315 H1290 H1320 V335 V530 H1145 V430 H1170"/>
         </defs>
-        <path class="pipe" d="M225 220 H250 V115 H1120 M450 115 V155 M800 115 V155 M1120 115 V206 M450 255 V350 H500 M585 390 V420 H700 V220 H490 M410 220 H350 V500 H250 V265 H225 M800 255 V350 H850 M935 400 V430 H1045 V205 H850 M1045 430 V500 M1120 254 V400 M1170 430 H1250 V315 H1290 M1320 335 V530 H1252 M1208 530 H1170 M1170 530 H1145 V430 H1170 M1080 500 H1035"/>
+        <path class="pipe" d="M225 220 H250 V115 H1120 M450 115 V155 M800 115 V155 M1120 115 V206 M450 255 V350 H500 M585 390 V420 H700 V220 H490 M410 220 H350 V500 H250 V265 H225 M800 255 V350 H850 M935 400 V430 H1045 V205 H850 M1045 430 V500 M1120 254 V400 M1170 430 H1250 V315 H1290 M1320 335 V530 H1145 V430 H1170 M1080 500 H1035"/>
         <path class="pipe" d="M350 500 H1055"/><path class="flow cold" data-pump="floorDhwReturn" d="M1035 500 H350"/>
         <path class="flow hot" data-pump="system" d="M225 220 H250 V115 H1120"/>
         <path class="flow hot" data-pump="rad" d="M450 115 V155"/><path class="flow hot" data-pump="floor" d="M800 115 V155"/><path class="flow hot" data-pump="dhw" d="M1120 115 V204"/>
@@ -48,7 +48,7 @@
         <path class="flow cold" data-pump="rad" d="M410 220 H350 V500"/><path class="flow cold" data-pump="system" marker-end="url(#arrBlue)" d="M350 500 H250 V265 H225"/>
         <text class="pipe-label" x="925" y="454" text-anchor="middle" style="font-size:8px">POWRÓT WSPÓLNY DO KOTŁA</text>
         <path class="flow warm" data-pump="dhw" marker-end="url(#arrWarm)" d="M1120 254 V400"/><path class="flow cold dhw-return-flow" data-pump="dhw" d="M1080 500 H1035"/>
-        <path class="flow hot" data-pump="circ" d="M1170 430 H1250 V315 H1290"/><path class="flow cold" data-pump="circ" d="M1320 335 V530 H1252 M1208 530 H1145 V430 H1170"/>
+        <path class="flow hot" data-pump="circ" d="M1170 430 H1250 V315 H1290"/><path class="flow cold" data-pump="circ" d="M1320 335 V530 H1145 V430 H1170"/>
         <g id="beadFloorDhwReturn">
           <circle class="water-bead bead-teal" r="4"><animateMotion dur="4.8s" repeatCount="indefinite"><mpath href="#floorDhwReturnPath"/></animateMotion></circle>
         </g>
@@ -87,7 +87,7 @@
         <g><circle class="pump" cx="1120" cy="230" r="24"/><path id="dhwRotor" class="pump-icon pump-rotor" d="M1112 216 Q1133 230 1112 244Z"/><text class="equip-sub" x="1120" y="270" text-anchor="middle">POMPA CWU</text></g>
         <g><rect class="water" x="1080" y="400" width="90" height="130" rx="28"/><text class="equip-title" x="1125" y="435" text-anchor="middle">CWU</text><text class="equip-sub" x="1125" y="454" text-anchor="middle">ZASOBNIK</text><path d="M1120 400 H1155 V462 C1155 466 1095 466 1095 474 S1155 482 1155 486 S1095 500 1080 500" fill="none" stroke="#d99f54" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path class="flow warm" data-pump="dhw" marker-end="url(#arrWarm)" d="M1120 400 H1155 V462 C1155 466 1095 466 1095 474 S1155 482 1155 486 S1095 500 1080 500"/><text class="temp compact-temp" id="dhwTemp" x="1125" y="519" text-anchor="middle">48 / 50°C</text></g>
         <g aria-label="Kran ciepłej wody"><text class="equip-title" x="1290" y="275" text-anchor="middle">KRAN CWU</text><path d="M1290 298 V290 C1290 285 1294 282 1299 282 H1309 V290 H1300 V300 M1309 290 H1318 V303 H1310" fill="none" stroke="#dce8e9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M1298 282 V278 H1307 V282" fill="none" stroke="#91aab2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M1314 307 C1314 307 1310 311 1310 314 A4 4 0 0 0 1318 314 C1318 311 1314 307 1314 307Z" fill="#6bbcff"/></g>
-        <g><circle class="pump" cx="1250" cy="372" r="22"/><path id="circRotor" class="pump-icon pump-rotor" d="M1243 359 Q1262 372 1243 385Z"/><text class="equip-sub" x="1280" y="370">POMPA</text><text class="equip-sub" x="1280" y="383">CYRKULACYJNA</text></g>
+        <g><circle class="pump" cx="1210" cy="430" r="22"/><path id="circRotor" class="pump-icon pump-rotor" d="M1203 417 Q1222 430 1203 443Z"/><text class="equip-sub" x="1243" y="459">POMPA</text><text class="equip-sub" x="1243" y="472">CYRKULACYJNA</text></g>
         <g><text class="equip-title" x="1320" y="65" text-anchor="middle">ZEWNĘTRZNA</text><text class="temp" id="sensorOutdoorSvg" x="1320" y="87" text-anchor="middle">—</text><circle cx="1320" cy="112" r="8" fill="#182832" stroke="#6bbcff" stroke-width="2"/><circle cx="1320" cy="112" r="3" fill="#6bbcff"/></g>
         <circle id="floorReturnJunction" cx="1045" cy="430" r="3.5" fill="#6bbcff"/><circle class="node" cx="250" cy="115" r="5"/><circle cx="250" cy="500" r="10" fill="#182832" stroke="#6bbcff" stroke-width="2.5"/><circle cx="250" cy="500" r="3.5" fill="#6bbcff"/><text class="equip-sub" x="250" y="528" text-anchor="middle">CZUJNIK POWROTU · <tspan id="returnTempSvg">—</tspan></text>
       </svg></div>
