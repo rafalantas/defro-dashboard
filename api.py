@@ -63,6 +63,8 @@ _i18n_cache: dict[str, str] | None = None
 _history_lock = threading.Lock()
 VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
 VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
+RETURN_TEMPERATURE_SERIES_ID = "thermoflow-return-temperature"
+RETURN_TEMPERATURE_SERIES_LABEL = "Temperatura powrotu"
 
 
 def _token() -> str:
@@ -155,12 +157,14 @@ def _history_connection():
     return sqlite3.connect(path, timeout=10)
 
 
-def _record_valve_opening(payload: dict) -> None:
-    """Persist the live 4D valve opening because eModul omits it from history."""
+def _record_live_history(payload: dict) -> None:
+    """Persist live valve opening and return temperature for chart history."""
     data = payload.get("data") or {}
     valve = data.get("valve") or {}
     opening = _number(valve.get("opening"))
-    if opening is None:
+    temperatures = data.get("temperatures") or {}
+    return_temperature = _number(temperatures.get("return"))
+    if opening is None and return_temperature is None:
         return
     try:
         sampled_at = datetime.fromisoformat(payload["fetched_at"]).timestamp()
@@ -172,15 +176,26 @@ def _record_valve_opening(payload: dict) -> None:
                 "CREATE TABLE IF NOT EXISTS valve_opening (sampled_at REAL NOT NULL, value REAL NOT NULL)"
             )
             connection.execute(
-                "INSERT INTO valve_opening (sampled_at, value) VALUES (?, ?)",
-                (sampled_at, opening),
+                "CREATE TABLE IF NOT EXISTS return_temperature (sampled_at REAL NOT NULL, value REAL NOT NULL)"
             )
+            if opening is not None:
+                connection.execute(
+                    "INSERT INTO valve_opening (sampled_at, value) VALUES (?, ?)",
+                    (sampled_at, opening),
+                )
+            if return_temperature is not None:
+                connection.execute(
+                    "INSERT INTO return_temperature (sampled_at, value) VALUES (?, ?)",
+                    (sampled_at, return_temperature),
+                )
     except (OSError, sqlite3.Error):
         # Dashboard status remains available even if local history storage fails.
         return
 
 
-def _valve_opening_points(period: str, year: int, month: int) -> list[dict]:
+def _local_history_points(table: str, period: str, year: int, month: int) -> list[dict]:
+    if table not in {"valve_opening", "return_temperature"}:
+        raise ValueError("Unsupported local history table")
     local_tz = ZoneInfo("Europe/Warsaw")
     start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
     if period == "year":
@@ -192,7 +207,7 @@ def _valve_opening_points(period: str, year: int, month: int) -> list[dict]:
     try:
         with _history_lock, _history_connection() as connection:
             rows = connection.execute(
-                "SELECT sampled_at, value FROM valve_opening "
+                f"SELECT sampled_at, value FROM {table} "
                 "WHERE sampled_at >= ? AND sampled_at < ? ORDER BY sampled_at",
                 (start.timestamp(), end.timestamp()),
             ).fetchall()
@@ -289,12 +304,20 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         if cleaned:
             series.append({"id": str(series_id), "label": label, "points": cleaned})
 
-    opening_points = _valve_opening_points(period, year, month)
+    opening_points = _local_history_points("valve_opening", period, year, month)
     if opening_points:
         series.append({
             "id": VALVE_OPENING_SERIES_ID,
             "label": VALVE_OPENING_SERIES_LABEL,
             "points": opening_points,
+        })
+
+    return_points = _local_history_points("return_temperature", period, year, month)
+    if return_points:
+        series.append({
+            "id": RETURN_TEMPERATURE_SERIES_ID,
+            "label": RETURN_TEMPERATURE_SERIES_LABEL,
+            "points": return_points,
         })
 
     result = {
@@ -736,7 +759,7 @@ def snapshot() -> dict:
         try:
             payload = _read_snapshot()
             if payload.get("connected"):
-                _record_valve_opening(payload)
+                _record_live_history(payload)
         except HTTPError as error:
             payload = {
                 "configured": True,

@@ -96,7 +96,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
 | `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
 
-Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów eModul jest buforowana przez 5 minut. Otwarcie zaworu 4D (`openingPercentage`) jest dodatkowo zapisywane co około 30 sekund do woluminu `api_history` i widoczne na wykresach od momentu wdrożenia tej funkcji; wcześniejszych próbek sterownik nie udostępnia. Wartość lokalnej bazy można zmienić zmienną `THERMOFLOW_HISTORY_DB` (domyślnie `/data/thermoflow.sqlite3`).
+Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów eModul jest buforowana przez 5 minut. Otwarcie zaworu 4D (`openingPercentage`) oraz temperaturę powrotu backend zapisuje dodatkowo co około 30 sekund do woluminu `api_history`. Te lokalne serie są widoczne na wykresach od wdrożenia odpowiedniej funkcji; wcześniejszych próbek nie da się odtworzyć z lokalnej bazy. Wartość lokalnej bazy można zmienić zmienną `THERMOFLOW_HISTORY_DB` (domyślnie `/data/thermoflow.sqlite3`).
 Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
