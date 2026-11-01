@@ -27,7 +27,12 @@ services:
     container_name: defro-dashboard-cloudflared
     profiles:
       - cloudflare
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       - thermoflow
     restart: unless-stopped
