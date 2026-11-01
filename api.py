@@ -163,7 +163,10 @@ def _record_live_history(payload: dict) -> None:
     valve = data.get("valve") or {}
     opening = _number(valve.get("opening"))
     temperatures = data.get("temperatures") or {}
-    return_temperature = _number(temperatures.get("return"))
+    return_value = temperatures.get("return")
+    if return_value is None:
+        return_value = valve.get("return")
+    return_temperature = _number(return_value)
     if opening is None and return_temperature is None:
         return
     try:
