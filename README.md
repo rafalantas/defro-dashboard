@@ -22,8 +22,9 @@ Integracja z eModul działa tylko do odczytu. Dashboard nie steruje kotłem, pom
 | --- | --- | --- |
 | `defro-dashboard` | Nginx i interfejs WWW | Port `5001` na hoście |
 | `defro-dashboard-api` | Backend Python, odczyt eModul | Tylko wewnątrz sieci Docker |
+| `defro-dashboard-cloudflared` | Opcjonalny tunel Cloudflare | Profil Compose `cloudflare`, bez publikowania portu |
 
-Przeglądarka łączy się z API przez Nginx. Token eModul pozostaje w środowisku kontenera API i nie jest wysyłany do przeglądarki.
+Przeglądarka łączy się z API przez Nginx. Token eModul pozostaje w środowisku kontenera API i nie jest wysyłany do przeglądarki. Tunel kieruje do Nginx; ścieżki `/api/...` dashboardu są dostępne przez ten sam adres, ale kontener API nie dostaje osobnego publicznego portu.
 
 ## Wdrożenie w Portainerze
 
@@ -36,6 +37,17 @@ Stack używa gotowych obrazów z GHCR. Workflow GitHub Actions publikuje je po k
 2. Podaj repozytorium `https://github.com/rafalantas/defro-dashboard`, gałąź `main` i ścieżkę Compose `docker-compose.yml`.
 3. Dodaj zmienną stacka `TECH_API_TOKEN` z aktualnym tokenem eModul.
 4. Wdróż stack. Panel będzie dostępny pod `http://ADRES-DOCKERA:5001`.
+
+### Dostęp przez Cloudflare Tunnel
+
+Tunel jest opcjonalny i nie wymaga przekierowania portów na routerze. W Cloudflare utwórz tunel **Cloudflared**, skopiuj jego token, a następnie w Portainerze dodaj do zmiennych stacka:
+
+- `CLOUDFLARE_TUNNEL_TOKEN` — token tunelu z Cloudflare.
+- `COMPOSE_PROFILES` — wartość `cloudflare`, aby uruchomić kontener tunelu.
+
+W konfiguracji tunelu dodaj **Public Hostname** dla swojej domeny i ustaw usługę na `http://thermoflow:80`. To wewnętrzny adres serwisu dashboardu w sieci Compose. Ustaw też w Cloudflare Access regułę logowania (np. dozwolone adresy e-mail), żeby dashboard i jego ścieżki API nie były publicznie dostępne dla każdego. Po zapisaniu zmian zaktualizuj stack w Portainerze; kontener `defro-dashboard-cloudflared` połączy się z Cloudflare. Port `5001` pozostaje dostępny lokalnie tak jak wcześniej.
+
+Nie kieruj tunelu na API, Docker Engine ani Portainera. Ten stack udostępnia przez tunel tylko interfejs dashboardu wraz z jego wymaganym proxy API.
 
 Jeśli obrazy GHCR są prywatne, dodaj GHCR w Portainerze jako registry z prawem pobierania pakietów. Nie umieszczaj tokenu eModul w repozytorium, pliku Compose ani w kodzie strony.
 
@@ -93,6 +105,8 @@ Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul 
 | --- | --- | --- |
 | `TECH_API_TOKEN` | Tak dla danych live | Token Bearer eModul. Bez niego dashboard działa w trybie demo. |
 | `TECH_MODULE_ID` | Nie | `udid` sterownika wybranego z `/api/modules`. Puste pole wybiera pierwszy sterownik. |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Nie | Token Cloudflare Tunnel; używany tylko przy aktywnym profilu `cloudflare`. |
+| `COMPOSE_PROFILES` | Nie | Ustaw `cloudflare`, aby uruchomić opcjonalny kontener tunelu. |
 | `THERMOFLOW_HISTORY_DB` | Nie | Ścieżka bazy SQLite dla próbek otwarcia zaworu 4D; domyślnie `/data/thermoflow.sqlite3`. |
 | `PORTAINER_WEBHOOK_URL` | Nie | Sekret GitHub Actions do wywołania webhooka po publikacji obrazów; wymaga osiągalnego adresu z runnera. |
 
@@ -108,6 +122,7 @@ Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul 
 ├── Dockerfile                    # obraz frontendu
 ├── Dockerfile.api                # obraz backendu
 ├── docker-compose.yml            # konfiguracja Portainera / GHCR
+│                                 # oraz opcjonalny Cloudflare Tunnel
 ├── docker-compose.local.yml      # lokalne budowanie obrazów
 ├── .env.example                  # szablon lokalnej konfiguracji
 ├── .dockerignore
