@@ -22,5 +22,15 @@ services:
       - api_history:/data
     restart: unless-stopped
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: defro-dashboard-cloudflared
+    profiles:
+      - cloudflare
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - thermoflow
+    restart: unless-stopped
+
 volumes:
   api_history:
