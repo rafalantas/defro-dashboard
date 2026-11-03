@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 
 API_BASE = "https://emodul.eu/api/v1/"
 POLL_CACHE_SECONDS = 20
-STATISTICS_CACHE_SECONDS = 90
+STATISTICS_CACHE_SECONDS = 30
 BUFFER_UPPER_SERIES_ID = "1856"  # eModul: "Temperatura bufora górna" (C1)
 # Stable Polish text IDs used by this controller's standard telemetry tiles.
 # Keep these as a fallback: a transient failure of /i18n/pl must not make live
@@ -55,7 +55,7 @@ STATISTICS_LABELS = {
 }
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
-_statistics_cache: dict[str, tuple[float, float | None, str | None]] = {}
+_statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None]] = {}
 _statistics_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
@@ -123,33 +123,32 @@ def _label(params: dict, translations: dict[str, str], key: str = "txtId") -> st
     return FALLBACK_LABELS.get(text_id) or translations.get(text_id, "")
 
 
-def _buffer_upper_temperature(udid: str, token: str) -> tuple[float | None, str | None]:
-    """Read the newest C1 / upper-buffer value from today's statistics."""
+def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, float | None, str | None]:
+    """Read the latest upper-buffer temperature and instantaneous boiler power."""
     now = time.monotonic()
     with _statistics_lock:
         cached = _statistics_cache.get(udid)
         if cached and now - cached[0] < STATISTICS_CACHE_SECONDS:
-            return cached[1], cached[2]
+            return cached[1], cached[2], cached[3], cached[4]
 
-    value = None
-    sampled_at = None
+    values = {BUFFER_UPPER_SERIES_ID: (None, None), "3159": (None, None)}
     try:
         body = _get(f"modules/{udid}/statistics/linear/range/day", token)
         history = (body.get("data") or {}).get("history") or {}
-        points = history.get(BUFFER_UPPER_SERIES_ID) or []
-        points = [point for point in points if isinstance(point, dict) and point.get("y") is not None]
-        if points:
-            latest = max(points, key=lambda point: str(point.get("x", "")))
-            value = _number(latest.get("y"))
-            sampled_at = str(latest.get("x", "")) or None
+        for series_id in values:
+            points = history.get(series_id) or []
+            points = [point for point in points if isinstance(point, dict) and point.get("y") is not None]
+            if points:
+                latest = max(points, key=lambda point: str(point.get("x", "")))
+                values[series_id] = (_number(latest.get("y")), str(latest.get("x", "")) or None)
     except Exception:
         # Statistics are supplementary; a chart endpoint failure must not
         # interrupt the ordinary live telemetry.
         pass
 
     with _statistics_lock:
-        _statistics_cache[udid] = (now, value, sampled_at)
-    return value, sampled_at
+        _statistics_cache[udid] = (now, *values[BUFFER_UPPER_SERIES_ID], *values["3159"])
+    return *values[BUFFER_UPPER_SERIES_ID], *values["3159"]
 
 
 def _history_connection():
@@ -435,6 +434,8 @@ def _read_snapshot() -> dict:
 
     data = {
         "temperatures": {"co": None, "dhw": None, "flue": None, "outdoor": None, "room": None, "buffer_upper": None},
+        "boiler_power_kw": None,
+        "boiler_power_at": None,
         "pumps": {"floor": None, "valve4d": None, "dhw": None, "circulation": None},
         "valve": {
             "current": None,
@@ -588,9 +589,12 @@ def _read_snapshot() -> dict:
                 "version": module.get("version"),
             }
 
-    buffer_upper, buffer_upper_at = _buffer_upper_temperature(udid, token)
+    buffer_upper, buffer_upper_at, boiler_power_kw, boiler_power_at = _live_statistics(udid, token)
     data["temperatures"]["buffer_upper"] = buffer_upper
     data["temperatures"]["buffer_upper_at"] = buffer_upper_at
+    # eModul's series 3159 ("Moc chwilowa") is already expressed in kW.
+    data["boiler_power_kw"] = boiler_power_kw
+    data["boiler_power_at"] = boiler_power_at
 
     # User/installer menus are read-only here. They can expose boiler/DHW
     # setpoints that are not included in the dashboard temperature tiles.
