@@ -206,20 +206,12 @@ def _record_live_history(payload: dict) -> None:
                     "INSERT INTO return_temperature (sampled_at, value) VALUES (?, ?)",
                     (sampled_at, return_temperature),
                 )
-            latest = connection.execute(
-                "SELECT sampled_at, floor, valve4d, dhw, circulation FROM pump_state "
-                "ORDER BY sampled_at DESC LIMIT 1"
-            ).fetchone()
             current_tuple = tuple(pump_values[key] for key in PUMP_HISTORY_COLUMNS)
-            previous_tuple = tuple(latest[1:]) if latest else None
-            # Keep a five-minute heartbeat for stable states and record every
-            # observed transition so long-range CSV exports stay compact.
-            if latest is None or current_tuple != previous_tuple or sampled_at - latest[0] >= 300:
-                connection.execute(
-                    "INSERT INTO pump_state (sampled_at, floor, valve4d, dhw, circulation) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (sampled_at, *current_tuple),
-                )
+            connection.execute(
+                "INSERT INTO pump_state (sampled_at, floor, valve4d, dhw, circulation) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (sampled_at, *current_tuple),
+            )
     except (OSError, sqlite3.Error):
         # Dashboard status remains available even if local history storage fails.
         return
