@@ -10,6 +10,7 @@ import re
 import sqlite3
 import threading
 import time
+import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -55,7 +56,7 @@ STATISTICS_LABELS = {
 }
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
-_statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None]] = {}
+_statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
@@ -123,32 +124,78 @@ def _label(params: dict, translations: dict[str, str], key: str = "txtId") -> st
     return FALLBACK_LABELS.get(text_id) or translations.get(text_id, "")
 
 
-def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, float | None, str | None]:
-    """Read the latest upper-buffer temperature and instantaneous boiler power."""
+def _capture_controller_metric(data: dict, label: str, value, at: str | None = None) -> None:
+    normalized = _normal_text(label)
+    metric = None
+    divisor = 1
+    if "podajnik" in normalized and ("temp" in normalized or "temperatur" in normalized):
+        metric, divisor = "feeder_temperature_c", 10
+    elif "zuzycie paliwa" in normalized and ("chwil" in normalized or "aktual" in normalized):
+        metric = "instant_fuel_consumption"
+    if metric and value is not None:
+        data["controller_metrics"][metric] = {"value": _number(value, divisor), "at": at, "label": label}
+
+
+def _normal_text(value: str) -> str:
+    return "".join(
+        char for char in unicodedata.normalize("NFD", value.casefold())
+        if unicodedata.category(char) != "Mn"
+    )
+
+
+def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, float | None, str | None, dict]:
+    """Read known live series and discover feeder/fuel metrics by their API labels."""
     now = time.monotonic()
     with _statistics_lock:
         cached = _statistics_cache.get(udid)
         if cached and now - cached[0] < STATISTICS_CACHE_SECONDS:
-            return cached[1], cached[2], cached[3], cached[4]
+            return cached[1], cached[2], cached[3], cached[4], cached[5]
 
     values = {BUFFER_UPPER_SERIES_ID: (None, None), "3159": (None, None)}
+    discovered: dict = {}
     try:
         body = _get(f"modules/{udid}/statistics/linear/range/day", token)
-        history = (body.get("data") or {}).get("history") or {}
+        stats_data = body.get("data") or {}
+        history = stats_data.get("history") or {}
+        raw_descriptions = stats_data.get("descriptions") or []
+        if isinstance(raw_descriptions, list):
+            descriptions = {str(key): str(raw_descriptions[index]) for index, key in enumerate(history) if index < len(raw_descriptions)}
+        elif isinstance(raw_descriptions, dict):
+            descriptions = {str(key): str(value) for key, value in raw_descriptions.items()}
+        else:
+            descriptions = {}
+        translations = _translations(token)
         for series_id in values:
             points = history.get(series_id) or []
             points = [point for point in points if isinstance(point, dict) and point.get("y") is not None]
             if points:
                 latest = max(points, key=lambda point: str(point.get("x", "")))
                 values[series_id] = (_number(latest.get("y")), str(latest.get("x", "")) or None)
+        for series_id, points in history.items():
+            if not isinstance(points, list):
+                continue
+            description = descriptions.get(str(series_id), str(series_id))
+            label = description
+            match = re.fullmatch(r"(\d+)(?::(\d+))?", description)
+            if match:
+                label = STATISTICS_LABELS.get(match.group(1)) or translations.get(match.group(1), STATISTICS_LABELS.get(str(series_id), ""))
+            normalized = _normal_text(label)
+            metric = "feeder_temperature_c" if "podajnik" in normalized and ("temp" in normalized or "temperatur" in normalized) else None
+            if "zuzycie paliwa" in normalized and ("chwil" in normalized or "aktual" in normalized):
+                metric = "instant_fuel_consumption"
+            if metric:
+                usable = [point for point in points if isinstance(point, dict) and point.get("x") is not None and point.get("y") is not None]
+                if usable:
+                    latest = max(usable, key=lambda point: str(point.get("x", "")))
+                    discovered[metric] = {"value": _number(latest["y"]), "at": str(latest["x"]), "label": label}
     except Exception:
         # Statistics are supplementary; a chart endpoint failure must not
         # interrupt the ordinary live telemetry.
         pass
 
     with _statistics_lock:
-        _statistics_cache[udid] = (now, *values[BUFFER_UPPER_SERIES_ID], *values["3159"])
-    return *values[BUFFER_UPPER_SERIES_ID], *values["3159"]
+        _statistics_cache[udid] = (now, *values[BUFFER_UPPER_SERIES_ID], *values["3159"], discovered)
+    return *values[BUFFER_UPPER_SERIES_ID], *values["3159"], discovered
 
 
 def _history_connection():
@@ -446,6 +493,7 @@ def _read_snapshot() -> dict:
             "room_reduction": None,
         },
         "fuel": {"percent": None, "hours": None},
+        "controller_metrics": {"feeder_temperature_c": None, "instant_fuel_consumption": None},
         "fire": None,
         "fire_signal": None,
         "fire_brightness_estimate": None,
@@ -490,7 +538,8 @@ def _read_snapshot() -> dict:
                         widget.get("value"),
                         unit_divisors.get(widget.get("unit"), 1),
                     )
-                    if widget_label and widget_value is not None:
+                    _capture_controller_metric(data, widget_label, widget.get("value"))
+                    if widget_label and widget_value is not None and data["controller_metrics"]["feeder_temperature_c"] is None:
                         data["other_tiles"].append({
                             "label": widget_label,
                             "value": widget_value,
@@ -499,6 +548,7 @@ def _read_snapshot() -> dict:
 
         if kind == 1:
             value = _number(params.get("value"), 10)
+            _capture_controller_metric(data, label, params.get("value"))
             if "temperatura co" in normalized:
                 data["temperatures"]["co"] = value
             elif "c.w.u" in normalized or "cwu" in normalized:
@@ -511,7 +561,7 @@ def _read_snapshot() -> dict:
                 data["temperatures"]["room"] = value
             elif "powrot" in normalized:
                 data["temperatures"]["return"] = value
-            elif label:
+            elif label and data["controller_metrics"]["feeder_temperature_c"] is None:
                 data["other_tiles"].append({"label": label, "value": value, "unit": "°C"})
         elif kind == 11:
             running = bool(params.get("workingStatus"))
@@ -589,7 +639,11 @@ def _read_snapshot() -> dict:
                 "version": module.get("version"),
             }
 
-    buffer_upper, buffer_upper_at, boiler_power_kw, boiler_power_at = _live_statistics(udid, token)
+    buffer_upper, buffer_upper_at, boiler_power_kw, boiler_power_at, discovered_metrics = _live_statistics(udid, token)
+    data["controller_metrics"].update({
+        key: value for key, value in discovered_metrics.items()
+        if key in data["controller_metrics"] and data["controller_metrics"][key] is None
+    })
     data["temperatures"]["buffer_upper"] = buffer_upper
     data["temperatures"]["buffer_upper_at"] = buffer_upper_at
     # eModul's series 3159 ("Moc chwilowa") is already expressed in kW.
@@ -778,7 +832,7 @@ def _read_diagnostics() -> dict:
     # Statistics endpoints include time-series that are not part of the live
     # tile snapshot (for example the upper buffer sensor). Keep this probe in
     # diagnostics only; the dashboard's regular polling should stay lightweight.
-    statistics = {"available": None, "latest": {}, "error": None}
+    statistics = {"available": None, "latest": {}, "consumptions_day": None, "consumptions_error": None, "error": None}
     try:
         available = _get(f"modules/{udid}/statistics/available", token)
         linear = _get(f"modules/{udid}/statistics/linear/range/day", token)
@@ -791,6 +845,12 @@ def _read_diagnostics() -> dict:
         }
     except Exception as error:
         statistics["error"] = str(error)[:180]
+    # This endpoint is a daily/monthly aggregate. Keep it in diagnostics only;
+    # it must not be presented as the controller's instantaneous fuel rate.
+    try:
+        statistics["consumptions_day"] = _get(f"modules/{udid}/statistics/consumptions/range/day", token)
+    except Exception as error:
+        statistics["consumptions_error"] = str(error)[:180]
     return {
         "configured": True,
         "connected": True,
