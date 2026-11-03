@@ -124,16 +124,24 @@ def _label(params: dict, translations: dict[str, str], key: str = "txtId") -> st
     return FALLBACK_LABELS.get(text_id) or translations.get(text_id, "")
 
 
-def _capture_controller_metric(data: dict, label: str, value, at: str | None = None) -> None:
+def _capture_controller_metric(data: dict, label: str, value, at: str | None = None, unit=None) -> None:
     normalized = _normal_text(label)
     metric = None
     divisor = 1
+    try:
+        unit_code = int(unit)
+    except (TypeError, ValueError):
+        unit_code = None
     if "podajnik" in normalized and ("temp" in normalized or "temperatur" in normalized):
-        metric, divisor = "feeder_temperature_c", 10
+        metric, divisor = "feeder_temperature_c", {6: 1, 7: 10}.get(unit_code, 10)
     elif "zuzycie paliwa" in normalized and ("chwil" in normalized or "aktual" in normalized):
         metric = "instant_fuel_consumption"
+        divisor = {22: 10, 30: 100}.get(unit_code, 1)
     if metric and value is not None:
-        data["controller_metrics"][metric] = {"value": _number(value, divisor), "at": at, "label": label}
+        unit_label = ({22: "L/min", 30: "L/h"}.get(unit_code) if metric == "instant_fuel_consumption" else "°C")
+        data["controller_metrics"][metric] = {
+            "value": _number(value, divisor), "unit": unit_label, "at": at, "label": label
+        }
 
 
 def _normal_text(value: str) -> str:
@@ -538,7 +546,7 @@ def _read_snapshot() -> dict:
                         widget.get("value"),
                         unit_divisors.get(widget.get("unit"), 1),
                     )
-                    _capture_controller_metric(data, widget_label, widget.get("value"))
+                    _capture_controller_metric(data, widget_label, widget.get("value"), unit=widget.get("unit"))
                     if widget_label and widget_value is not None and data["controller_metrics"]["feeder_temperature_c"] is None:
                         data["other_tiles"].append({
                             "label": widget_label,
@@ -769,7 +777,7 @@ def _read_diagnostics() -> dict:
         50: "wersja oprogramowania",
         252: "OpenTherm",
     }
-    unit_divisors = {4: 10, 5: 100, 7: 10, 23: 10, 26: 10, 33: 10}
+    unit_divisors = {4: 10, 5: 100, 7: 10, 22: 10, 23: 10, 26: 10, 30: 100, 33: 10}
 
     tiles = []
     for tile in details.get("tiles", []):
@@ -807,6 +815,7 @@ def _read_diagnostics() -> dict:
                     "label": _label(widget, translations),
                     "type": widget.get("type"),
                     "unit_code": widget.get("unit"),
+                    "unit": {22: "L/min", 30: "L/h"}.get(widget.get("unit")),
                     "raw_value": raw_value,
                     "value": _number(raw_value, divisor),
                 })
