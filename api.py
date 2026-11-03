@@ -65,6 +65,7 @@ VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
 VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
 RETURN_TEMPERATURE_SERIES_ID = "thermoflow-return-temperature"
 RETURN_TEMPERATURE_SERIES_LABEL = "Temperatura powrotu"
+PUMP_HISTORY_COLUMNS = ("floor", "valve4d", "dhw", "circulation")
 
 
 def _token() -> str:
@@ -158,7 +159,7 @@ def _history_connection():
 
 
 def _record_live_history(payload: dict) -> None:
-    """Persist live valve opening and return temperature for chart history."""
+    """Persist chart values and pump states observed by the live poller."""
     data = payload.get("data") or {}
     valve = data.get("valve") or {}
     opening = _number(valve.get("opening"))
@@ -167,7 +168,12 @@ def _record_live_history(payload: dict) -> None:
     if return_value is None:
         return_value = valve.get("return")
     return_temperature = _number(return_value)
-    if opening is None and return_temperature is None:
+    pumps = data.get("pumps") or {}
+    pump_values = {
+        key: (int(pumps[key]) if isinstance(pumps.get(key), bool) else None)
+        for key in PUMP_HISTORY_COLUMNS
+    }
+    if opening is None and return_temperature is None and all(value is None for value in pump_values.values()):
         return
     try:
         sampled_at = datetime.fromisoformat(payload["fetched_at"]).timestamp()
@@ -181,6 +187,15 @@ def _record_live_history(payload: dict) -> None:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS return_temperature (sampled_at REAL NOT NULL, value REAL NOT NULL)"
             )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS pump_state (
+                    sampled_at REAL NOT NULL,
+                    floor INTEGER,
+                    valve4d INTEGER,
+                    dhw INTEGER,
+                    circulation INTEGER
+                )"""
+            )
             if opening is not None:
                 connection.execute(
                     "INSERT INTO valve_opening (sampled_at, value) VALUES (?, ?)",
@@ -190,6 +205,20 @@ def _record_live_history(payload: dict) -> None:
                 connection.execute(
                     "INSERT INTO return_temperature (sampled_at, value) VALUES (?, ?)",
                     (sampled_at, return_temperature),
+                )
+            latest = connection.execute(
+                "SELECT sampled_at, floor, valve4d, dhw, circulation FROM pump_state "
+                "ORDER BY sampled_at DESC LIMIT 1"
+            ).fetchone()
+            current_tuple = tuple(pump_values[key] for key in PUMP_HISTORY_COLUMNS)
+            previous_tuple = tuple(latest[1:]) if latest else None
+            # Keep a five-minute heartbeat for stable states and record every
+            # observed transition so long-range CSV exports stay compact.
+            if latest is None or current_tuple != previous_tuple or sampled_at - latest[0] >= 300:
+                connection.execute(
+                    "INSERT INTO pump_state (sampled_at, floor, valve4d, dhw, circulation) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (sampled_at, *current_tuple),
                 )
     except (OSError, sqlite3.Error):
         # Dashboard status remains available even if local history storage fails.
@@ -219,6 +248,35 @@ def _local_history_points(table: str, period: str, year: int, month: int) -> lis
     return [
         {"x": datetime.fromtimestamp(sampled_at, timezone.utc).isoformat(), "y": value}
         for sampled_at, value in rows
+    ]
+
+
+def _local_pump_history(period: str, year: int, month: int) -> list[dict]:
+    """Return sampled pump states for a local calendar month or year."""
+    local_tz = ZoneInfo("Europe/Warsaw")
+    start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
+    if period == "year" or month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=local_tz)
+    try:
+        with _history_lock, _history_connection() as connection:
+            rows = connection.execute(
+                "SELECT sampled_at, floor, valve4d, dhw, circulation FROM pump_state "
+                "WHERE sampled_at >= ? AND sampled_at < ? ORDER BY sampled_at",
+                (start.timestamp(), end.timestamp()),
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return []
+    return [
+        {
+            "x": datetime.fromtimestamp(row[0], timezone.utc).isoformat(),
+            "pumps": {
+                key: (None if value is None else bool(value))
+                for key, value in zip(PUMP_HISTORY_COLUMNS, row[1:])
+            },
+        }
+        for row in rows
     ]
 
 
@@ -330,6 +388,7 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         "year": year,
         "month": month if period == "month" else None,
         "series": series,
+        "pump_states": _local_pump_history(period, year, month),
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
     with _chart_cache_lock:
