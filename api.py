@@ -95,10 +95,10 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-dhw-setpoint", "Temperatura zadana CWU", "setpoints.dhw"),
         ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
         ("thermoflow-fuel-hours", "Pozostały czas paliwa", "fuel.hours"),
-        ("thermoflow-fire-signal", "Sygnał czujnika ognia", "fire_signal"),
-        ("thermoflow-fan-percent", "Moc wentylatora", "fan.percent"),
-        ("thermoflow-feeder-temperature", "Temperatura podajnika", "controller_metrics.feeder_temperature_c.value"),
-        ("thermoflow-fuel-rate", "Chwilowe zużycie paliwa (L/h)", "controller_metrics.instant_fuel_consumption.value"),
+        ("thermoflow-room-setpoint", "Temperatura zadana pokoju", "setpoints.room"),
+        ("thermoflow-valve-hysteresis", "Histereza zaworu 4D", "hysteresis.valve"),
+        ("thermoflow-co-hysteresis", "Histereza CO", "hysteresis.boiler"),
+        ("thermoflow-dhw-hysteresis", "Histereza CWU", "hysteresis.dhw"),
     ),
 )
 
@@ -145,10 +145,6 @@ def _thingspeak_write(payload: dict) -> None:
                 value = _nested_value(data, path)
                 if isinstance(value, bool):
                     value = int(value)
-                if path == "controller_metrics.instant_fuel_consumption.value":
-                    metric = _nested_value(data, "controller_metrics.instant_fuel_consumption") or {}
-                    if metric.get("unit") == "L/min" and value is not None:
-                        value = float(value) * 60
                 value = _number(value)
                 if value is not None:
                     form[f"field{field_number}"] = str(value)
