@@ -124,7 +124,7 @@ THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
 
 
 def _thingspeak_field_schema() -> tuple:
-    if os.getenv("THINGSPEAK_SCHEMA", "legacy-v1").strip() == "compact-v1":
+    if os.getenv("THINGSPEAK_SCHEMA", "compact-v1").strip() == "compact-v1":
         return THINGSPEAK_COMPACT_CHANNEL_FIELDS
     return THINGSPEAK_CHANNEL_FIELDS
 
@@ -375,7 +375,7 @@ def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, f
 def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
     """Fetch linear temperature history, combining monthly data if yearly range is unsupported."""
     now = time.monotonic()
-    schema_name = os.getenv("THINGSPEAK_SCHEMA", "legacy-v1").strip()
+    schema_name = os.getenv("THINGSPEAK_SCHEMA", "compact-v1").strip()
     cache_key = (udid, f"{schema_name}:{period}", year, month if period in ("month", "year") else 0)
     with _chart_cache_lock:
         cached = _chart_cache.get(cache_key)
