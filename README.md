@@ -119,11 +119,11 @@ W każdym z trzech kanałów włącz osiem pól i nadaj im poniższe nazwy. Zmie
 
 | Kanał | Pola 1–8 |
 | --- | --- |
-| 1 · Temperatury | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki C1 (°C), Temperatura powrotu (°C), Moc chwilowa pieca (kW) |
+| 1 · Temperatury | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki C1 (°C), pole 7 nieużywane, Moc chwilowa pieca (kW) |
 | 2 · Zawór i pompy | Temperatura zaworu 4D (°C), Zadana zaworu 4D (°C), Otwarcie zaworu 4D (%), Powrót zaworu 4D (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1) |
-| 3 · Nastawy i kocioł | Zadana CO (°C), Zadana CWU (°C), Zapas paliwa (%), Temperatura pokoju bieżąca (°C), Zadana pokoju po obniżeniu (°C), Histereza zaworu 4D (°C), Histereza CO (°C), Histereza CWU (°C) |
+| 3 · Nastawy i kocioł | Zadana CO (°C), Zadana CWU (°C), Zapas paliwa (%), Temperatura pokoju bieżąca (°C), Temperatura zadana zaworu 4D po korekcie (°C), Histereza zaworu 4D (°C), Histereza CO (°C), Histereza CWU (°C) |
 
-Temperatura zadana pokoju po obniżeniu jest wyliczana jako zadana pokojowa minus skonfigurowane obniżenie pokojówki; pole pozostaje puste, jeśli sterownik nie udostępnia któregoś składnika. W Portainerze ustaw trzy ID i klucze zapisu jako wartości oddzielone przecinkami, bez spacji. Dla prywatnych kanałów wklej także trzy klucze odczytu. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
+Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpisana korekta `setTempCorrection`; korekta dodatnia podwyższa, a ujemna obniża temperaturę. Powrót jest zapisywany raz, w kanale 2 (pole 4); kanał 1 zachowuje puste pole 7, aby moc pieca pozostała w polu 8. W Portainerze ustaw trzy ID i klucze zapisu jako wartości oddzielone przecinkami, bez spacji. Dla prywatnych kanałów wklej także trzy klucze odczytu. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
 
 ## Struktura repozytorium
 
