@@ -212,15 +212,28 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
     series_by_id: dict[str, dict] = {}
     pump_states_by_time: dict[str, dict] = {}
     for channel_index, channel_id in enumerate(channel_ids):
-        params = {"start": start.isoformat(), "end": end.isoformat(), "timezone": "Europe/Warsaw", "timescale": timescale, "results": 8000}
+        # ThingSpeak's feeds API expects local wall-clock timestamps in
+        # YYYY-MM-DD HH:MM:SS format when `timezone` is provided. ISO strings
+        # with a T and UTC offset can be silently interpreted as no matches.
+        params = {
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+            "timezone": "Europe/Warsaw",
+            "timescale": timescale,
+            "results": 8000,
+        }
         if channel_index < len(read_keys) and read_keys[channel_index]:
             params["api_key"] = read_keys[channel_index]
         request = Request(f"https://api.thingspeak.com/channels/{channel_id}/feeds.json?{urlencode(params)}", headers={"Accept": "application/json"})
         try:
             with urlopen(request, timeout=8) as response:
                 feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
+        except HTTPError as error:
+            raise RuntimeError(
+                f"ThingSpeak odrzucił odczyt kanału {channel_id} (HTTP {error.code}); sprawdź klucz Read API i prywatność kanału."
+            ) from None
         except Exception:
-            continue
+            raise RuntimeError(f"Nie udało się pobrać historii ThingSpeak z kanału {channel_id}.") from None
         for feed in feeds:
             timestamp = feed.get("created_at")
             if not timestamp:
@@ -391,8 +404,11 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         "pump_states": pump_states,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
-    with _chart_cache_lock:
-        _chart_cache[cache_key] = (now, result)
+    # Do not keep an empty first read cached: the channel may have just
+    # received its first samples, or a transiently empty feed may recover.
+    if series or pump_states:
+        with _chart_cache_lock:
+            _chart_cache[cache_key] = (now, result)
     return result
 
 
