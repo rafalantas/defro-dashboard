@@ -99,6 +99,36 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-dhw-hysteresis", "Histereza CWU", "hysteresis.dhw"),
     ),
 )
+THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
+    (
+        ("thermoflow-co", "Temperatura CO", "temperatures.co"),
+        ("thermoflow-dhw", "Temperatura CWU", "temperatures.dhw"),
+        ("thermoflow-flue", "Temperatura spalin", "temperatures.flue"),
+        ("thermoflow-outdoor", "Temperatura zewnętrzna", "temperatures.outdoor"),
+        ("thermoflow-room", "Temperatura pokoju", "temperatures.room"),
+        ("thermoflow-floor", "Temperatura podłogówki (C1)", "temperatures.buffer_upper"),
+        ("thermoflow-valve4d-current", "Temperatura zaworu 4D", "valve.current"),
+        ("thermoflow-boiler-power", "Moc chwilowa pieca", "boiler_power_kw"),
+    ),
+    (
+        ("thermoflow-valve4d-effective-setpoint", "Temperatura zadana zaworu 4D po korekcie", "valve.set_after_correction"),
+        (VALVE_OPENING_SERIES_ID, VALVE_OPENING_SERIES_LABEL, "valve.opening"),
+        ("thermoflow-valve4d-return", "Powrót zaworu 4D", "valve.return"),
+        ("thermoflow-pump-valve4d", "Pompa zaworu 4D", "pumps.valve4d"),
+        ("thermoflow-pump-floor", "Pompa podłogowa", "pumps.floor"),
+        ("thermoflow-pump-dhw", "Pompa CWU", "pumps.dhw"),
+        ("thermoflow-pump-circulation", "Pompa cyrkulacyjna", "pumps.circulation"),
+        ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
+    ),
+)
+
+
+def _thingspeak_field_schema() -> tuple:
+    if os.getenv("THINGSPEAK_SCHEMA", "legacy-v1").strip() == "compact-v1":
+        return THINGSPEAK_COMPACT_CHANNEL_FIELDS
+    return THINGSPEAK_CHANNEL_FIELDS
+
+
 def _token() -> str:
     token_file = os.getenv("TECH_API_TOKEN_FILE")
     if token_file:
@@ -122,9 +152,12 @@ def _nested_value(value: dict, path: str):
 
 def _thingspeak_write(payload: dict) -> None:
     """Send one snapshot to each configured ThingSpeak channel, without disk buffering."""
+    if os.getenv("THINGSPEAK_WRITE_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     write_keys = _thingspeak_settings("THINGSPEAK_WRITE_KEYS")
-    if len(channel_ids) != 3 or len(write_keys) != 3:
+    fields_by_channel = _thingspeak_field_schema()
+    if len(channel_ids) != len(fields_by_channel) or len(write_keys) != len(fields_by_channel):
         return
     now = time.monotonic()
     data = payload.get("data") or {}
@@ -133,7 +166,7 @@ def _thingspeak_write(payload: dict) -> None:
     except (KeyError, TypeError, ValueError):
         created_at = datetime.now(timezone.utc).isoformat()
     with THINGSPEAK_WRITE_LOCK:
-        for index, (channel_id, write_key, fields) in enumerate(zip(channel_ids, write_keys, THINGSPEAK_CHANNEL_FIELDS)):
+        for index, (channel_id, write_key, fields) in enumerate(zip(channel_ids, write_keys, fields_by_channel)):
             if now - THINGSPEAK_LAST_WRITES[index] < THINGSPEAK_WRITE_INTERVAL_SECONDS:
                 continue
             form = {"api_key": write_key, "created_at": created_at}
@@ -168,7 +201,8 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
     """Read configured channel feeds for a local calendar month/year."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
-    if len(channel_ids) != 3:
+    fields_by_channel = _thingspeak_field_schema()
+    if len(channel_ids) != len(fields_by_channel):
         return [], []
     local_tz = ZoneInfo("Europe/Warsaw")
     start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
@@ -193,7 +227,7 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
             timestamp = feed.get("created_at")
             if not timestamp:
                 continue
-            for field_number, (series_id, label, _path) in enumerate(THINGSPEAK_CHANNEL_FIELDS[channel_index], start=1):
+            for field_number, (series_id, label, field_path) in enumerate(fields_by_channel[channel_index], start=1):
                 if series_id is None:
                     continue
                 raw = feed.get(f"field{field_number}")
@@ -202,8 +236,8 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
                     continue
                 item = series_by_id.setdefault(series_id, {"id": series_id, "label": label, "points": []})
                 item["points"].append({"x": timestamp, "y": value})
-                if channel_index == 1 and field_number >= 5:
-                    pump_key = THINGSPEAK_CHANNEL_FIELDS[channel_index][field_number - 1][2].split(".")[-1]
+                if field_path and field_path.startswith("pumps."):
+                    pump_key = field_path.split(".")[-1]
                     pump_sample = pump_states_by_time.setdefault(timestamp, {"x": timestamp, "pumps": {}})
                     pump_sample["pumps"][pump_key] = value >= 0.5
     return list(series_by_id.values()), sorted(pump_states_by_time.values(), key=lambda item: item["x"])
@@ -341,7 +375,8 @@ def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, f
 def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
     """Fetch linear temperature history, combining monthly data if yearly range is unsupported."""
     now = time.monotonic()
-    cache_key = (udid, period, year, month if period in ("month", "year") else 0)
+    schema_name = os.getenv("THINGSPEAK_SCHEMA", "legacy-v1").strip()
+    cache_key = (udid, f"{schema_name}:{period}", year, month if period in ("month", "year") else 0)
     with _chart_cache_lock:
         cached = _chart_cache.get(cache_key)
         if cached and now - cached[0] < 300:
@@ -424,14 +459,18 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
             series.append({"id": str(series_id), "label": label, "points": cleaned})
 
     thingspeak_series, pump_states = _thingspeak_history(period, year, month)
-    known_series = {item["id"]: item for item in series}
-    for item in thingspeak_series:
-        target = known_series.get(item["id"])
-        if target:
-            target["points"].extend(item["points"])
-        else:
-            series.append(item)
-            known_series[item["id"]] = item
+    compact_history = schema_name == "compact-v1"
+    if compact_history:
+        series = thingspeak_series
+    else:
+        known_series = {item["id"]: item for item in series}
+        for item in thingspeak_series:
+            target = known_series.get(item["id"])
+            if target:
+                target["points"].extend(item["points"])
+            else:
+                series.append(item)
+                known_series[item["id"]] = item
 
     result = {
         "configured": True,
@@ -439,6 +478,7 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         "period": period,
         "year": year,
         "month": month if period == "month" else None,
+        "history_source": "thingspeak" if compact_history else "combined",
         "series": series,
         "pump_states": pump_states,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
