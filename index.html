@@ -32,7 +32,8 @@
     <section class="card" aria-label="Schemat instalacji">
       <div class="schematic-wrap"><svg class="schematic" viewBox="0 0 1380 600" role="img" aria-label="Schemat ogrzewania: zawór 4D obsługuje grzejniki, zawór 3D podłogówkę; powroty łączą się przed kotłem">
         <defs><marker id="arrHot" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#ff9c57"/></marker><marker id="arrBlue" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6bbcff"/></marker><marker id="arrWarm" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#f6d365"/></marker><marker id="arrMix" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#eab77a"/></marker>
-          <path id="floorPrimaryLoop" d="M800 255 V350 H850 H935 V400 V430 H1045 V205 H850 H800 V255"/>
+          <path id="floorMixedFlowPath" d="M800 255 V350 H850 H935 V400"/>
+          <path id="floorReturnFlowPath" d="M935 400 V430 H1045 V205 H850"/>
           <path id="floorHotFeedPath" d="M450 115 H800 V155"/>
           <path id="floorDhwReturnPath" d="M1045 430 V500 H350"/>
           <path id="radiatorLoop" d="M250 115 H450 V155 V255 V350 H500 H585 V390 V420 H700 V220 H490 H410 H350 V500 H250 V265 H225 V220 H250 V115"/>
@@ -57,9 +58,13 @@
           <circle class="water-bead bead-teal" r="3.5"><animateMotion dur="3.6s" begin="-1.8s" repeatCount="indefinite"><mpath href="#floorHotFeedPath"/></animateMotion></circle>
         </g>
         <g id="beadFloor">
-          <circle class="water-bead bead-teal" r="4"><animateMotion dur="5.1s" repeatCount="indefinite"><mpath href="#floorPrimaryLoop"/></animateMotion></circle>
-          <circle class="water-bead bead-teal" r="3.5"><animateMotion dur="5.1s" begin="-1.7s" repeatCount="indefinite"><mpath href="#floorPrimaryLoop"/></animateMotion></circle>
-          <circle class="water-bead bead-teal" r="3"><animateMotion dur="5.1s" begin="-3.4s" repeatCount="indefinite"><mpath href="#floorPrimaryLoop"/></animateMotion></circle>
+          <circle class="water-bead bead-teal" r="4"><animateMotion dur="3.4s" repeatCount="indefinite"><mpath href="#floorMixedFlowPath"/></animateMotion></circle>
+          <circle class="water-bead bead-teal" r="3.5"><animateMotion dur="3.4s" begin="-1.1s" repeatCount="indefinite"><mpath href="#floorMixedFlowPath"/></animateMotion></circle>
+          <circle class="water-bead bead-teal" r="3"><animateMotion dur="3.4s" begin="-2.2s" repeatCount="indefinite"><mpath href="#floorMixedFlowPath"/></animateMotion></circle>
+        </g>
+        <g id="beadFloorReturn">
+          <circle class="water-bead bead-cold" r="4"><animateMotion dur="4.2s" repeatCount="indefinite"><mpath href="#floorReturnFlowPath"/></animateMotion></circle>
+          <circle class="water-bead bead-cold" r="3.5"><animateMotion dur="4.2s" begin="-2.1s" repeatCount="indefinite"><mpath href="#floorReturnFlowPath"/></animateMotion></circle>
         </g>
         <g id="beadRadiator">
           <circle class="water-bead bead-teal" r="4"><animateMotion dur="5.4s" repeatCount="indefinite"><mpath href="#radiatorLoop"/></animateMotion></circle>
@@ -140,7 +145,7 @@ if($('buildVersion')){$('buildVersion').textContent=dashboardCommit==='local'?'W
 const temp=v=>v===null||v===undefined||v===''||!Number.isFinite(Number(v))?'—':Number(v).toFixed(1)+'°C';
 const state=v=>v===null||v===undefined?'Brak odczytu':v?'Pracuje':'Wyłączona';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function setPump(key,value){const ids={floor:['floorRotor','beadFloor','beadFloorHotFeed','floorReturnJunction'],rad:['radRotor','beadRadiator'],dhw:['dhwRotor','beadDhw'],circ:['circRotor','beadCirc'],floorDhwReturn:[null,'beadFloorDhwReturn']}[key];const known=value===true||value===false;const running=apiConfigured?value===true:true;const unknown=apiConfigured&&!known;if(ids){const [rotor,...beads]=ids;if($(rotor)){$(rotor).classList.toggle('stopped',!running);$(rotor).classList.toggle('unknown',unknown);}beads.forEach(id=>{if($(id))$(id).style.display=running?'':'none';});}document.querySelectorAll(`[data-pump="${key}"]`).forEach(path=>{path.classList.toggle('off',apiConfigured&&known&&!running);path.classList.toggle('unknown',unknown);if(path.classList.contains('dhw-return-flow'))path.style.display=apiConfigured&&value!==true?'none':'';});if(key==='floor'&&$('floorPumpState')){$('floorPumpState').style.display=unknown?'':'none';$('floorPumpState').textContent=unknown?'stan nieznany · brak odczytu':'';}}function setBoilerWorking(working){document.querySelector('.schematic').classList.toggle('boiler-active',!!working);}
+function setPump(key,value){const ids={floor:['floorRotor','beadFloor','beadFloorReturn','beadFloorHotFeed','floorReturnJunction'],rad:['radRotor','beadRadiator'],dhw:['dhwRotor','beadDhw'],circ:['circRotor','beadCirc'],floorDhwReturn:[null,'beadFloorDhwReturn']}[key];const known=value===true||value===false;const running=apiConfigured?value===true:true;const unknown=apiConfigured&&!known;if(ids){const [rotor,...beads]=ids;if($(rotor)){$(rotor).classList.toggle('stopped',!running);$(rotor).classList.toggle('unknown',unknown);}beads.forEach(id=>{if($(id))$(id).style.display=running?'':'none';});}document.querySelectorAll(`[data-pump="${key}"]`).forEach(path=>{path.classList.toggle('off',apiConfigured&&known&&!running);path.classList.toggle('unknown',unknown);if(path.classList.contains('dhw-return-flow'))path.style.display=apiConfigured&&value!==true?'none':'';});if(key==='floor'&&$('floorPumpState')){$('floorPumpState').style.display=unknown?'':'none';$('floorPumpState').textContent=unknown?'stan nieznany · brak odczytu':'';}}function setBoilerWorking(working){document.querySelector('.schematic').classList.toggle('boiler-active',!!working);}
 function showConnection(payload){const ok=!!payload.connected;liveMode=ok;apiConfigured=!!payload.configured;const status=ok?'DANE LIVE · eModul':payload.configured?'API niedostępne · ostatni odczyt':'Oczekiwanie na API';$('modeBadge').textContent=`● ${status}`;$('modeBadge').classList.toggle('warn',!ok);if(payload.configured&&!ok){setBoilerWorking(false);setPump('floor',null);setPump('rad',null);setPump('dhw',null);setPump('circ',null);setPump('floorDhwReturn',null);setPump('system',null);}if(!ok){$('telemetryFooter').textContent=payload.configured?'Brak połączenia z eModul API · widoczne dane mogą być nieaktualne.':'Oczekiwanie na dane sterownika przez eModul API. Skonfiguruj TECH_API_TOKEN w stacku Portainera.';$('bottomNote').textContent=payload.configured?'Brak połączenia z eModul API · widoczne wartości mogą pochodzić z ostatniego poprawnego odczytu.':'API nie jest skonfigurowane · ustaw TECH_API_TOKEN w stacku Portainera, aby pobierać dane z eModul.';}}
 
 function setTile(id,value){$(id).textContent=value===null||value===undefined?'Brak odczytu':value;}
