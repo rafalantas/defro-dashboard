@@ -95,7 +95,7 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-dhw-setpoint", "Temperatura zadana CWU", "setpoints.dhw"),
         ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
         ("thermoflow-room-current", "Temperatura pokoju bieżąca", "temperatures.room"),
-        ("thermoflow-room-setpoint", "Temperatura zadana pokoju", "setpoints.room"),
+        ("thermoflow-room-setpoint-after-reduction", "Temperatura zadana pokoju po obniżeniu", "setpoints.room_after_reduction"),
         ("thermoflow-valve-hysteresis", "Histereza zaworu 4D", "hysteresis.valve"),
         ("thermoflow-co-hysteresis", "Histereza CO", "hysteresis.boiler"),
         ("thermoflow-dhw-hysteresis", "Histereza CWU", "hysteresis.dhw"),
@@ -703,6 +703,11 @@ def _read_snapshot() -> dict:
                     data["setpoints"]["dhw"] = value
                 elif "co" in normalized or "kotla" in normalized or "kotła" in normalized:
                     data["setpoints"]["co"] = value
+
+    room_target = data["setpoints"].get("room")
+    room_reduction = data["valve"].get("room_reduction")
+    if room_target is not None and room_reduction is not None:
+        data["setpoints"]["room_after_reduction"] = round(room_target - room_reduction, 1)
 
     return {
         "configured": True,
