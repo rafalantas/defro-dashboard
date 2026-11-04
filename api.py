@@ -99,19 +99,6 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-dhw-hysteresis", "Histereza CWU", "hysteresis.dhw"),
     ),
 )
-THINGSPEAK_REPLACES_EMODUL_SERIES = {
-    "789": "thermoflow-room",
-    "791": "thermoflow-flue",
-    "795": "thermoflow-outdoor",
-    "992": "thermoflow-valve4d-current",
-    "1041": "thermoflow-dhw",
-    "1050": "thermoflow-co",
-    "1856": "thermoflow-floor",
-    "3159": "thermoflow-boiler-power",
-}
-THINGSPEAK_DUPLICATE_SERIES_IDS = {"thermoflow-room-current"}
-
-
 def _token() -> str:
     token_file = os.getenv("TECH_API_TOKEN_FILE")
     if token_file:
@@ -208,8 +195,6 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
                 continue
             for field_number, (series_id, label, _path) in enumerate(THINGSPEAK_CHANNEL_FIELDS[channel_index], start=1):
                 if series_id is None:
-                    continue
-                if series_id in THINGSPEAK_DUPLICATE_SERIES_IDS:
                     continue
                 raw = feed.get(f"field{field_number}")
                 value = _number(raw)
@@ -439,11 +424,6 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
             series.append({"id": str(series_id), "label": label, "points": cleaned})
 
     thingspeak_series, pump_states = _thingspeak_history(period, year, month)
-    thingspeak_ids = {item["id"] for item in thingspeak_series}
-    series = [
-        item for item in series
-        if THINGSPEAK_REPLACES_EMODUL_SERIES.get(item["id"]) not in thingspeak_ids
-    ]
     known_series = {item["id"]: item for item in series}
     for item in thingspeak_series:
         target = known_series.get(item["id"])
