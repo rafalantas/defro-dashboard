@@ -62,8 +62,6 @@ _chart_cache_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
 VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
 VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
-RETURN_TEMPERATURE_SERIES_ID = "thermoflow-return-temperature"
-RETURN_TEMPERATURE_SERIES_LABEL = "Temperatura powrotu"
 VALVE_SETPOINT_SERIES_ID = "thermoflow-valve4d-setpoint"
 VALVE_SETPOINT_SERIES_LABEL = "Temperatura zadana zaworu 4D"
 THINGSPEAK_WRITE_INTERVAL_SECONDS = max(35, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
@@ -77,7 +75,7 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-outdoor", "Temperatura zewnętrzna", "temperatures.outdoor"),
         ("thermoflow-room", "Temperatura pokoju", "temperatures.room"),
         ("thermoflow-floor", "Temperatura podłogówki (C1)", "temperatures.buffer_upper"),
-        (RETURN_TEMPERATURE_SERIES_ID, RETURN_TEMPERATURE_SERIES_LABEL, "temperatures.return"),
+        (None, "Pole nieużywane", None),
         ("thermoflow-boiler-power", "Moc chwilowa pieca", "boiler_power_kw"),
     ),
     (
@@ -95,7 +93,7 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-dhw-setpoint", "Temperatura zadana CWU", "setpoints.dhw"),
         ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
         ("thermoflow-room-current", "Temperatura pokoju bieżąca", "temperatures.room"),
-        ("thermoflow-room-setpoint-after-reduction", "Temperatura zadana pokoju po obniżeniu", "setpoints.room_after_reduction"),
+        ("thermoflow-valve4d-effective-setpoint", "Temperatura zadana zaworu 4D po korekcie", "valve.set_after_correction"),
         ("thermoflow-valve-hysteresis", "Histereza zaworu 4D", "hysteresis.valve"),
         ("thermoflow-co-hysteresis", "Histereza CO", "hysteresis.boiler"),
         ("thermoflow-dhw-hysteresis", "Histereza CWU", "hysteresis.dhw"),
@@ -142,11 +140,9 @@ def _thingspeak_write(payload: dict) -> None:
                 continue
             form = {"api_key": write_key, "created_at": created_at}
             for field_number, (_series_id, _label, path) in enumerate(fields, start=1):
+                if path is None:
+                    continue
                 value = _nested_value(data, path)
-                if _series_id == RETURN_TEMPERATURE_SERIES_ID and value is None:
-                    # On this controller the shared boiler return is exposed
-                    # as the built-in 4D valve's return temperature.
-                    value = _nested_value(data, "valve.return")
                 if isinstance(value, bool):
                     value = int(value)
                 value = _number(value)
@@ -200,6 +196,8 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
             if not timestamp:
                 continue
             for field_number, (series_id, label, _path) in enumerate(THINGSPEAK_CHANNEL_FIELDS[channel_index], start=1):
+                if series_id is None:
+                    continue
                 raw = feed.get(f"field{field_number}")
                 value = _number(raw)
                 if value is None:
@@ -704,10 +702,10 @@ def _read_snapshot() -> dict:
                 elif "co" in normalized or "kotla" in normalized or "kotła" in normalized:
                     data["setpoints"]["co"] = value
 
-    room_target = data["setpoints"].get("room")
-    room_reduction = data["valve"].get("room_reduction")
-    if room_target is not None and room_reduction is not None:
-        data["setpoints"]["room_after_reduction"] = round(room_target - room_reduction, 1)
+    valve_target = data["valve"].get("set")
+    valve_correction = data["valve"].get("set_correction")
+    if valve_target is not None and valve_correction is not None:
+        data["valve"]["set_after_correction"] = round(valve_target + valve_correction, 1)
 
     return {
         "configured": True,
