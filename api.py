@@ -143,6 +143,10 @@ def _thingspeak_write(payload: dict) -> None:
             form = {"api_key": write_key, "created_at": created_at}
             for field_number, (_series_id, _label, path) in enumerate(fields, start=1):
                 value = _nested_value(data, path)
+                if _series_id == RETURN_TEMPERATURE_SERIES_ID and value is None:
+                    # On this controller the shared boiler return is exposed
+                    # as the built-in 4D valve's return temperature.
+                    value = _nested_value(data, "valve.return")
                 if isinstance(value, bool):
                     value = int(value)
                 value = _number(value)
