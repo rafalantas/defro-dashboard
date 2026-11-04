@@ -92,7 +92,7 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-co-setpoint", "Temperatura zadana CO", "setpoints.co"),
         ("thermoflow-dhw-setpoint", "Temperatura zadana CWU", "setpoints.dhw"),
         ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
-        ("thermoflow-room-current", "Temperatura pokoju bieżąca", "temperatures.room"),
+        (None, "Pole nieużywane", None),
         ("thermoflow-valve4d-effective-setpoint", "Temperatura zadana zaworu 4D po korekcie", "valve.set_after_correction"),
         ("thermoflow-valve-hysteresis", "Histereza zaworu 4D", "hysteresis.valve"),
         ("thermoflow-co-hysteresis", "Histereza CO", "hysteresis.boiler"),
