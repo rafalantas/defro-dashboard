@@ -121,7 +121,7 @@ W każdym z trzech kanałów włącz osiem pól i nadaj im poniższe nazwy. Zmie
 | --- | --- |
 | 1 · Temperatury | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki C1 (°C), Temperatura powrotu (°C), Moc chwilowa pieca (kW) |
 | 2 · Zawór i pompy | Temperatura zaworu 4D (°C), Zadana zaworu 4D (°C), Otwarcie zaworu 4D (%), Powrót zaworu 4D (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1) |
-| 3 · Nastawy i kocioł | Zadana CO (°C), Zadana CWU (°C), Zapas paliwa (%), Pozostały czas paliwa (h), Sygnał ognia, Wentylator (%), Temperatura podajnika (°C), Chwilowe zużycie paliwa (L/h) |
+| 3 · Nastawy i kocioł | Zadana CO (°C), Zadana CWU (°C), Zapas paliwa (%), Pozostały czas paliwa (h), Zadana pokoju (°C), Histereza zaworu 4D (°C), Histereza CO (°C), Histereza CWU (°C) |
 
 W Portainerze ustaw trzy ID i klucze zapisu jako wartości oddzielone przecinkami, bez spacji. Dla prywatnych kanałów wklej także trzy klucze odczytu. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
 
