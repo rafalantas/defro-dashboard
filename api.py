@@ -7,14 +7,13 @@ import binascii
 import json
 import os
 import re
-import sqlite3
 import threading
 import time
 import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -61,14 +60,47 @@ _statistics_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
-_history_lock = threading.Lock()
 VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
 VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
 RETURN_TEMPERATURE_SERIES_ID = "thermoflow-return-temperature"
 RETURN_TEMPERATURE_SERIES_LABEL = "Temperatura powrotu"
 VALVE_SETPOINT_SERIES_ID = "thermoflow-valve4d-setpoint"
 VALVE_SETPOINT_SERIES_LABEL = "Temperatura zadana zaworu 4D"
-PUMP_HISTORY_COLUMNS = ("floor", "valve4d", "dhw", "circulation")
+THINGSPEAK_WRITE_INTERVAL_SECONDS = max(35, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
+THINGSPEAK_LAST_WRITES = [0.0, 0.0, 0.0]
+THINGSPEAK_WRITE_LOCK = threading.Lock()
+THINGSPEAK_CHANNEL_FIELDS = (
+    (
+        ("thermoflow-co", "Temperatura CO", "temperatures.co"),
+        ("thermoflow-dhw", "Temperatura CWU", "temperatures.dhw"),
+        ("thermoflow-flue", "Temperatura spalin", "temperatures.flue"),
+        ("thermoflow-outdoor", "Temperatura zewnętrzna", "temperatures.outdoor"),
+        ("thermoflow-room", "Temperatura pokoju", "temperatures.room"),
+        ("thermoflow-floor", "Temperatura podłogówki (C1)", "temperatures.buffer_upper"),
+        (RETURN_TEMPERATURE_SERIES_ID, RETURN_TEMPERATURE_SERIES_LABEL, "temperatures.return"),
+        ("thermoflow-boiler-power", "Moc chwilowa pieca", "boiler_power_kw"),
+    ),
+    (
+        ("thermoflow-valve4d-current", "Temperatura zaworu 4D", "valve.current"),
+        (VALVE_SETPOINT_SERIES_ID, VALVE_SETPOINT_SERIES_LABEL, "valve.set"),
+        (VALVE_OPENING_SERIES_ID, VALVE_OPENING_SERIES_LABEL, "valve.opening"),
+        ("thermoflow-valve4d-return", "Powrót zaworu 4D", "valve.return"),
+        ("thermoflow-pump-valve4d", "Pompa zaworu 4D", "pumps.valve4d"),
+        ("thermoflow-pump-floor", "Pompa podłogowa", "pumps.floor"),
+        ("thermoflow-pump-dhw", "Pompa CWU", "pumps.dhw"),
+        ("thermoflow-pump-circulation", "Pompa cyrkulacyjna", "pumps.circulation"),
+    ),
+    (
+        ("thermoflow-co-setpoint", "Temperatura zadana CO", "setpoints.co"),
+        ("thermoflow-dhw-setpoint", "Temperatura zadana CWU", "setpoints.dhw"),
+        ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
+        ("thermoflow-fuel-hours", "Pozostały czas paliwa", "fuel.hours"),
+        ("thermoflow-fire-signal", "Sygnał czujnika ognia", "fire_signal"),
+        ("thermoflow-fan-percent", "Moc wentylatora", "fan.percent"),
+        ("thermoflow-feeder-temperature", "Temperatura podajnika", "controller_metrics.feeder_temperature_c.value"),
+        ("thermoflow-fuel-rate", "Chwilowe zużycie paliwa (L/h)", "controller_metrics.instant_fuel_consumption.value"),
+    ),
+)
 
 
 def _token() -> str:
@@ -77,6 +109,108 @@ def _token() -> str:
         with open(token_file, encoding="utf-8") as stream:
             return stream.read().strip()
     return os.getenv("TECH_API_TOKEN", "").strip()
+
+
+def _thingspeak_settings(name: str) -> list[str]:
+    raw = os.getenv(name, "").strip()
+    return [item.strip() for item in raw.split(",")] if raw else []
+
+
+def _nested_value(value: dict, path: str):
+    for part in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _thingspeak_write(payload: dict) -> None:
+    """Send one snapshot to each configured ThingSpeak channel, without disk buffering."""
+    channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
+    write_keys = _thingspeak_settings("THINGSPEAK_WRITE_KEYS")
+    if len(channel_ids) != 3 or len(write_keys) != 3:
+        return
+    now = time.monotonic()
+    data = payload.get("data") or {}
+    try:
+        created_at = datetime.fromisoformat(payload["fetched_at"]).astimezone(timezone.utc).isoformat()
+    except (KeyError, TypeError, ValueError):
+        created_at = datetime.now(timezone.utc).isoformat()
+    with THINGSPEAK_WRITE_LOCK:
+        for index, (channel_id, write_key, fields) in enumerate(zip(channel_ids, write_keys, THINGSPEAK_CHANNEL_FIELDS)):
+            if now - THINGSPEAK_LAST_WRITES[index] < THINGSPEAK_WRITE_INTERVAL_SECONDS:
+                continue
+            form = {"api_key": write_key, "created_at": created_at}
+            for field_number, (_series_id, _label, path) in enumerate(fields, start=1):
+                value = _nested_value(data, path)
+                if isinstance(value, bool):
+                    value = int(value)
+                if path == "controller_metrics.instant_fuel_consumption.value":
+                    metric = _nested_value(data, "controller_metrics.instant_fuel_consumption") or {}
+                    if metric.get("unit") == "L/min" and value is not None:
+                        value = float(value) * 60
+                value = _number(value)
+                if value is not None:
+                    form[f"field{field_number}"] = str(value)
+            if len(form) == 2:
+                continue
+            request = Request(
+                f"https://api.thingspeak.com/update.json?{urlencode({'api_key': write_key})}",
+                data=urlencode({key: value for key, value in form.items() if key != "api_key"}).encode(),
+                headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+                method="POST",
+            )
+            try:
+                with urlopen(request, timeout=4) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+                if result and result.get("entry_id"):
+                    THINGSPEAK_LAST_WRITES[index] = now
+            except Exception:
+                # Live telemetry stays usable when remote history is unreachable.
+                continue
+
+
+def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict], list[dict]]:
+    """Read configured channel feeds for a local calendar month/year."""
+    channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
+    read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
+    if len(channel_ids) != 3:
+        return [], []
+    local_tz = ZoneInfo("Europe/Warsaw")
+    start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
+    if period == "year" or month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=local_tz)
+    timescale = 10 if period == "month" else 240
+    series_by_id: dict[str, dict] = {}
+    pump_states_by_time: dict[str, dict] = {}
+    for channel_index, channel_id in enumerate(channel_ids):
+        params = {"start": start.isoformat(), "end": end.isoformat(), "timezone": "Europe/Warsaw", "timescale": timescale, "results": 8000}
+        if channel_index < len(read_keys) and read_keys[channel_index]:
+            params["api_key"] = read_keys[channel_index]
+        request = Request(f"https://api.thingspeak.com/channels/{channel_id}/feeds.json?{urlencode(params)}", headers={"Accept": "application/json"})
+        try:
+            with urlopen(request, timeout=8) as response:
+                feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
+        except Exception:
+            continue
+        for feed in feeds:
+            timestamp = feed.get("created_at")
+            if not timestamp:
+                continue
+            for field_number, (series_id, label, _path) in enumerate(THINGSPEAK_CHANNEL_FIELDS[channel_index], start=1):
+                raw = feed.get(f"field{field_number}")
+                value = _number(raw)
+                if value is None:
+                    continue
+                item = series_by_id.setdefault(series_id, {"id": series_id, "label": label, "points": []})
+                item["points"].append({"x": timestamp, "y": value})
+                if channel_index == 1 and field_number >= 5:
+                    pump_key = THINGSPEAK_CHANNEL_FIELDS[channel_index][field_number - 1][2].split(".")[-1]
+                    pump_sample = pump_states_by_time.setdefault(timestamp, {"x": timestamp, "pumps": {}})
+                    pump_sample["pumps"][pump_key] = value >= 0.5
+    return list(series_by_id.values()), sorted(pump_states_by_time.values(), key=lambda item: item["x"])
 
 
 def _user_id(token: str) -> str:
@@ -208,135 +342,6 @@ def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, f
     return *values[BUFFER_UPPER_SERIES_ID], *values["3159"], discovered
 
 
-def _history_connection():
-    path = os.getenv("THERMOFLOW_HISTORY_DB", "/data/thermoflow.sqlite3")
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    return sqlite3.connect(path, timeout=10)
-
-
-def _record_live_history(payload: dict) -> None:
-    """Persist chart values and pump states observed by the live poller."""
-    data = payload.get("data") or {}
-    valve = data.get("valve") or {}
-    opening = _number(valve.get("opening"))
-    setpoint = _number(valve.get("set"))
-    temperatures = data.get("temperatures") or {}
-    return_value = temperatures.get("return")
-    if return_value is None:
-        return_value = valve.get("return")
-    return_temperature = _number(return_value)
-    pumps = data.get("pumps") or {}
-    pump_values = {
-        key: (int(pumps[key]) if isinstance(pumps.get(key), bool) else None)
-        for key in PUMP_HISTORY_COLUMNS
-    }
-    if opening is None and setpoint is None and return_temperature is None and all(value is None for value in pump_values.values()):
-        return
-    try:
-        sampled_at = datetime.fromisoformat(payload["fetched_at"]).timestamp()
-    except (KeyError, TypeError, ValueError):
-        sampled_at = time.time()
-    try:
-        with _history_lock, _history_connection() as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS valve_opening (sampled_at REAL NOT NULL, value REAL NOT NULL)"
-            )
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS valve_setpoint (sampled_at REAL NOT NULL, value REAL NOT NULL)"
-            )
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS return_temperature (sampled_at REAL NOT NULL, value REAL NOT NULL)"
-            )
-            connection.execute(
-                """CREATE TABLE IF NOT EXISTS pump_state (
-                    sampled_at REAL NOT NULL,
-                    floor INTEGER,
-                    valve4d INTEGER,
-                    dhw INTEGER,
-                    circulation INTEGER
-                )"""
-            )
-            if opening is not None:
-                connection.execute(
-                    "INSERT INTO valve_opening (sampled_at, value) VALUES (?, ?)",
-                    (sampled_at, opening),
-                )
-            if setpoint is not None:
-                connection.execute(
-                    "INSERT INTO valve_setpoint (sampled_at, value) VALUES (?, ?)",
-                    (sampled_at, setpoint),
-                )
-            if return_temperature is not None:
-                connection.execute(
-                    "INSERT INTO return_temperature (sampled_at, value) VALUES (?, ?)",
-                    (sampled_at, return_temperature),
-                )
-            current_tuple = tuple(pump_values[key] for key in PUMP_HISTORY_COLUMNS)
-            connection.execute(
-                "INSERT INTO pump_state (sampled_at, floor, valve4d, dhw, circulation) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (sampled_at, *current_tuple),
-            )
-    except (OSError, sqlite3.Error):
-        # Dashboard status remains available even if local history storage fails.
-        return
-
-
-def _local_history_points(table: str, period: str, year: int, month: int) -> list[dict]:
-    if table not in {"valve_opening", "valve_setpoint", "return_temperature"}:
-        raise ValueError("Unsupported local history table")
-    local_tz = ZoneInfo("Europe/Warsaw")
-    start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
-    if period == "year":
-        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
-    elif month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
-    else:
-        end = datetime(year, month + 1, 1, tzinfo=local_tz)
-    try:
-        with _history_lock, _history_connection() as connection:
-            rows = connection.execute(
-                f"SELECT sampled_at, value FROM {table} "
-                "WHERE sampled_at >= ? AND sampled_at < ? ORDER BY sampled_at",
-                (start.timestamp(), end.timestamp()),
-            ).fetchall()
-    except (OSError, sqlite3.Error):
-        return []
-    return [
-        {"x": datetime.fromtimestamp(sampled_at, timezone.utc).isoformat(), "y": value}
-        for sampled_at, value in rows
-    ]
-
-
-def _local_pump_history(period: str, year: int, month: int) -> list[dict]:
-    """Return sampled pump states for a local calendar month or year."""
-    local_tz = ZoneInfo("Europe/Warsaw")
-    start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
-    if period == "year" or month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=local_tz)
-    else:
-        end = datetime(year, month + 1, 1, tzinfo=local_tz)
-    try:
-        with _history_lock, _history_connection() as connection:
-            rows = connection.execute(
-                "SELECT sampled_at, floor, valve4d, dhw, circulation FROM pump_state "
-                "WHERE sampled_at >= ? AND sampled_at < ? ORDER BY sampled_at",
-                (start.timestamp(), end.timestamp()),
-            ).fetchall()
-    except (OSError, sqlite3.Error):
-        return []
-    return [
-        {
-            "x": datetime.fromtimestamp(row[0], timezone.utc).isoformat(),
-            "pumps": {
-                key: (None if value is None else bool(value))
-                for key, value in zip(PUMP_HISTORY_COLUMNS, row[1:])
-            },
-        }
-        for row in rows
-    ]
-
-
 def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
     """Fetch linear temperature history, combining monthly data if yearly range is unsupported."""
     now = time.monotonic()
@@ -422,29 +427,15 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         if cleaned:
             series.append({"id": str(series_id), "label": label, "points": cleaned})
 
-    opening_points = _local_history_points("valve_opening", period, year, month)
-    if opening_points:
-        series.append({
-            "id": VALVE_OPENING_SERIES_ID,
-            "label": VALVE_OPENING_SERIES_LABEL,
-            "points": opening_points,
-        })
-
-    setpoint_points = _local_history_points("valve_setpoint", period, year, month)
-    if setpoint_points:
-        series.append({
-            "id": VALVE_SETPOINT_SERIES_ID,
-            "label": VALVE_SETPOINT_SERIES_LABEL,
-            "points": setpoint_points,
-        })
-
-    return_points = _local_history_points("return_temperature", period, year, month)
-    if return_points:
-        series.append({
-            "id": RETURN_TEMPERATURE_SERIES_ID,
-            "label": RETURN_TEMPERATURE_SERIES_LABEL,
-            "points": return_points,
-        })
+    thingspeak_series, pump_states = _thingspeak_history(period, year, month)
+    known_series = {item["id"]: item for item in series}
+    for item in thingspeak_series:
+        target = known_series.get(item["id"])
+        if target:
+            target["points"].extend(item["points"])
+        else:
+            series.append(item)
+            known_series[item["id"]] = item
 
     result = {
         "configured": True,
@@ -453,7 +444,7 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
         "year": year,
         "month": month if period == "month" else None,
         "series": series,
-        "pump_states": _local_pump_history(period, year, month),
+        "pump_states": pump_states,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
     with _chart_cache_lock:
@@ -905,7 +896,7 @@ def snapshot() -> dict:
         try:
             payload = _read_snapshot()
             if payload.get("connected"):
-                _record_live_history(payload)
+                _thingspeak_write(payload)
         except HTTPError as error:
             payload = {
                 "configured": True,

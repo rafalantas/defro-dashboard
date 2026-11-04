@@ -16,10 +16,12 @@ services:
     environment:
       TECH_API_TOKEN: ${TECH_API_TOKEN:-}
       TECH_MODULE_ID: ${TECH_MODULE_ID:-}
+      THINGSPEAK_CHANNEL_IDS: ${THINGSPEAK_CHANNEL_IDS:-}
+      THINGSPEAK_WRITE_KEYS: ${THINGSPEAK_WRITE_KEYS:-}
+      THINGSPEAK_READ_KEYS: ${THINGSPEAK_READ_KEYS:-}
+      THINGSPEAK_WRITE_INTERVAL_SECONDS: ${THINGSPEAK_WRITE_INTERVAL_SECONDS:-40}
     expose:
       - "8000"
-    volumes:
-      - api_history:/data
     restart: unless-stopped
 
   cloudflared:
@@ -36,6 +38,3 @@ services:
     depends_on:
       - thermoflow
     restart: unless-stopped
-
-volumes:
-  api_history:
