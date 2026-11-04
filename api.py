@@ -124,9 +124,7 @@ THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
 
 
 def _thingspeak_field_schema() -> tuple:
-    if os.getenv("THINGSPEAK_SCHEMA", "compact-v1").strip() == "compact-v1":
-        return THINGSPEAK_COMPACT_CHANNEL_FIELDS
-    return THINGSPEAK_CHANNEL_FIELDS
+    return THINGSPEAK_COMPACT_CHANNEL_FIELDS
 
 
 def _token() -> str:
@@ -373,112 +371,22 @@ def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, f
 
 
 def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
-    """Fetch linear temperature history, combining monthly data if yearly range is unsupported."""
+    """Read chart history exclusively from the configured ThingSpeak channels."""
     now = time.monotonic()
-    schema_name = os.getenv("THINGSPEAK_SCHEMA", "compact-v1").strip()
-    cache_key = (udid, f"{schema_name}:{period}", year, month if period in ("month", "year") else 0)
+    cache_key = ("thingspeak", period, year, month if period in ("month", "year") else 0)
     with _chart_cache_lock:
         cached = _chart_cache.get(cache_key)
         if cached and now - cached[0] < 300:
             return cached[1]
 
-    base = f"modules/{udid}/statistics/linear/range/"
-
-    def get_month(month_number: int) -> dict:
-        return _get(f"{base}month/{month_number}/year/{year}", token)
-
-    if period == "month":
-        body = get_month(month)
-    else:
-        try:
-            body = _get(f"{base}{period}", token)
-        except HTTPError as error:
-            if period != "year" or error.code != 422:
-                raise
-            # Some controller models document a yearly range but reject it.
-            # Assemble the calendar year from the explicit monthly endpoint.
-            import concurrent.futures
-            month_range = range(1, month + 1) if year == datetime.now().year else range(1, 13)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-                months = list(pool.map(get_month, month_range))
-            history: dict[str, dict[str, float]] = {}
-            descriptions: dict[str, str] = {}
-            for monthly in months:
-                data = monthly.get("data") or {}
-                month_history = data.get("history") or {}
-                month_descriptions = data.get("descriptions") or []
-                for index, (series_id, points) in enumerate(month_history.items()):
-                    if isinstance(month_descriptions, list) and index < len(month_descriptions):
-                        descriptions[str(series_id)] = str(month_descriptions[index])
-                    target = history.setdefault(str(series_id), {})
-                    for point in points if isinstance(points, list) else []:
-                        if isinstance(point, dict) and point.get("x") is not None and point.get("y") is not None:
-                            target[str(point["x"])] = point["y"]
-            body = {"data": {"history": history, "descriptions": descriptions}}
-
-    data = body.get("data") or {}
-    history = data.get("history") or {}
-    raw_descriptions = data.get("descriptions") or []
-    if isinstance(raw_descriptions, list):
-        descriptions = {
-            str(series_id): str(raw_descriptions[index])
-            for index, series_id in enumerate(history)
-            if index < len(raw_descriptions)
-        }
-    elif isinstance(raw_descriptions, dict):
-        descriptions = {str(key): str(value) for key, value in raw_descriptions.items()}
-    else:
-        descriptions = {}
-
-    translations = _translations(token)
-    series = []
-    for series_id, points in history.items():
-        if not isinstance(points, list):
-            continue
-        description = descriptions.get(str(series_id), str(series_id))
-        if description.startswith("|&^4fdkl|"):
-            label = description.split("|", 2)[-1]
-        else:
-            match = re.fullmatch(r"(\d+)(?::(\d+))?", description)
-            if match:
-                label = STATISTICS_LABELS.get(match.group(1)) or translations.get(
-                    match.group(1), STATISTICS_LABELS.get(str(series_id), f"Seria {series_id}")
-                )
-                if match.group(2):
-                    label = f"{label} · {match.group(2)}"
-            else:
-                label = description or STATISTICS_LABELS.get(str(series_id), f"Seria {series_id}")
-        cleaned = []
-        for point in points:
-            if not isinstance(point, dict) or point.get("x") is None:
-                continue
-            value = _number(point.get("y"))
-            if value is not None:
-                cleaned.append({"x": str(point["x"]), "y": value})
-        if cleaned:
-            series.append({"id": str(series_id), "label": label, "points": cleaned})
-
-    thingspeak_series, pump_states = _thingspeak_history(period, year, month)
-    compact_history = schema_name == "compact-v1"
-    if compact_history:
-        series = thingspeak_series
-    else:
-        known_series = {item["id"]: item for item in series}
-        for item in thingspeak_series:
-            target = known_series.get(item["id"])
-            if target:
-                target["points"].extend(item["points"])
-            else:
-                series.append(item)
-                known_series[item["id"]] = item
-
+    series, pump_states = _thingspeak_history(period, year, month)
     result = {
         "configured": True,
         "connected": True,
         "period": period,
         "year": year,
         "month": month if period == "month" else None,
-        "history_source": "thingspeak" if compact_history else "combined",
+        "history_source": "thingspeak",
         "series": series,
         "pump_states": pump_states,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
@@ -490,24 +398,19 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
 
 def _read_statistics(period: str, year: int | None = None, month: int | None = None) -> dict:
     if period not in ("day", "week", "month", "year"):
-        return {"configured": bool(_token()), "connected": False, "error": "Nieobsługiwany zakres statystyk"}
-    token = _token()
-    if not token:
-        return {"configured": False, "connected": False, "error": "Brak tokenu eModul"}
-    uid = _user_id(token)
-    modules = _get(f"users/{uid}/modules", token)
-    if not isinstance(modules, list) or not modules:
-        raise RuntimeError("Konto eModul nie zwróciło sterowników")
-    wanted = os.getenv("TECH_MODULE_ID", "").strip()
-    module = next((item for item in modules if str(item.get("udid", "")) == wanted), None) if wanted else modules[0]
-    if module is None or not module.get("udid"):
-        raise RuntimeError("TECH_MODULE_ID nie pasuje do sterownika na koncie eModul")
+        return {"configured": False, "connected": False, "error": "Nieobsługiwany zakres statystyk"}
     today = datetime.now()
     selected_year = year or today.year
     selected_month = month or today.month
     if not 2000 <= selected_year <= 2100 or not 1 <= selected_month <= 12:
-        return {"configured": True, "connected": False, "error": "Nieprawidłowa data statystyk"}
-    return _linear_statistics(str(module["udid"]), token, period, selected_year, selected_month)
+        return {"configured": False, "connected": False, "error": "Nieprawidłowa data statystyk"}
+    if len(_thingspeak_settings("THINGSPEAK_CHANNEL_IDS")) != len(THINGSPEAK_COMPACT_CHANNEL_FIELDS):
+        return {
+            "configured": False,
+            "connected": False,
+            "error": "Historia wymaga dwóch kanałów ThingSpeak: temperatury i mocy oraz zaworu, pomp i paliwa.",
+        }
+    return _linear_statistics("", "", period, selected_year, selected_month)
 
 
 def _read_snapshot() -> dict:

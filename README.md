@@ -92,11 +92,11 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | --- | --- |
 | `/api/health` | Status konfiguracji i połączenia |
 | `/api/status` | Bieżące dane sterownika używane przez dashboard |
-| `/api/statistics?period=day\|week\|month\|year` | Historyczne serie eModul i ThingSpeak do wykresów oraz CSV |
+| `/api/statistics?period=day\|week\|month\|year` | Historia ThingSpeak do wykresów i CSV |
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
 | `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
 
-Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Nowe próbki wysyłane są do trzech kanałów ThingSpeak co 40 sekund (minimum 35 s), bez zapisywania historii na dysku Raspberry Pi. Kanały muszą być prywatne lub publiczne z odpowiednimi kluczami odczytu; każde pole należy włączyć i nazwać zgodnie z listą poniżej. Historia ThingSpeak jest dołączana do wykresów i CSV. ThingSpeak zwraca starsze dane w agregowanych przedziałach: 10 minut dla miesiąca i 4 godziny dla roku; dlatego szczegóły przełączeń pomp najlepiej analizować dla krótszych zakresów. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz czasu lokalnego `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Próbki sprzed konfiguracji kanałów nie zostaną uzupełnione.
+Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Nowe próbki wysyłane są do dwóch kanałów ThingSpeak co 40 sekund (minimum 35 s), bez zapisywania historii na dysku Raspberry Pi. Wykres i CSV korzystają wyłącznie z ThingSpeak. Kanały muszą być prywatne lub publiczne z odpowiednimi kluczami odczytu; każde pole należy włączyć i nazwać zgodnie z listą poniżej. ThingSpeak zwraca starsze dane w agregowanych przedziałach: 10 minut dla miesiąca i 4 godziny dla roku; dlatego szczegóły przełączeń pomp najlepiej analizować dla krótszych zakresów. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz czasu lokalnego `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Próbki sprzed konfiguracji kanałów nie zostaną uzupełnione.
 Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
@@ -107,23 +107,22 @@ Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul 
 | `TECH_MODULE_ID` | Nie | `udid` sterownika wybranego z `/api/modules`. Puste pole wybiera pierwszy sterownik. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Nie | Token Cloudflare Tunnel; używany tylko przy aktywnym profilu `cloudflare`. |
 | `COMPOSE_PROFILES` | Nie | Ustaw `cloudflare`, aby uruchomić opcjonalny kontener tunelu. |
-| `THINGSPEAK_CHANNEL_IDS` | Tak dla historii | Trzy identyfikatory kanałów, oddzielone przecinkami, w kolejności: temperatury, zawór/pompy, nastawy/kocioł. |
-| `THINGSPEAK_WRITE_KEYS` | Tak dla historii | Trzy klucze Write API, w tej samej kolejności co kanały. Sekret Portainera. |
-| `THINGSPEAK_READ_KEYS` | Nie | Trzy klucze Read API w tej samej kolejności. Dla kanałów publicznych można zostawić puste. Przy pustym środkowym kluczu zachowaj przecinki, np. `klucz1,,klucz3`. |
+| `THINGSPEAK_CHANNEL_IDS` | Tak dla historii | Dwa identyfikatory kanałów, oddzielone przecinkiem, w kolejności: temperatury i moc, zawór/pompy i paliwo. |
+| `THINGSPEAK_WRITE_KEYS` | Tak dla historii | Dwa klucze Write API w tej samej kolejności co kanały. Sekret Portainera. |
+| `THINGSPEAK_READ_KEYS` | Nie | Dwa klucze Read API w tej samej kolejności. Dla kanałów publicznych można zostawić puste. |
 | `THINGSPEAK_WRITE_INTERVAL_SECONDS` | Nie | Odstęp zapisu; domyślnie 40 sekund, minimum 35. |
 | `PORTAINER_WEBHOOK_URL` | Nie | Sekret GitHub Actions do wywołania webhooka po publikacji obrazów; wymaga osiągalnego adresu z runnera. |
 
 ### Pola kanałów ThingSpeak
 
-W każdym z trzech kanałów włącz osiem pól i nadaj im poniższe nazwy. Zmienne `THINGSPEAK_CHANNEL_IDS`, `THINGSPEAK_WRITE_KEYS` oraz `THINGSPEAK_READ_KEYS` muszą zachować tę samą kolejność kanałów.
+W obu kanałach włącz pola i nadaj im poniższe nazwy. Zmienne `THINGSPEAK_CHANNEL_IDS`, `THINGSPEAK_WRITE_KEYS` oraz `THINGSPEAK_READ_KEYS` muszą zachować tę samą kolejność kanałów.
 
 | Kanał | Pola 1–8 |
 | --- | --- |
-| 1 · Temperatury | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki C1 (°C), pole 7 nieużywane, Moc chwilowa pieca (kW) |
-| 2 · Zawór i pompy | Temperatura zaworu 4D (°C), Zadana zaworu 4D (°C), Otwarcie zaworu 4D (%), Powrót zaworu 4D (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1) |
-| 3 · Nastawy i kocioł | Zadana CO (°C), Zadana CWU (°C), Zapas paliwa (%), Temperatura pokoju bieżąca (°C), Temperatura zadana zaworu 4D po korekcie (°C), Histereza zaworu 4D (°C), Histereza CO (°C), Histereza CWU (°C) |
+| 3566081 · Temperatury i moc | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki (C1), Temperatura zaworu 4D (°C), Moc chwilowa pieca (kW) |
+| 3566084 · Zawór, pompy i paliwo | Zadana zaworu 4D po korekcie (°C), Otwarcie zaworu 4D (%), Powrót zaworu 4D (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1), Zapas paliwa (%) |
 
-Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpisana korekta `setTempCorrection`; korekta dodatnia podwyższa, a ujemna obniża temperaturę. Powrót jest zapisywany raz, w kanale 2 (pole 4); kanał 1 zachowuje puste pole 7, aby moc pieca pozostała w polu 8. W Portainerze ustaw trzy ID i klucze zapisu jako wartości oddzielone przecinkami, bez spacji. Dla prywatnych kanałów wklej także trzy klucze odczytu. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
+Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpisana korekta `setTempCorrection`; korekta dodatnia podwyższa, a ujemna obniża temperaturę. W Portainerze ustaw dokładnie dwa ID oraz dwa klucze zapisu w tej samej kolejności, bez spacji. Dla prywatnych kanałów ustaw również dwa klucze odczytu. Nie dodawaj starego kanału 3566098. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
 
 ## Struktura repozytorium
 
