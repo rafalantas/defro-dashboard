@@ -66,6 +66,8 @@ VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
 VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
 RETURN_TEMPERATURE_SERIES_ID = "thermoflow-return-temperature"
 RETURN_TEMPERATURE_SERIES_LABEL = "Temperatura powrotu"
+VALVE_SETPOINT_SERIES_ID = "thermoflow-valve4d-setpoint"
+VALVE_SETPOINT_SERIES_LABEL = "Temperatura zadana zaworu 4D"
 PUMP_HISTORY_COLUMNS = ("floor", "valve4d", "dhw", "circulation")
 
 
@@ -217,6 +219,7 @@ def _record_live_history(payload: dict) -> None:
     data = payload.get("data") or {}
     valve = data.get("valve") or {}
     opening = _number(valve.get("opening"))
+    setpoint = _number(valve.get("set"))
     temperatures = data.get("temperatures") or {}
     return_value = temperatures.get("return")
     if return_value is None:
@@ -227,7 +230,7 @@ def _record_live_history(payload: dict) -> None:
         key: (int(pumps[key]) if isinstance(pumps.get(key), bool) else None)
         for key in PUMP_HISTORY_COLUMNS
     }
-    if opening is None and return_temperature is None and all(value is None for value in pump_values.values()):
+    if opening is None and setpoint is None and return_temperature is None and all(value is None for value in pump_values.values()):
         return
     try:
         sampled_at = datetime.fromisoformat(payload["fetched_at"]).timestamp()
@@ -237,6 +240,9 @@ def _record_live_history(payload: dict) -> None:
         with _history_lock, _history_connection() as connection:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS valve_opening (sampled_at REAL NOT NULL, value REAL NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS valve_setpoint (sampled_at REAL NOT NULL, value REAL NOT NULL)"
             )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS return_temperature (sampled_at REAL NOT NULL, value REAL NOT NULL)"
@@ -255,6 +261,11 @@ def _record_live_history(payload: dict) -> None:
                     "INSERT INTO valve_opening (sampled_at, value) VALUES (?, ?)",
                     (sampled_at, opening),
                 )
+            if setpoint is not None:
+                connection.execute(
+                    "INSERT INTO valve_setpoint (sampled_at, value) VALUES (?, ?)",
+                    (sampled_at, setpoint),
+                )
             if return_temperature is not None:
                 connection.execute(
                     "INSERT INTO return_temperature (sampled_at, value) VALUES (?, ?)",
@@ -272,7 +283,7 @@ def _record_live_history(payload: dict) -> None:
 
 
 def _local_history_points(table: str, period: str, year: int, month: int) -> list[dict]:
-    if table not in {"valve_opening", "return_temperature"}:
+    if table not in {"valve_opening", "valve_setpoint", "return_temperature"}:
         raise ValueError("Unsupported local history table")
     local_tz = ZoneInfo("Europe/Warsaw")
     start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
@@ -417,6 +428,14 @@ def _linear_statistics(udid: str, token: str, period: str, year: int, month: int
             "id": VALVE_OPENING_SERIES_ID,
             "label": VALVE_OPENING_SERIES_LABEL,
             "points": opening_points,
+        })
+
+    setpoint_points = _local_history_points("valve_setpoint", period, year, month)
+    if setpoint_points:
+        series.append({
+            "id": VALVE_SETPOINT_SERIES_ID,
+            "label": VALVE_SETPOINT_SERIES_LABEL,
+            "points": setpoint_points,
         })
 
     return_points = _local_history_points("return_temperature", period, year, month)

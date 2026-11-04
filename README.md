@@ -96,7 +96,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
 | `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
 
-Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów eModul jest buforowana przez 5 minut. Otwarcie zaworu 4D (`openingPercentage`) oraz temperaturę powrotu backend zapisuje dodatkowo co około 30 sekund do woluminu `api_history`. Te lokalne serie są widoczne na wykresach od wdrożenia odpowiedniej funkcji; wcześniejszych próbek nie da się odtworzyć z lokalnej bazy. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz lokalnego czasu `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Wartość lokalnej bazy można zmienić zmienną `THERMOFLOW_HISTORY_DB` (domyślnie `/data/thermoflow.sqlite3`).
+Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Historia wykresów eModul jest buforowana przez 5 minut. Otwarcie zaworu 4D (`openingPercentage`), jego temperaturę zadaną oraz temperaturę powrotu backend zapisuje dodatkowo co około 30 sekund do woluminu `api_history`. Te lokalne serie są widoczne na wykresach i w CSV od wdrożenia odpowiedniej funkcji; wcześniejszych próbek nie da się odtworzyć z lokalnej bazy. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz lokalnego czasu `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Wartość lokalnej bazy można zmienić zmienną `THERMOFLOW_HISTORY_DB` (domyślnie `/data/thermoflow.sqlite3`).
 Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
@@ -107,7 +107,7 @@ Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul 
 | `TECH_MODULE_ID` | Nie | `udid` sterownika wybranego z `/api/modules`. Puste pole wybiera pierwszy sterownik. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Nie | Token Cloudflare Tunnel; używany tylko przy aktywnym profilu `cloudflare`. |
 | `COMPOSE_PROFILES` | Nie | Ustaw `cloudflare`, aby uruchomić opcjonalny kontener tunelu. |
-| `THERMOFLOW_HISTORY_DB` | Nie | Ścieżka bazy SQLite dla próbek otwarcia zaworu 4D; domyślnie `/data/thermoflow.sqlite3`. |
+| `THERMOFLOW_HISTORY_DB` | Nie | Ścieżka bazy SQLite dla próbek otwarcia, temperatury zadanej i temperatury powrotu zaworu 4D oraz stanów pomp; domyślnie `/data/thermoflow.sqlite3`. |
 | `PORTAINER_WEBHOOK_URL` | Nie | Sekret GitHub Actions do wywołania webhooka po publikacji obrazów; wymaga osiągalnego adresu z runnera. |
 
 ## Struktura repozytorium
