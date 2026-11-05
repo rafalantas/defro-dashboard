@@ -120,7 +120,7 @@ W obu kanałach włącz pola i nadaj im poniższe nazwy. Zmienne `THINGSPEAK_CHA
 | Kanał | Pola 1–8 |
 | --- | --- |
 | 3566081 · Temperatury i moc | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki (C1), Temperatura zaworu 4D (°C), Moc chwilowa pieca (kW) |
-| 3566084 · Zawór, pompy i paliwo | Zadana zaworu 4D po korekcie (°C), Otwarcie zaworu 4D (%), Powrót zaworu 4D (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1), Zapas paliwa (%) |
+| 3566084 · Zawór, pompy i paliwo | Zadana zaworu 4D po korekcie (°C), Otwarcie zaworu 4D (%), Temperatura powrotu (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1), Zapas paliwa (%) |
 
 Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpisana korekta `setTempCorrection`; korekta dodatnia podwyższa, a ujemna obniża temperaturę. W Portainerze ustaw dokładnie dwa ID oraz dwa klucze zapisu w tej samej kolejności, bez spacji. Dla prywatnych kanałów ustaw również dwa klucze odczytu. Nie dodawaj starego kanału 3566098. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
 

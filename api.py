@@ -82,7 +82,7 @@ THINGSPEAK_CHANNEL_FIELDS = (
         ("thermoflow-valve4d-current", "Temperatura zaworu 4D", "valve.current"),
         (VALVE_SETPOINT_SERIES_ID, VALVE_SETPOINT_SERIES_LABEL, "valve.set"),
         (VALVE_OPENING_SERIES_ID, VALVE_OPENING_SERIES_LABEL, "valve.opening"),
-        ("thermoflow-valve4d-return", "Powrót zaworu 4D", "valve.return"),
+        ("thermoflow-valve4d-return", "Temperatura powrotu", "valve.return"),
         ("thermoflow-pump-valve4d", "Pompa zaworu 4D", "pumps.valve4d"),
         ("thermoflow-pump-floor", "Pompa podłogowa", "pumps.floor"),
         ("thermoflow-pump-dhw", "Pompa CWU", "pumps.dhw"),
@@ -113,7 +113,7 @@ THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
     (
         ("thermoflow-valve4d-effective-setpoint", "Temperatura zadana zaworu 4D po korekcie", "valve.set_after_correction"),
         (VALVE_OPENING_SERIES_ID, VALVE_OPENING_SERIES_LABEL, "valve.opening"),
-        ("thermoflow-valve4d-return", "Powrót zaworu 4D", "valve.return"),
+        ("thermoflow-valve4d-return", "Temperatura powrotu", "valve.return"),
         ("thermoflow-pump-valve4d", "Pompa zaworu 4D", "pumps.valve4d"),
         ("thermoflow-pump-floor", "Pompa podłogowa", "pumps.floor"),
         ("thermoflow-pump-dhw", "Pompa CWU", "pumps.dhw"),
