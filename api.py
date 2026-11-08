@@ -442,79 +442,104 @@ def _history_timestamp(value) -> datetime | None:
 
 
 def _read_history(hours: int) -> dict:
-    """Return recent eModul samples, with readable timestamp/value keys."""
-    token = _token()
-    if not token:
-        return {"configured": False, "connected": False, "error": "Brak tokenu eModul"}
+    """Return all recent ThingSpeak samples, deduplicated by series and timestamp."""
+    channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
+    read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
+    fields_by_channel = _thingspeak_field_schema()
+    if len(channel_ids) != len(fields_by_channel):
+        return {"configured": False, "connected": False, "error": "Historia wymaga dwóch kanałów ThingSpeak"}
 
-    uid = _user_id(token)
-    modules = _get(f"users/{uid}/modules", token)
-    if not isinstance(modules, list) or not modules:
-        raise RuntimeError("Konto eModul nie zwróciło sterowników")
-    wanted = os.getenv("TECH_MODULE_ID", "").strip()
-    module = next((item for item in modules if str(item.get("udid", "")) == wanted), None) if wanted else modules[0]
-    if module is None or not module.get("udid"):
-        raise RuntimeError("TECH_MODULE_ID nie pasuje do sterownika na koncie eModul")
-
-    cache_key = (str(module["udid"]), hours)
+    cache_key = (",".join(channel_ids), hours)
     now_monotonic = time.monotonic()
     with _history_cache_lock:
         cached = _history_cache.get(cache_key)
         if cached and now_monotonic - cached[0] < HISTORY_CACHE_SECONDS:
             return cached[1]
 
-    body = _get(f"modules/{module['udid']}/statistics/linear/range/day", token)
-    stats_data = body.get("data") or {}
-    history = stats_data.get("history") or {}
-    raw_descriptions = stats_data.get("descriptions") or []
-    if isinstance(raw_descriptions, list):
-        descriptions = {
-            str(series_id): str(raw_descriptions[index])
-            for index, series_id in enumerate(history)
-            if index < len(raw_descriptions)
+    local_tz = ZoneInfo("Europe/Warsaw")
+    end = datetime.now(local_tz)
+    start = datetime.fromtimestamp(end.timestamp() - hours * 3600, local_tz)
+    series_by_id: dict[str, dict] = {}
+    pump_states_by_time: dict[str, dict] = {}
+    for channel_index, channel_id in enumerate(channel_ids):
+        params = {
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+            "timezone": "Europe/Warsaw",
+            "results": 8000,
         }
-    elif isinstance(raw_descriptions, dict):
-        descriptions = {str(key): str(value) for key, value in raw_descriptions.items()}
-    else:
-        descriptions = {}
+        if channel_index < len(read_keys) and read_keys[channel_index]:
+            params["api_key"] = read_keys[channel_index]
+        request = Request(
+            f"https://api.thingspeak.com/channels/{channel_id}/feeds.json?{urlencode(params)}",
+            headers={"Accept": "application/json"},
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
+        except HTTPError as error:
+            raise RuntimeError(
+                f"ThingSpeak odrzucił odczyt kanału {channel_id} (HTTP {error.code}); sprawdź klucz Read API i prywatność kanału."
+            ) from None
+        except Exception:
+            raise RuntimeError(f"Nie udało się pobrać historii ThingSpeak z kanału {channel_id}.") from None
 
-    translations = _translations(token)
-    end = datetime.now(ZoneInfo("Europe/Warsaw"))
-    start = end.timestamp() - hours * 3600
+        for feed in feeds:
+            raw_timestamp = feed.get("created_at")
+            if not raw_timestamp:
+                continue
+            try:
+                timestamp = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            timestamp = timestamp.astimezone(local_tz)
+            if timestamp < start or timestamp > end:
+                continue
+            timestamp_text = timestamp.isoformat()
+            for field_number, (series_id, label, field_path) in enumerate(fields_by_channel[channel_index], start=1):
+                if series_id is None:
+                    continue
+                value = _number(feed.get(f"field{field_number}"))
+                if value is None:
+                    continue
+                if series_id not in series_by_id:
+                    unit = "%" if "fuel-percent" in series_id else "0/1" if series_id.startswith("thermoflow-pump-") else "kW" if "boiler-power" in series_id else "%" if "opening" in series_id else "°C"
+                    series_by_id[series_id] = {
+                        "id": series_id,
+                        "label": label,
+                        "unit": unit,
+                        "channel_id": channel_id,
+                        "field": field_number,
+                        "_points_by_time": {},
+                    }
+                # A repeated feed timestamp can occur when querying adjacent
+                # windows or after ThingSpeak retries; the newest row wins.
+                series_by_id[series_id]["_points_by_time"][timestamp_text] = {
+                    "timestamp": timestamp_text,
+                    "value": value,
+                }
+                if field_path and field_path.startswith("pumps."):
+                    pump_key = field_path.split(".")[-1]
+                    pump_sample = pump_states_by_time.setdefault(timestamp_text, {"timestamp": timestamp_text, "pumps": {}})
+                    pump_sample["pumps"][pump_key] = value >= 0.5
+
     series = []
-    for series_id, points in history.items():
-        if not isinstance(points, list):
-            continue
-        key = str(series_id)
-        description = descriptions.get(key, key)
-        match = re.fullmatch(r"(\d+)(?::(\d+))?", description)
-        label = description
-        if match:
-            text_id = match.group(1)
-            label = STATISTICS_LABELS.get(text_id) or translations.get(text_id) or STATISTICS_LABELS.get(key) or description
-        normalized_points = []
-        for point in points:
-            if not isinstance(point, dict) or point.get("y") is None:
-                continue
-            timestamp = _history_timestamp(point.get("x"))
-            value = _number(point.get("y"))
-            if timestamp is None or value is None or timestamp.timestamp() < start or timestamp > end:
-                continue
-            normalized_points.append({"timestamp": timestamp.isoformat(), "value": value})
-        if normalized_points:
-            normalized_points.sort(key=lambda point: point["timestamp"])
-            unit = "kW" if key == "3159" else "°C"
-            series.append({"id": key, "label": label, "unit": unit, "points": normalized_points})
+    for item in series_by_id.values():
+        points = sorted(item.pop("_points_by_time").values(), key=lambda point: point["timestamp"])
+        item["points"] = points
+        series.append(item)
+    pump_states = sorted(pump_states_by_time.values(), key=lambda sample: sample["timestamp"])
 
     result = {
         "configured": True,
         "connected": True,
-        "source": "eModul",
+        "source": "ThingSpeak",
         "range_hours": hours,
-        "from": datetime.fromtimestamp(start, ZoneInfo("Europe/Warsaw")).isoformat(),
+        "from": start.isoformat(),
         "to": end.isoformat(),
-        "resolution": "Odczyty sterownika; odstępy mogą być nieregularne.",
+        "resolution": "Próbki zapisane w ThingSpeak (zwykle co około 40 sekund).",
         "series": series,
+        "pump_states": pump_states,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
     with _history_cache_lock:
