@@ -58,7 +58,7 @@ _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
 _statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()
-_history_cache: dict[tuple[str, int], tuple[float, dict]] = {}
+_history_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
 _history_cache_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
@@ -441,26 +441,59 @@ def _history_timestamp(value) -> datetime | None:
         return None
 
 
-def _read_history(hours: int) -> dict:
-    """Return all recent ThingSpeak samples, deduplicated by series and timestamp."""
+HISTORY_SERIES_ALIASES = {
+    "thermoflow-valve4d": {
+        "thermoflow-valve4d-current", "thermoflow-valve4d-effective-setpoint",
+        "thermoflow-valve4d-opening", "thermoflow-valve4d-return",
+    },
+    "valve-opening": {"thermoflow-valve4d-opening"},
+    "opening": {"thermoflow-valve4d-opening"},
+    "return": {"thermoflow-valve4d-return"},
+    "setpoint": {"thermoflow-valve4d-effective-setpoint"},
+    "valve-setpoint": {"thermoflow-valve4d-effective-setpoint"},
+}
+HISTORY_SERIES_ORDER = (
+    "thermoflow-valve4d-current",
+    "thermoflow-valve4d-opening",
+    "thermoflow-valve4d-return",
+    "thermoflow-valve4d-effective-setpoint",
+)
+
+
+def _history_query_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("Datę podaj w formacie ISO, np. 2026-11-08T12:00:00+01:00") from None
+    return parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw")) if parsed.tzinfo is None else parsed
+
+
+def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None) -> dict:
+    """Return recent ThingSpeak samples as compact [unix_seconds, value] pairs."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
     fields_by_channel = _thingspeak_field_schema()
     if len(channel_ids) != len(fields_by_channel):
         return {"configured": False, "connected": False, "error": "Historia wymaga dwóch kanałów ThingSpeak"}
 
-    cache_key = (",".join(channel_ids), hours)
+    local_tz = ZoneInfo("Europe/Warsaw")
+    end = requested_end.astimezone(local_tz) if requested_end else datetime.now(local_tz)
+    start = requested_start.astimezone(local_tz) if requested_start else datetime.fromtimestamp(end.timestamp() - hours * 3600, local_tz)
+    if start >= end:
+        return {"configured": True, "connected": False, "error": "Data początkowa musi poprzedzać końcową"}
+    if end.timestamp() - start.timestamp() > 24 * 3600:
+        return {"configured": True, "connected": False, "error": "Zakres historii nie może przekraczać 24 godzin"}
+
+    range_key = f"last-{hours}h" if requested_start is None else f"{start.isoformat()}_{end.isoformat()}"
+    filter_key = ",".join(sorted(requested_series or []))
+    cache_key = (",".join(channel_ids), range_key, filter_key)
     now_monotonic = time.monotonic()
     with _history_cache_lock:
         cached = _history_cache.get(cache_key)
         if cached and now_monotonic - cached[0] < HISTORY_CACHE_SECONDS:
             return cached[1]
 
-    local_tz = ZoneInfo("Europe/Warsaw")
-    end = datetime.now(local_tz)
-    start = datetime.fromtimestamp(end.timestamp() - hours * 3600, local_tz)
     series_by_id: dict[str, dict] = {}
-    pump_states_by_time: dict[str, dict] = {}
     for channel_index, channel_id in enumerate(channel_ids):
         params = {
             "start": start.strftime("%Y-%m-%d %H:%M:%S"),
@@ -489,57 +522,49 @@ def _read_history(hours: int) -> dict:
             if not raw_timestamp:
                 continue
             try:
-                timestamp = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
+                timestamp = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00")).astimezone(local_tz)
             except ValueError:
                 continue
-            timestamp = timestamp.astimezone(local_tz)
             if timestamp < start or timestamp > end:
                 continue
-            timestamp_text = timestamp.isoformat()
-            for field_number, (series_id, label, field_path) in enumerate(fields_by_channel[channel_index], start=1):
-                if series_id is None:
+            for field_number, (series_id, label, _field_path) in enumerate(fields_by_channel[channel_index], start=1):
+                if series_id is None or (requested_series is not None and series_id not in requested_series):
                     continue
                 value = _number(feed.get(f"field{field_number}"))
-                if value is None:
+                if value is None or (series_id == "thermoflow-room" and value == 0):
                     continue
                 if series_id not in series_by_id:
-                    unit = "%" if "fuel-percent" in series_id else "0/1" if series_id.startswith("thermoflow-pump-") else "kW" if "boiler-power" in series_id else "%" if "opening" in series_id else "°C"
+                    unit = (
+                        "%" if "fuel-percent" in series_id or "opening" in series_id
+                        else "0/1" if series_id.startswith("thermoflow-pump-")
+                        else "kW" if "boiler-power" in series_id
+                        else "°C"
+                    )
                     series_by_id[series_id] = {
-                        "id": series_id,
-                        "label": label,
-                        "unit": unit,
-                        "channel_id": channel_id,
-                        "field": field_number,
+                        "id": series_id, "label": label, "unit": unit,
+                        "channel_id": channel_id, "field": field_number,
                         "_points_by_time": {},
                     }
-                # A repeated feed timestamp can occur when querying adjacent
-                # windows or after ThingSpeak retries; the newest row wins.
-                series_by_id[series_id]["_points_by_time"][timestamp_text] = {
-                    "timestamp": timestamp_text,
-                    "value": value,
-                }
-                if field_path and field_path.startswith("pumps."):
-                    pump_key = field_path.split(".")[-1]
-                    pump_sample = pump_states_by_time.setdefault(timestamp_text, {"timestamp": timestamp_text, "pumps": {}})
-                    pump_sample["pumps"][pump_key] = value >= 0.5
+                # Last duplicate at the same series/timestamp wins.
+                series_by_id[series_id]["_points_by_time"][int(timestamp.timestamp())] = [int(timestamp.timestamp()), value]
 
     series = []
     for item in series_by_id.values():
-        points = sorted(item.pop("_points_by_time").values(), key=lambda point: point["timestamp"])
-        item["points"] = points
+        item["points"] = [point for _, point in sorted(item.pop("_points_by_time").items())]
         series.append(item)
-    pump_states = sorted(pump_states_by_time.values(), key=lambda sample: sample["timestamp"])
+    order = {series_id: index for index, series_id in enumerate(HISTORY_SERIES_ORDER)}
+    series.sort(key=lambda item: (order.get(item["id"], len(order)), item["label"]))
 
     result = {
         "configured": True,
         "connected": True,
         "source": "ThingSpeak",
-        "range_hours": hours,
+        "range_hours": round((end.timestamp() - start.timestamp()) / 3600, 2),
         "from": start.isoformat(),
         "to": end.isoformat(),
         "resolution": "Próbki zapisane w ThingSpeak (zwykle co około 40 sekund).",
+        "point_format": "[unix_timestamp_seconds, value]",
         "series": series,
-        "pump_states": pump_states,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
     with _history_cache_lock:
@@ -1059,7 +1084,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = _read_statistics(period, year, month)
             except (HTTPError, URLError, TimeoutError, OSError) as error:
                 status = error.code if isinstance(error, HTTPError) else None
-                message = f"eModul odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z eModul"
+                message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
                 payload = {"configured": bool(_token()), "connected": False, "error": message}
             except Exception as error:
                 payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
@@ -1069,10 +1094,32 @@ class Handler(BaseHTTPRequestHandler):
                 hours = int(query.get("hours", ["6"])[0])
                 if not 1 <= hours <= 24:
                     raise ValueError("Parametr hours musi być liczbą od 1 do 24")
-                payload = _read_history(hours)
+                requested_start = requested_end = None
+                if "start" in query or "end" in query:
+                    if "start" not in query or "end" not in query:
+                        raise ValueError("Podaj jednocześnie parametry start i end")
+                    requested_start = _history_query_datetime(query["start"][0])
+                    requested_end = _history_query_datetime(query["end"][0])
+                known_series = {
+                    series_id
+                    for channel in _thingspeak_field_schema()
+                    for series_id, _label, _path in channel
+                    if series_id
+                }
+                requested_series = None
+                if "series" in query:
+                    names = {name.strip() for value in query["series"] for name in value.split(",") if name.strip()}
+                    expanded = set()
+                    for name in names:
+                        expanded.update(HISTORY_SERIES_ALIASES.get(name, {name}))
+                    unknown = expanded - known_series
+                    if unknown:
+                        raise ValueError("Nieznana seria: " + ", ".join(sorted(unknown)))
+                    requested_series = expanded
+                payload = _read_history(hours, requested_series, requested_start, requested_end)
             except (HTTPError, URLError, TimeoutError, OSError) as error:
                 status = error.code if isinstance(error, HTTPError) else None
-                message = f"eModul odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z eModul"
+                message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
                 payload = {"configured": bool(_token()), "connected": False, "error": message}
             except Exception as error:
                 payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
