@@ -468,7 +468,7 @@ def _history_query_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw")) if parsed.tzinfo is None else parsed
 
 
-def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None) -> dict:
+def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0) -> dict:
     """Return recent ThingSpeak samples as compact [unix_seconds, value] pairs."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
@@ -486,7 +486,7 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
 
     range_key = f"last-{hours}h" if requested_start is None else f"{start.isoformat()}_{end.isoformat()}"
     filter_key = ",".join(sorted(requested_series or []))
-    cache_key = (",".join(channel_ids), range_key, filter_key)
+    cache_key = (",".join(channel_ids), f"{range_key}|step={step}", filter_key)
     now_monotonic = time.monotonic()
     with _history_cache_lock:
         cached = _history_cache.get(cache_key)
@@ -550,7 +550,26 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
 
     series = []
     for item in series_by_id.values():
-        item["points"] = [point for _, point in sorted(item.pop("_points_by_time").items())]
+        raw_points = [point for _, point in sorted(item.pop("_points_by_time").items())]
+        if step:
+            buckets = {}
+            for timestamp, value in raw_points:
+                bucket = timestamp // step
+                stats = buckets.setdefault(bucket, {"last_timestamp": timestamp, "last_value": value, "sum": 0.0, "count": 0})
+                stats["last_timestamp"] = timestamp
+                stats["last_value"] = value
+                stats["sum"] += value
+                stats["count"] += 1
+            average_series = item["id"] in {
+                "thermoflow-co", "thermoflow-dhw", "thermoflow-flue", "thermoflow-outdoor",
+                "thermoflow-room", "thermoflow-floor", "thermoflow-valve4d-current",
+                "thermoflow-valve4d-return", "thermoflow-boiler-power",
+            }
+            raw_points = [
+                [stats["last_timestamp"], round(stats["sum"] / stats["count"], 1) if average_series else stats["last_value"]]
+                for stats in buckets.values()
+            ]
+        item["points"] = raw_points
         series.append(item)
     order = {series_id: index for index, series_id in enumerate(HISTORY_SERIES_ORDER)}
     series.sort(key=lambda item: (order.get(item["id"], len(order)), item["label"]))
@@ -564,6 +583,8 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         "to": end.isoformat(),
         "resolution": "Próbki zapisane w ThingSpeak (zwykle co około 40 sekund).",
         "point_format": "[unix_timestamp_seconds, value]",
+        "step_seconds": step or None,
+        "downsampling": "Średnia w przedziale dla temperatur i mocy; ostatnia wartość dla nastaw, otwarcia, pomp i paliwa." if step else None,
         "series": series,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1094,6 +1115,9 @@ class Handler(BaseHTTPRequestHandler):
                 hours = int(query.get("hours", ["6"])[0])
                 if not 1 <= hours <= 24:
                     raise ValueError("Parametr hours musi być liczbą od 1 do 24")
+                step = int(query.get("step", ["0"])[0])
+                if step and not 60 <= step <= 3600:
+                    raise ValueError("Parametr step musi wynosić od 60 do 3600 sekund")
                 requested_start = requested_end = None
                 if "start" in query or "end" in query:
                     if "start" not in query or "end" not in query:
@@ -1116,7 +1140,7 @@ class Handler(BaseHTTPRequestHandler):
                     if unknown:
                         raise ValueError("Nieznana seria: " + ", ".join(sorted(unknown)))
                     requested_series = expanded
-                payload = _read_history(hours, requested_series, requested_start, requested_end)
+                payload = _read_history(hours, requested_series, requested_start, requested_end, step)
             except (HTTPError, URLError, TimeoutError, OSError) as error:
                 status = error.code if isinstance(error, HTTPError) else None
                 message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
