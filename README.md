@@ -94,10 +94,10 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/status` | Bieżące dane sterownika używane przez dashboard |
 | `/api/statistics?period=day\|week\|month\|year` | Historia ThingSpeak do wykresów i CSV |
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
-| `/api/diagnostics` | Odczyty wszystkich kafelków, stref i pozycji menu MU/MI |
+| `/api/diagnostics` | Pełne odczyty diagnostyczne eModul: kafelki, kompletna struktura stref, dostępność menu MU/MI/MS/MP oraz wszystkie serie statystyk z ostatniej doby |
 
 Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Nowe próbki wysyłane są do dwóch kanałów ThingSpeak co 40 sekund (minimum 35 s), bez zapisywania historii na dysku Raspberry Pi. Wykres i CSV korzystają wyłącznie z ThingSpeak. Kanały muszą być prywatne lub publiczne z odpowiednimi kluczami odczytu; każde pole należy włączyć i nazwać zgodnie z listą poniżej. ThingSpeak zwraca starsze dane w agregowanych przedziałach: 10 minut dla miesiąca i 4 godziny dla roku; dlatego szczegóły przełączeń pomp najlepiej analizować dla krótszych zakresów. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz czasu lokalnego `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Próbki sprzed konfiguracji kanałów nie zostaną uzupełnione.
-Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Zwraca m.in. typ i widoczność kafelka, jego przetłumaczoną nazwę oraz parametry i widgety. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
+Endpoint diagnostyczny pobiera pełniejszy zestaw danych bezpośrednio z eModul na żądanie. Oprócz kafelków i ich surowych parametrów zwraca całą strukturę `zones` (w tym `system`, `globalSchedules` i `controllerParameters`), wykryte pozycje menu MU/MI/MS/MP z informacją, które menu konto może odczytać, oraz pełną odpowiedź szeregu statystyk dobowych wraz z listą dostępnych serii i najnowszymi punktami. Menu serwisowe lub producenta może być niedostępne bez kodu albo na koncie użytkownika; diagnostyka pokaże wtedy błąd dostępności zamiast zakładać, że dane istnieją. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
 

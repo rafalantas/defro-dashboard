@@ -792,12 +792,19 @@ def _read_diagnostics() -> dict:
         tiles.append(entry)
 
     menus = []
-    for menu_type in ("MU", "MI"):
+    menu_access = {}
+    # eModul defines user, installer, service and manufacturer menus. Some
+    # are unavailable to ordinary accounts or require a controller code;
+    # retain that fact in diagnostics instead of silently hiding the menu.
+    for menu_type in ("MU", "MI", "MS", "MP"):
         try:
             menu_body = _get(f"users/{uid}/modules/{udid}/menu/{menu_type}/", token)
-        except Exception:
+            elements = (menu_body.get("data") or {}).get("elements", [])
+            menu_access[menu_type] = {"available": True, "count": len(elements)}
+        except Exception as error:
+            menu_access[menu_type] = {"available": False, "error": str(error)[:180]}
             continue
-        for item in menu_body.get("data", {}).get("elements", []):
+        for item in elements:
             menus.append({
                 "menu": menu_type,
                 "id": item.get("id"),
@@ -808,20 +815,57 @@ def _read_diagnostics() -> dict:
 
     zones_body = details.get("zones") or {}
     zones = zones_body.get("elements", []) if isinstance(zones_body, dict) else []
+    # Preserve the complete eModul zones document. The dashboard's live
+    # mapper only needs `elements`, but system-controller metadata (signal,
+    # relays, contacts and schedules) lives beside that list.
+    zones_data = zones_body if isinstance(zones_body, dict) else {}
     # Statistics endpoints include time-series that are not part of the live
     # tile snapshot (for example the upper buffer sensor). Keep this probe in
     # diagnostics only; the dashboard's regular polling should stay lightweight.
-    statistics = {"available": None, "latest": {}, "consumptions_day": None, "consumptions_error": None, "error": None}
+    statistics = {
+        "available": None,
+        "latest": {},
+        "series": {},
+        "linear_day": None,
+        "consumptions_day": None,
+        "consumptions_error": None,
+        "error": None,
+    }
     try:
         available = _get(f"modules/{udid}/statistics/available", token)
         linear = _get(f"modules/{udid}/statistics/linear/range/day", token)
-        history = (linear.get("data") or {}).get("history") or {}
+        linear_data = linear.get("data") or {}
+        history = linear_data.get("history") or {}
+        descriptions = linear_data.get("descriptions") or {}
+        if isinstance(descriptions, list):
+            descriptions = {
+                str(series_id): descriptions[index]
+                for index, series_id in enumerate(history)
+                if index < len(descriptions)
+            }
+        elif not isinstance(descriptions, dict):
+            descriptions = {}
+        else:
+            descriptions = {str(key): value for key, value in descriptions.items()}
         statistics["available"] = available
-        statistics["latest"] = {
-            name: points[-1]
-            for name, points in history.items()
-            if isinstance(points, list) and points
-        }
+        # Keep the complete day response for newly discovered controller
+        # series. Normalize a small index as a convenience without dropping
+        # the original values, timestamps, descriptions or metadata.
+        statistics["linear_day"] = linear_data
+        for series_id, points in history.items():
+            if not isinstance(points, list) or not points:
+                continue
+            valid_points = [point for point in points if isinstance(point, dict)]
+            if not valid_points:
+                continue
+            latest = max(valid_points, key=lambda point: str(point.get("x", "")))
+            key = str(series_id)
+            statistics["latest"][key] = latest
+            statistics["series"][key] = {
+                "description": descriptions.get(key),
+                "latest": latest,
+                "points_count": len(valid_points),
+            }
     except Exception as error:
         statistics["error"] = str(error)[:180]
     # This endpoint is a daily/monthly aggregate. Keep it in diagnostics only;
@@ -839,11 +883,18 @@ def _read_diagnostics() -> dict:
             "name": module.get("name"),
             "type": module.get("type"),
             "version": module.get("version"),
+            "metadata": {
+                key: value
+                for key, value in module.items()
+                if key not in {"name", "type", "version", "udid"}
+            },
         },
         "counts": {"tiles": len(tiles), "zones": len(zones), "menu_items": len(menus)},
         "tiles": tiles,
         "zones": zones,
+        "zones_data": zones_data,
         "menus": menus,
+        "menu_access": menu_access,
         "statistics": statistics,
     }
 
