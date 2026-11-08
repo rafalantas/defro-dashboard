@@ -21,6 +21,7 @@ from urllib.request import Request, urlopen
 API_BASE = "https://emodul.eu/api/v1/"
 POLL_CACHE_SECONDS = 20
 STATISTICS_CACHE_SECONDS = 30
+HISTORY_CACHE_SECONDS = 30
 BUFFER_UPPER_SERIES_ID = "1856"  # eModul: "Temperatura bufora górna" (C1)
 # Stable Polish text IDs used by this controller's standard telemetry tiles.
 # Keep these as a fallback: a transient failure of /i18n/pl must not make live
@@ -57,6 +58,8 @@ _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
 _statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()
+_history_cache: dict[tuple[str, int], tuple[float, dict]] = {}
+_history_cache_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
@@ -427,6 +430,96 @@ def _read_statistics(period: str, year: int | None = None, month: int | None = N
             "error": "Historia wymaga dwóch kanałów ThingSpeak: temperatury i mocy oraz zaworu, pomp i paliwa.",
         }
     return _linear_statistics("", "", period, selected_year, selected_month)
+
+
+def _history_timestamp(value) -> datetime | None:
+    """Parse eModul's local YYYYMMDDHHMM sample timestamps."""
+    raw = str(value or "")
+    try:
+        return datetime.strptime(raw, "%Y%m%d%H%M").replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+    except ValueError:
+        return None
+
+
+def _read_history(hours: int) -> dict:
+    """Return recent eModul samples, with readable timestamp/value keys."""
+    token = _token()
+    if not token:
+        return {"configured": False, "connected": False, "error": "Brak tokenu eModul"}
+
+    uid = _user_id(token)
+    modules = _get(f"users/{uid}/modules", token)
+    if not isinstance(modules, list) or not modules:
+        raise RuntimeError("Konto eModul nie zwróciło sterowników")
+    wanted = os.getenv("TECH_MODULE_ID", "").strip()
+    module = next((item for item in modules if str(item.get("udid", "")) == wanted), None) if wanted else modules[0]
+    if module is None or not module.get("udid"):
+        raise RuntimeError("TECH_MODULE_ID nie pasuje do sterownika na koncie eModul")
+
+    cache_key = (str(module["udid"]), hours)
+    now_monotonic = time.monotonic()
+    with _history_cache_lock:
+        cached = _history_cache.get(cache_key)
+        if cached and now_monotonic - cached[0] < HISTORY_CACHE_SECONDS:
+            return cached[1]
+
+    body = _get(f"modules/{module['udid']}/statistics/linear/range/day", token)
+    stats_data = body.get("data") or {}
+    history = stats_data.get("history") or {}
+    raw_descriptions = stats_data.get("descriptions") or []
+    if isinstance(raw_descriptions, list):
+        descriptions = {
+            str(series_id): str(raw_descriptions[index])
+            for index, series_id in enumerate(history)
+            if index < len(raw_descriptions)
+        }
+    elif isinstance(raw_descriptions, dict):
+        descriptions = {str(key): str(value) for key, value in raw_descriptions.items()}
+    else:
+        descriptions = {}
+
+    translations = _translations(token)
+    end = datetime.now(ZoneInfo("Europe/Warsaw"))
+    start = end.timestamp() - hours * 3600
+    series = []
+    for series_id, points in history.items():
+        if not isinstance(points, list):
+            continue
+        key = str(series_id)
+        description = descriptions.get(key, key)
+        match = re.fullmatch(r"(\d+)(?::(\d+))?", description)
+        label = description
+        if match:
+            text_id = match.group(1)
+            label = STATISTICS_LABELS.get(text_id) or translations.get(text_id) or STATISTICS_LABELS.get(key) or description
+        normalized_points = []
+        for point in points:
+            if not isinstance(point, dict) or point.get("y") is None:
+                continue
+            timestamp = _history_timestamp(point.get("x"))
+            value = _number(point.get("y"))
+            if timestamp is None or value is None or timestamp.timestamp() < start or timestamp > end:
+                continue
+            normalized_points.append({"timestamp": timestamp.isoformat(), "value": value})
+        if normalized_points:
+            normalized_points.sort(key=lambda point: point["timestamp"])
+            unit = "kW" if key == "3159" else "°C"
+            series.append({"id": key, "label": label, "unit": unit, "points": normalized_points})
+
+    result = {
+        "configured": True,
+        "connected": True,
+        "source": "eModul",
+        "range_hours": hours,
+        "from": datetime.fromtimestamp(start, ZoneInfo("Europe/Warsaw")).isoformat(),
+        "to": end.isoformat(),
+        "resolution": "Odczyty sterownika; odstępy mogą być nieregularne.",
+        "series": series,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _history_cache_lock:
+        _history_cache[cache_key] = (now_monotonic, result)
+    return result
 
 
 def _read_snapshot() -> dict:
@@ -826,7 +919,6 @@ def _read_diagnostics() -> dict:
         "available": None,
         "latest": {},
         "series": {},
-        "linear_day": None,
         "consumptions_day": None,
         "consumptions_error": None,
         "error": None,
@@ -848,10 +940,8 @@ def _read_diagnostics() -> dict:
         else:
             descriptions = {str(key): value for key, value in descriptions.items()}
         statistics["available"] = available
-        # Keep the complete day response for newly discovered controller
-        # series. Normalize a small index as a convenience without dropping
-        # the original values, timestamps, descriptions or metadata.
-        statistics["linear_day"] = linear_data
+        # Keep only a compact summary here. Full x/y samples are available
+        # from /api/history?hours=6 in a readable timestamp/value format.
         for series_id, points in history.items():
             if not isinstance(points, list) or not points:
                 continue
@@ -860,10 +950,15 @@ def _read_diagnostics() -> dict:
                 continue
             latest = max(valid_points, key=lambda point: str(point.get("x", "")))
             key = str(series_id)
-            statistics["latest"][key] = latest
+            latest_summary = {
+                "timestamp": _history_timestamp(latest.get("x")).isoformat()
+                if _history_timestamp(latest.get("x")) else None,
+                "value": _number(latest.get("y")),
+            }
+            statistics["latest"][key] = latest_summary
             statistics["series"][key] = {
                 "description": descriptions.get(key),
-                "latest": latest,
+                "latest": latest_summary,
                 "points_count": len(valid_points),
             }
     except Exception as error:
@@ -927,7 +1022,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlsplit(self.path)
         path = parsed.path
-        if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics"):
+        if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
             self.send_error(404)
             return
         if path == "/api/statistics":
@@ -937,6 +1032,19 @@ class Handler(BaseHTTPRequestHandler):
                 year = int(query.get("year", [str(datetime.now().year)])[0])
                 month = int(query.get("month", [str(datetime.now().month)])[0])
                 payload = _read_statistics(period, year, month)
+            except (HTTPError, URLError, TimeoutError, OSError) as error:
+                status = error.code if isinstance(error, HTTPError) else None
+                message = f"eModul odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z eModul"
+                payload = {"configured": bool(_token()), "connected": False, "error": message}
+            except Exception as error:
+                payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
+        elif path == "/api/history":
+            query = parse_qs(parsed.query)
+            try:
+                hours = int(query.get("hours", ["6"])[0])
+                if not 1 <= hours <= 24:
+                    raise ValueError("Parametr hours musi być liczbą od 1 do 24")
+                payload = _read_history(hours)
             except (HTTPError, URLError, TimeoutError, OSError) as error:
                 status = error.code if isinstance(error, HTTPError) else None
                 message = f"eModul odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z eModul"
