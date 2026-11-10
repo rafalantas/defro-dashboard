@@ -10,6 +10,7 @@ Kanał ThingSpeak "Pelet":
 Endpointy (obsługiwane przez fuel.handle(), wywoływane z api.py):
   GET    /api/fuel/stats?days=30
   GET    /api/fuel/refills
+  GET    /api/fuel/summary         podsumowanie do karty w dashboardzie
   POST   /api/fuel/refill          {"kg": 30} lub {"bags": 2}, opcjonalnie "ts", "note"   (X-Api-Token)
   DELETE /api/fuel/refill/<id>     anulowanie wpisu                                         (X-Api-Token)
 
@@ -22,6 +23,7 @@ import hmac
 import json
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
@@ -60,6 +62,9 @@ HDD_BASE = float(os.getenv("HDD_BASE", "18.0"))
 PELLET_KWH_PER_KG = float(os.getenv("PELLET_KWH_PER_KG", "4.8"))
 BOILER_EFF = float(os.getenv("BOILER_EFF", "0.88"))
 BAG_KG = float(os.getenv("PELLET_BAG_KG", "15"))
+# Pojemność zasobnika; pusto = największa zapisana dosypka (szacunek).
+HOPPER_KG = float(os.getenv("PELLET_HOPPER_KG", "0") or 0)
+SUMMARY_CACHE_SECONDS = 60
 
 MAX_GAP_S = 300
 MAX_DAYS = 120
@@ -70,6 +75,8 @@ _lock = threading.Lock()
 _daily_cache: dict[str, dict] = {}
 _om_cache: dict[str, float] = {}
 _temps_start: list = []   # [date | None] po pierwszym sprawdzeniu
+_refills_cache: dict = {"at": 0.0, "data": None}
+_summary_cache: dict = {"at": 0.0, "data": None}
 
 
 class FuelError(Exception):
@@ -260,6 +267,20 @@ def _period_sums(start: datetime, end: datetime):
 def _refills() -> list[dict]:
     if not TS_CHANNEL_FUEL:
         return []
+    cached = _refills_cache["data"]
+    if cached is not None and time.monotonic() - _refills_cache["at"] < SUMMARY_CACHE_SECONDS:
+        return [dict(r) for r in cached]
+    out = _refills_uncached()
+    _refills_cache.update(at=time.monotonic(), data=out)
+    return [dict(r) for r in out]
+
+
+def _invalidate_caches():
+    _refills_cache.update(at=0.0, data=None)
+    _summary_cache.update(at=0.0, data=None)
+
+
+def _refills_uncached() -> list[dict]:
     params = {"results": 8000}
     if TS_READ_KEY_FUEL:
         params["api_key"] = TS_READ_KEY_FUEL
@@ -289,6 +310,7 @@ def _ts_write(fields: dict, created_at: datetime | None = None) -> int:
     entry_id = body.get("entry_id", 0) if isinstance(body, dict) else int(body or 0)
     if not entry_id:
         raise FuelError(429, "ThingSpeak odrzucił zapis (limit 15 s), spróbuj ponownie za chwilę")
+    _invalidate_caches()
     return entry_id
 
 
@@ -383,6 +405,105 @@ def _stats(query: dict) -> dict:
     }
 
 
+def _summary() -> dict:
+    """Lekkie podsumowanie do karty w dashboardzie (cache 60 s)."""
+    cached = _summary_cache["data"]
+    if cached is not None and time.monotonic() - _summary_cache["at"] < SUMMARY_CACHE_SECONDS:
+        return cached
+    if not TS_CHANNEL_FUEL:
+        return {"configured": False}
+
+    now = datetime.now(TZ)
+    today = now.date()
+    with _lock:
+        refills = _refills()
+        # tylko ostatnie okresy: szybciej, a kalibracja i tak wymaga danych palnika
+        periods = _periods(refills[-7:])
+        calib = _calibration(periods)
+        last7 = [_get_daily(today - timedelta(days=i)) for i in range(7, 0, -1)]
+
+    def est_kg(kwh: float) -> float:
+        return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * calib["factor"]
+
+    # 1) ostatnie 7 pełnych dób: szacunek z mocy palnika (skalibrowany)
+    with_burner = [d for d in last7 if d.get("burner_kwh") is not None and d.get("hdd") is not None]
+    # pomijamy niepełne doby (np. dzień uruchomienia kanału), żeby nie zaniżały sumy
+    if with_burner:
+        full = max(d.get("samples", 0) for d in with_burner)
+        with_burner = [d for d in with_burner if d.get("samples", 0) >= 0.7 * full]
+    week = None
+    if with_burner:
+        kg = sum(est_kg(d["burner_kwh"]) for d in with_burner)
+        hdd = sum(d["hdd"] for d in with_burner)
+        week = {
+            "days": len(with_burner),
+            "kg": round(kg, 1),
+            "kg_per_day": round(kg / len(with_burner), 1),
+            "hdd": round(hdd, 1),
+            "kg_per_hdd": round(kg / hdd, 2) if hdd > 0 else None,
+            "t_mean": round(sum(d["t_mean"] for d in with_burner) / len(with_burner), 1),
+        }
+
+    # 2) kg na stopniodzień z rzeczywistych dosypek (ostatnie okresy z ok. 30 dni)
+    recent = [p for p in periods if p["hdd"] > 0][-4:]
+    refills_based = None
+    if recent:
+        kg = sum(p["kg"] for p in recent)
+        hdd = sum(p["hdd"] for p in recent)
+        refills_based = {
+            "periods": len(recent),
+            "from": recent[0]["start"],
+            "to": recent[-1]["end"],
+            "kg": kg,
+            "hdd": round(hdd, 1),
+            "kg_per_hdd": round(kg / hdd, 2),
+        }
+
+    # 3) od ostatniej dosypki i 4) szacowany stan zasobnika
+    last = None
+    hopper = None
+    if refills:
+        lr = refills[-1]
+        last_ts = datetime.fromisoformat(lr["ts"])
+        hours = (now - last_ts).total_seconds() / 3600
+        last = {"ts": lr["ts"], "kg": lr["kg"], "hours_ago": round(hours, 1)}
+
+        with _lock:
+            _hdd, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
+        if not kwh_missing:
+            used, method = est_kg(kwh), "moc palnika skalibrowana do dosypek"
+        elif periods:
+            used, method = periods[-1]["kg_per_day"] * hours / 24, "średnia z ostatniego okresu"
+        else:
+            used, method = None, None
+
+        capacity = HOPPER_KG or max(r["kg"] for r in refills)
+        if used is not None:
+            remaining = max(0.0, capacity - used)
+            rate = (week or {}).get("kg_per_day") or (periods[-1]["kg_per_day"] if periods else None)
+            hopper = {
+                "capacity_kg": capacity,
+                "capacity_estimated": not HOPPER_KG,
+                "used_kg": round(used, 1),
+                "remaining_kg": round(remaining, 1),
+                "remaining_percent": round(100 * remaining / capacity) if capacity else None,
+                "days_left": round(remaining / rate, 1) if rate else None,
+                "method": method,
+            }
+
+    result = {
+        "configured": True,
+        "calibration": calib,
+        "last7": week,
+        "refills_based": refills_based,
+        "last_refill": last,
+        "hopper": hopper,
+        "fetched_at": now.isoformat(),
+    }
+    _summary_cache.update(at=time.monotonic(), data=result)
+    return result
+
+
 def _add_refill(data: dict) -> dict:
     try:
         kg = float(data["kg"]) if "kg" in data else float(data["bags"]) * BAG_KG
@@ -426,9 +547,13 @@ def handle(method: str, path: str, query: dict, headers, body: bytes):
     """Zwraca (status, payload) dla ścieżek /api/fuel/..., w innym przypadku None."""
     if not path.startswith("/api/fuel/"):
         return None
+    if path != "/api/fuel/" and path.endswith("/"):
+        path = path.rstrip("/")
     try:
         if method == "GET" and path == "/api/fuel/stats":
             return 200, _stats(query)
+        if method == "GET" and path.rstrip("/") == "/api/fuel/summary":
+            return 200, _summary()
         if method == "GET" and path == "/api/fuel/refills":
             return 200, {"refills": _refills()}
         if method == "POST" and path == "/api/fuel/refill":
@@ -441,6 +566,8 @@ def handle(method: str, path: str, query: dict, headers, body: bytes):
         if method == "DELETE" and path.startswith("/api/fuel/refill/"):
             _check_token(headers)
             return 200, _void_refill(path.rsplit("/", 1)[1])
+        if method == "GET" and path == "/api/fuel/refill":
+            return 405, {"error": "Dosypki dodaje się metodą POST; listę zwraca /api/fuel/refills"}
         return 404, {"error": "Nie znaleziono"}
     except FuelError as e:
         return e.status, {"error": e.message}
