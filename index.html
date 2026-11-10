@@ -131,7 +131,7 @@
         <div class="telemetry-tile wide"><div class="telemetry-label">Sterownik i wersja</div><div class="telemetry-value small" id="tileController">DEfRO · ST-9730</div><div class="telemetry-meta" id="tileVersion">wersja modułu</div></div>
       </div><div class="subhead" id="extraTempHeading" style="display:none;padding:0 18px 8px">Dodatkowe temperatury udostępnione przez sterownik</div><div class="telemetry-grid" id="extraTempGrid" style="display:none;padding-top:0"></div><div class="telemetry-footer" id="telemetryFooter">Oczekiwanie na dane sterownika przez eModul API.</div>
     </section>
-    <section class="card" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Zużycie peletu</h2><div class="subhead">Dosypki z kanału ThingSpeak „Pelet” · zużycie bieżące szacowane z mocy palnika i kalibrowane do dosypek</div></div></div>
+    <section class="card" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Zużycie peletu</h2><div class="subhead">Dosypki z kanału ThingSpeak „Pelet” · zużycie bieżące z licznika podajnika lub mocy palnika, kalibrowane do dosypek</div></div></div>
       <div class="telemetry-grid fuel-grid">
         <div class="telemetry-tile live"><div class="telemetry-label">Ostatnie 7 dni</div><div class="telemetry-value" id="fuelWeek">—</div><div class="telemetry-meta" id="fuelWeekMeta">szacunek z mocy palnika</div></div>
         <div class="telemetry-tile live"><div class="telemetry-label" id="fuelHddLabel">kg na stopniodzień</div><div class="telemetry-value" id="fuelHdd">—</div><div class="telemetry-meta" id="fuelHddMeta">z rzeczywistych dosypek</div></div>
@@ -221,7 +221,7 @@ function fuelNum(value,digits=0){return value==null||Number.isNaN(Number(value))
 function fuelDate(value){const date=new Date(value);return Number.isNaN(date.getTime())?'—':date.toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
 function renderFuel(summary){const week=summary.last7,refills=summary.refills_based,last=summary.last_refill,hopper=summary.hopper,calib=summary.calibration||{};
   $('fuelWeek').textContent=week?`${fuelNum(week.kg)} kg`:'—';
-  $('fuelWeekMeta').textContent=week?`${fuelNum(week.kg_per_day,1)} kg/dobę · śr. ${fuelNum(week.t_mean,1)} °C · ${week.days} z 7 dób z danymi`:'brak danych mocy palnika';
+  $('fuelWeekMeta').textContent=week?`${fuelNum(week.kg_per_day,1)} kg/dobę · śr. ${fuelNum(week.t_mean,1)} °C · ${week.days} z 7 dób z danymi${week.source?` · ${week.source}`:''}`:'brak danych mocy palnika';
   const model=summary.model;const hddValue=model?(refills?.heating_kg_per_hdd??week?.heating_kg_per_hdd??model.kg_per_hdd):(refills?.kg_per_hdd??week?.kg_per_hdd);$('fuelHdd').textContent=hddValue==null?'—':`${fuelNum(hddValue,2)} kg`;
   $('fuelHddLabel').textContent=model?'kg na stopniodzień · ogrzewanie':'kg na stopniodzień';
   $('fuelHddMeta').textContent=model?`stałe ${fuelNum(model.base_kg_per_day,1)} kg/dobę (CWU i straty) · grzanie poniżej ${fuelNum(model.balance_temp,1)} °C`:refills?`z dosypek ${fuelDate(refills.from).slice(0,5)}–${fuelDate(refills.to).slice(0,5)}${week?.kg_per_hdd!=null?` · 7 dni: ${fuelNum(week.kg_per_hdd,2)} kg`:''}`:week?'szacunek z ostatnich 7 dni':'za mało dosypek';
@@ -232,6 +232,7 @@ function renderFuel(summary){const week=summary.last7,refills=summary.refills_ba
   else{$('fuelHopper').textContent='—';$('fuelHopperMeta').textContent='brak danych do szacunku';tile.classList.add('ok');}
   const forecast=(summary.forecast||[]).slice(0,3).map(day=>`${fuelNum(day.kg)}`).join(' / ');const offset=summary.om_offset;
   $('fuelFooter').textContent=[model?`Model domu z ${model.periods_used} okresów między dosypkami (R² ${fuelNum(model.r2,2)})`:'Za mało dosypek na model domu',
+    summary.counter_calibration?.calibrated?`licznik podajnika ${fuelNum(summary.counter_calibration.kg_per_percent,2)} kg/%`:null,
     calib.calibrated?`moc palnika ×${fuelNum(calib.factor,2)}`:null,
     `stopniodni przy bazie ${fuelNum(summary.hdd_base??model?.balance_temp,1)} °C`,
     offset?.applied?`Open-Meteo skorygowane o ${fuelNum(offset.offset,1)} K do czujnika sterownika`:null,
