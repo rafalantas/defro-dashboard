@@ -37,9 +37,9 @@
           <path id="floorReturnFlowPath" d="M935 400 V430 H1045 V205 H850"/>
           <path id="floorHotFeedPath" d="M450 115 H800 V155"/>
           <path id="commonReturnPath" d="M1035 500 H350"/>
-          <path id="floorReturnToCommonPath" d="M1045 430 V500"/>
-          <path id="radiatorLoop" d="M250 115 H450 V155 V255 V350 H500 H585 V390 V420 H700 V220 H490 H410 H350 V500 H250 V265 H225 V220 H250 V115"/>
-          <path id="dhwLoop" d="M250 115 H1120 V204 V254 V400 H1155 V462 C1155 466 1095 466 1095 474 S1155 482 1155 486 S1095 500 1080 500 H1055 H350 H250 V265 H225 V220 H250 V115"/>
+          <path id="floorReturnToCommonPath" d="M935 400 V430 H1045 V500 H350"/>
+          <path id="radiatorLoop" d="M250 115 H450 V155 V255 V350 H500 H585 V390 V420 H700 V220 H490 H410 H350 V500 H250 V265 H225 M225 220 H250 V115"/>
+          <path id="dhwLoop" d="M250 115 H1120 V204 V254 V400 H1155 V462 C1155 466 1095 466 1095 474 S1155 482 1155 486 S1095 500 1080 500 H1055 H350 H250 V265 H225 M225 220 H250 V115"/>
           <path id="circLoop" d="M1170 430 H1250 V315 H1290 V342 H1320 V530 H1145 V430 H1170"/>
         </defs>
         <path class="pipe" d="M225 220 H250 V115 H1120 M450 115 V155 M800 115 V155 M1120 115 V206 M450 255 V350 H500 M585 390 V420 H700 V220 H490 M410 220 H350 V500 H250 V265 H225 M800 255 V350 H850 M935 400 V430 H1045 V205 H850 M1045 430 V500 M1120 254 V400 M1170 430 H1250 V315 H1290 V342 H1320 V530 H1145 V430 H1170 M1080 500 H1035"/>
@@ -47,15 +47,11 @@
         <path class="flow hot" data-fid="sys" data-pump="system" d="M225 220 H250 V115 H1120"/>
         <path class="flow hot" data-fid="radUp" data-pump="rad" d="M450 115 V155"/><path class="flow hot" data-fid="floorUp" data-pump="floor" d="M800 115 V155"/><path class="flow hot" data-fid="dhwUp" data-pump="dhw" d="M1120 115 V204"/>
         <path class="flow mixed" data-fid="radDown" data-pump="rad" d="M450 255 V350 H500"/><path class="flow" data-fid="floorDown" data-pump="floor" style="stroke:var(--teal)" d="M800 255 V350 H850"/>
-        <path class="flow cold" data-fid="radRet" data-pump="rad" d="M585 390 V420 H700 V220 H490"/><path class="flow cold" data-fid="floorRet" data-pump="floor" d="M935 400 V430 H1045 V205 H850"/><path class="flow cold" data-fid="floorToCommon" data-pump="floor" d="M1045 430 V500"/>
+        <path class="flow cold" data-fid="radRet" data-pump="rad" d="M585 390 V420 H700 V220 H490"/><path class="flow cold" data-fid="floorRet" data-pump="floor" d="M935 400 V430 H1045 V205 H850"/><path class="flow cold" data-fid="floorToCommon" data-pump="floor" d="M1045 430 V500 H1035"/>
         <path class="flow cold" data-fid="radRet2" data-pump="rad" d="M410 220 H350 V500"/><path class="flow cold" data-fid="sysRet" data-pump="system" marker-end="url(#arrBlue)" d="M350 500 H250 V265 H225"/>
         <text class="pipe-label" x="700" y="485" text-anchor="middle">POWRÓT WSPÓLNY DO KOTŁA</text>
         <path class="flow warm" data-fid="dhwDown" data-pump="dhw" marker-end="url(#arrWarm)" d="M1120 254 V400"/><path class="flow cold dhw-return-flow" data-fid="dhwRet" data-pump="dhw" d="M1080 500 H1035"/>
         <path class="flow hot" data-fid="circHot" data-pump="circ" d="M1170 430 H1250 V315 H1290 V342 H1320"/><path class="flow cold" data-fid="circRet" data-pump="circ" d="M1320 342 V530 H1145 V430 H1170"/>
-        <g id="beadCommonReturn">
-          <circle class="water-bead bead-cold" r="4"><animateMotion dur="4.8s" repeatCount="indefinite"><mpath href="#commonReturnPath"/></animateMotion></circle>
-          <circle class="water-bead bead-cold" r="3.5"><animateMotion dur="4.8s" begin="-2.4s" repeatCount="indefinite"><mpath href="#commonReturnPath"/></animateMotion></circle>
-        </g>
         <g id="beadFloorHotFeed">
           <circle class="water-bead bead-teal" r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#floorHotFeedPath"/></animateMotion></circle>
           <circle class="water-bead bead-teal" r="3.5"><animateMotion dur="3.6s" begin="-1.8s" repeatCount="indefinite"><mpath href="#floorHotFeedPath"/></animateMotion></circle>
@@ -65,11 +61,11 @@
           <circle class="water-bead bead-teal" r="3.5"><animateMotion dur="3.4s" begin="-1.1s" repeatCount="indefinite"><mpath href="#floorMixedFlowPath"/></animateMotion></circle>
           <circle class="water-bead bead-teal" r="3"><animateMotion dur="3.4s" begin="-2.2s" repeatCount="indefinite"><mpath href="#floorMixedFlowPath"/></animateMotion></circle>
         </g>
-        <g id="beadFloorReturn">
+        <g id="beadFloorReturn" data-bead-spacing="280">
           <circle class="water-bead bead-cold" r="4"><animateMotion dur="4.2s" repeatCount="indefinite"><mpath href="#floorReturnFlowPath"/></animateMotion></circle>
           <circle class="water-bead bead-cold" r="3.5"><animateMotion dur="4.2s" begin="-2.1s" repeatCount="indefinite"><mpath href="#floorReturnFlowPath"/></animateMotion></circle>
         </g>
-        <g id="beadFloorReturnToCommon">
+        <g id="beadFloorReturnToCommon" data-bead-spacing="280">
           <circle class="water-bead bead-cold" r="4"><animateMotion dur="0.7s" repeatCount="indefinite"><mpath href="#floorReturnToCommonPath"/></animateMotion></circle>
         </g>
         <g id="beadRadiator">
@@ -163,9 +159,9 @@ const $=id=>document.getElementById(id);
     const mpath=circles[0].querySelector('mpath'), path=mpath&&svg.querySelector(mpath.getAttribute('href'));
     if(!path) return;
     const len=path.getTotalLength(), dur=len/BEAD_SPEED, radii=[4,3.5,3];
-    const want=Math.max(circles.length,Math.round(len/BEAD_SPACING));
+    const fixed=Number(g.dataset.beadSpacing)||0, want=fixed?Math.max(1,Math.round(len/fixed)):Math.max(circles.length,Math.round(len/BEAD_SPACING));
     while(circles.length<want){const c=circles[0].cloneNode(true);c.setAttribute('r',radii[circles.length%3]);g.append(c);circles.push(c);}
-    circles.forEach((c,i)=>{const m=c.querySelector('animateMotion');m.setAttribute('dur',dur.toFixed(3)+'s');m.setAttribute('begin',(-dur*i/circles.length).toFixed(3)+'s');});
+    circles.forEach((c,i)=>{const m=c.querySelector('animateMotion');m.setAttribute('dur',dur.toFixed(3)+'s');m.setAttribute('begin',(fixed?-(i*fixed/BEAD_SPEED):-dur*i/circles.length).toFixed(3)+'s');});
   });
   const fp=id=>svg.querySelector(`[data-fid="${id}"]`);
   const lenAt=(path,x,y)=>{let best=0,bd=Infinity;const total=path.getTotalLength();for(let s=0;s<=total;s+=1){const p=path.getPointAtLength(s),d=(p.x-x)**2+(p.y-y)**2;if(d<bd){bd=d;best=s;}}return best;};
@@ -224,7 +220,7 @@ function applyLive(payload){showConnection(payload);if(!payload.connected||!payl
   setTile('tileController',`${payload.controller?.company||'TECH'} · ${payload.controller?.version||payload.controller?.name||'sterownik'}`);$('tileVersion').textContent=d.software?`${d.software.controller||''} · moduł ${d.software.module_version||'—'} · wersja ${d.software.version||'—'}`:payload.controller?.version||'';
   $('tileCoMeta').textContent=`zadana ${temp(setpoints.co)} · histereza ${temp(h.boiler)}`;$('tileDhwMeta').textContent=`zadana ${temp(setpoints.dhw)} · histereza ${temp(h.dhw)}`;
   const extraTemps=Array.isArray(d.other_tiles)?d.other_tiles:[];const extraGrid=$('extraTempGrid'),extraHeading=$('extraTempHeading');extraGrid.replaceChildren();extraHeading.style.display=extraTemps.length?'block':'none';extraGrid.style.display=extraTemps.length?'grid':'none';for(const sensor of extraTemps){const tile=document.createElement('div');tile.className='telemetry-tile live';const label=document.createElement('div');label.className='telemetry-label';label.textContent=sensor.label||'Dodatkowy czujnik';const value=document.createElement('div');value.className='telemetry-value';value.textContent=sensor.value==null?'Brak odczytu':Number(sensor.value).toFixed(1)+(sensor.unit||'°C');tile.append(label,value);extraGrid.append(tile);}
-  setPump('floor',p.floor);setPump('rad',p.valve4d);setPump('dhw',p.dhw);setPump('circ',p.circulation);const anyPump=(...v)=>v.some(x=>x===true)?true:v.every(x=>x==null)?null:false;setPump('commonReturn',anyPump(p.floor,p.dhw));setPump('system',anyPump(p.floor,p.valve4d,p.dhw));if($('beadCommonReturn')&&apiConfigured)$('beadCommonReturn').style.display=p.floor===true?'':'none';
+  setPump('floor',p.floor);setPump('rad',p.valve4d);setPump('dhw',p.dhw);setPump('circ',p.circulation);const anyPump=(...v)=>v.some(x=>x===true)?true:v.every(x=>x==null)?null:false;setPump('commonReturn',anyPump(p.floor,p.dhw));setPump('system',anyPump(p.floor,p.valve4d,p.dhw));
   $('telemetryFooter').textContent=`Odczyt z eModul · ${payload.fetched_at?new Date(payload.fetched_at).toLocaleString('pl-PL'):''} · elementy nieudostępnione przez sterownik są oznaczone jako brak odczytu.`;
   updateSensor('sensorOutdoor','Czujnik zewnętrzny',temp(t.outdoor),t.outdoor!=null);updateSensor('sensorReturn','Czujnik powrotu',ret,v.return!=null);updateSensor('sensorValve','Czujnik zaworu',`${temp(v.current)} · ${v.opening==null?'—':v.opening+'%'}`,v.current!=null);updateSensor('sensorDhw','Czujnik CWU',temp(t.dhw),t.dhw!=null);const fireLabel=d.fire==null?'brak odczytu':d.fire?'płomień wykryty':'brak płomienia';const fireBrightness=d.fire_brightness!=null?`jasność ${Number(d.fire_brightness).toLocaleString('pl-PL')}`:'jasność niedostępna';updateSensor('sensorFire','Czujnik ognia',`${fireLabel} · ${fireBrightness}`,d.fire!=null);updateSensor('sensorCo','Czujnik CO',temp(t.co),t.co!=null);updateSensor('sensorFlue','Czujnik spalin',temp(t.flue),t.flue!=null);updateSensor('sensorRoom','Regulator pokojowy',`${temp(t.room)} · zadana ${temp(setpoints.room)}`,t.room!=null);updateSensor('sensorSupply','Czujnik zasilania kotła',temp(t.co),t.co!=null);
   $('bottomNote').textContent='ThermoFlow · wartości i stany z eModul · strona tylko odczytu; zawór 3D pozostaje ręczny.';
