@@ -179,7 +179,10 @@ def _fetch_day(day: date) -> dict:
 
 
 def _om_fill(url: str, params: dict):
-    daily = _request_json(url, params).get("daily", {})
+    try:
+        daily = _request_json(url, params).get("daily", {})
+    except FuelError:
+        return   # Open-Meteo jest tylko uzupełnieniem: doba bez temperatury, nie błąd całości
     for t, v in zip(daily.get("time", []), daily.get("temperature_2m_mean", [])):
         if v is not None:
             _om_cache[t] = float(v)
@@ -199,6 +202,9 @@ def _openmeteo_mean(day: date):
         _om_fill(OM_ARCHIVE, {**common, "start_date": start.isoformat(), "end_date": end.isoformat()})
     else:
         _om_fill(OM_FORECAST, {**common, "past_days": 14, "forecast_days": 1})
+    if day >= today:
+        # dzisiejsza wartość z prognozy zmienia się w ciągu doby: nie zamrażamy jej w cache
+        return _om_cache.pop(key, None)
     return _om_cache.get(key)
 
 
@@ -502,7 +508,7 @@ def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime):
         elapsed += fraction
         day += timedelta(days=1)
         fraction = 1.0
-    return round(elapsed, 1)
+    return None   # powyżej 60 dób: brak sensownej prognozy
 
 
 def _period_sums(start: datetime, end: datetime, base: float | None = None):
@@ -563,7 +569,7 @@ def _refills_uncached() -> list[dict]:
             "kg": float(f["field1"]),
             "note": f.get("field2") or None,
         })
-    out.sort(key=lambda r: r["ts"])
+    out.sort(key=lambda r: _parse_ts(r["ts"]))
     return out
 
 
@@ -884,7 +890,8 @@ def _void_refill(raw_id: str) -> dict:
 def _check_token(headers):
     if not API_TOKEN:
         raise FuelError(503, "FUEL_API_TOKEN nie jest ustawiony")
-    if not hmac.compare_digest(headers.get("X-Api-Token", ""), API_TOKEN):
+    given = headers.get("X-Api-Token", "").encode("utf-8", "replace")
+    if not hmac.compare_digest(given, API_TOKEN.encode("utf-8")):
         raise FuelError(401, "Brak lub zły token")
 
 
