@@ -43,6 +43,9 @@ def _csv_env(name: str) -> list[str]:
 # Kanał 1 (temperatury i moc) z tych samych zmiennych, których używa api.py.
 TS_CHANNEL_TEMPS = (_csv_env("THINGSPEAK_CHANNEL_IDS") or [""])[0]
 TS_READ_KEY_TEMPS = (_csv_env("THINGSPEAK_READ_KEYS") or [""])[0]
+TS_CHANNEL_VALVE = (_csv_env("THINGSPEAK_CHANNEL_IDS") + ["", ""])[1]
+TS_READ_KEY_VALVE = (_csv_env("THINGSPEAK_READ_KEYS") + ["", ""])[1]
+FIELD_COUNTER = 8   # thermoflow-fuel-percent: licznik zapasu sterownika (czas pracy podajnika)
 FIELD_OUTDOOR = 4   # thermoflow-outdoor w THINGSPEAK_COMPACT_CHANNEL_FIELDS
 FIELD_POWER = 8     # thermoflow-boiler-power
 # Pusty = wykrywany automatycznie z daty utworzenia kanału.
@@ -90,6 +93,8 @@ _summary_cache: dict = {"at": 0.0, "data": None}
 _offset_cache: dict = {"at": 0.0, "data": None}
 _forecast_cache: dict = {"at": 0.0, "data": None}
 _model_cache: dict = {"key": None, "data": None}
+_counter_cache: dict[str, list] = {}   # zakończone doby: punkty zmian licznika zapasu
+MIN_COUNTER_DROP = 20                  # minimalny spadek licznika (pp) do kalibracji
 
 
 class FuelError(Exception):
@@ -277,6 +282,83 @@ def _om_offset() -> dict:
     data = {"offset": round(sum(diffs) / len(diffs), 2) if applied else 0.0, "days": len(diffs), "applied": applied}
     _offset_cache.update(at=time.monotonic(), data=data)
     return data
+
+
+def _counter_points(day: date) -> list:
+    """Zmiany licznika zapasu sterownika w dobie: [(unix, %), ...]."""
+    key = day.isoformat()
+    today = datetime.now(TZ).date()
+    if day < today and key in _counter_cache:
+        return _counter_cache[key]
+    if not TS_CHANNEL_VALVE:
+        return []
+    start, end = _day_bounds(day)
+    params = {
+        "start": start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "end": end.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "results": 8000,
+    }
+    if TS_READ_KEY_VALVE:
+        params["api_key"] = TS_READ_KEY_VALVE
+    feeds = _request_json(f"{TS_API}/channels/{TS_CHANNEL_VALVE}/fields/{FIELD_COUNTER}.json", params).get("feeds", [])
+    points = []
+    for f in feeds:
+        raw = f.get(f"field{FIELD_COUNTER}")
+        if raw in (None, ""):
+            continue
+        ts, value = _parse_ts(f["created_at"]).timestamp(), float(raw)
+        if not points or points[-1][1] != value:
+            points.append((ts, value))
+    if feeds and points and points[-1][0] != _parse_ts(feeds[-1]["created_at"]).timestamp():
+        points.append((_parse_ts(feeds[-1]["created_at"]).timestamp(), points[-1][1]))
+    if day < today and feeds:
+        _counter_cache[key] = points
+    return points
+
+
+def _counter_drop(start: datetime, end: datetime):
+    """Spadek licznika zapasu w przedziale (pp), z pominięciem resetów do 100 %.
+
+    Zwraca (spadek, kompletność danych, czy licznik doszedł do zera).
+    """
+    ts_start = _temps_data_start()
+    if ts_start is None or start.astimezone(TZ).date() < ts_start:
+        return None, False, False
+    points = []
+    d, last = start.astimezone(TZ).date(), end.astimezone(TZ).date()
+    while d <= last:
+        try:
+            points.extend(_counter_points(d))
+        except FuelError:
+            return None, False, False
+        d += timedelta(days=1)
+    t0, t1 = start.timestamp(), end.timestamp()
+    before = [p for p in points if p[0] <= t0]
+    inside = [p for p in points if t0 < p[0] <= t1]
+    seq = ([before[-1]] if before else []) + inside
+    if len(seq) < 2:
+        return None, False, False
+    drop = sum(prev[1] - cur[1] for prev, cur in zip(seq, seq[1:]) if cur[1] < prev[1])
+    floor_hit = any(value <= 1 for _ts, value in seq)
+    return drop, True, floor_hit
+
+
+def _counter_calibration(refills: list[dict]) -> dict:
+    """kg na 1 % licznika zapasu z całego przedziału dosypek z danymi licznika."""
+    kg = drop = 0.0
+    used = 0
+    for prev, cur in zip(refills, refills[1:]):
+        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
+        d, complete, floor_hit = _counter_drop(start, end)
+        if not complete or floor_hit or not d:
+            continue
+        kg += cur["kg"]
+        drop += d
+        used += 1
+    if used == 0 or drop < MIN_COUNTER_DROP:
+        return {"kg_per_percent": None, "calibrated": False, "periods_used": used, "drop_percent": round(drop, 1)}
+    return {"kg_per_percent": round(kg / drop, 3), "calibrated": True, "periods_used": used,
+            "drop_percent": round(drop, 1), "kg": round(kg, 1)}
 
 
 def _active_base() -> float:
@@ -509,6 +591,7 @@ def _periods(refills: list[dict]) -> list[dict]:
             continue
         hdd, kwh, hdd_missing, kwh_missing = _period_sums(start, end)
         est_raw = kwh / (PELLET_KWH_PER_KG * BOILER_EFF) if not kwh_missing else None
+        counter_drop, counter_ok, counter_floor = _counter_drop(start, end)
         model = _model_cache["data"]
         heating = None
         if model and hdd >= 5:
@@ -530,18 +613,25 @@ def _periods(refills: list[dict]) -> list[dict]:
             "days_missing_burner": kwh_missing,
             "hdd_base": _active_base(),
             "heating": heating,
+            "counter_drop_percent": round(counter_drop, 1) if counter_ok else None,
+            "kg_per_counter_percent": round(cur["kg"] / counter_drop, 2) if counter_ok and counter_drop and not counter_floor else None,
         })
     return out
 
 
 def _calibration(periods: list[dict]) -> dict:
-    usable = [p for p in periods
-              if p["days"] >= MIN_PERIOD_DAYS and p["est_kg_raw"] and p["days_missing_burner"] == 0]
+    """Współczynnik mocy palnika z całego przedziału dosypek z danymi palnika.
+
+    Liczony z sumy wszystkich okresów (także krótkich): różnice w poziomie „do pełna”
+    znoszą się między kolejnymi dosypkami, zostaje tylko niepewność pierwszej i ostatniej.
+    """
+    usable = [p for p in periods if p["est_kg_raw"] and p["days_missing_burner"] == 0]
     actual = sum(p["kg"] for p in usable)
     est = sum(p["est_kg_raw"] for p in usable)
-    if not usable or est <= 0:
-        return {"factor": 1.0, "calibrated": False, "periods_used": 0}
-    return {"factor": round(actual / est, 3), "calibrated": True, "periods_used": len(usable)}
+    days = sum(p["days"] for p in usable)
+    if not usable or est <= 0 or days < MIN_PERIOD_DAYS:
+        return {"factor": 1.0, "calibrated": False, "periods_used": len(usable), "days": round(days, 1)}
+    return {"factor": round(actual / est, 3), "calibrated": True, "periods_used": len(usable), "days": round(days, 1)}
 
 
 # ---------------------------------------------------------------- akcje
@@ -600,6 +690,7 @@ def _stats(query: dict) -> dict:
         "config": {"hdd_base": _active_base(), "hdd_base_default": HDD_BASE, "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
                    "boiler_eff": BOILER_EFF, "bag_kg": BAG_KG},
         "calibration": calib,
+        "counter_calibration": _counter_calibration(refills) if refills else None,
         "summary": {"days_with_burner_data": len(valid), "hdd": round(tot_hdd, 1),
                     "est_kg": round(tot_kg, 1),
                     "est_kg_per_hdd": round(tot_kg / tot_hdd, 3) if tot_hdd > 0 else None},
@@ -625,6 +716,7 @@ def _summary() -> dict:
         model = _fit_model(refills)                 # model ze wszystkich okresów
         periods = _periods(refills[-7:])            # okresy z ostatnich tygodni do wskaźników
         calib = _calibration(periods)
+        counter = _counter_calibration(refills[-7:])
         last7 = [_get_daily(today - timedelta(days=i)) for i in range(7, 0, -1)]
         offset = _om_offset()
     forecast = _forecast() if model else []
@@ -640,6 +732,13 @@ def _summary() -> dict:
     week = None
     if with_burner:
         kg = sum(est_kg(d["burner_kwh"]) for d in with_burner)
+        source = "moc palnika"
+        if counter["calibrated"]:
+            first, last_day = _day_bounds(date.fromisoformat(with_burner[0]["day"]))[0], _day_bounds(date.fromisoformat(with_burner[-1]["day"]))[1]
+            with _lock:
+                drop, ok, floor_hit = _counter_drop(first, last_day)
+            if ok and not floor_hit and drop:
+                kg, source = drop * counter["kg_per_percent"], "licznik podajnika"
         hdd = sum(d["hdd"] for d in with_burner)
         week = {
             "days": len(with_burner),
@@ -648,6 +747,7 @@ def _summary() -> dict:
             "hdd": round(hdd, 1),
             "kg_per_hdd": round(kg / hdd, 2) if hdd > 0 else None,
             "t_mean": round(sum(d["t_mean"] for d in with_burner) / len(with_burner), 1),
+            "source": source,
         }
         if model:
             week["model_kg"] = round(sum(_predict_kg_per_day(model, d["t_mean"]) for d in with_burner), 1)
@@ -683,9 +783,13 @@ def _summary() -> dict:
 
         with _lock:
             hdd_since, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
+            drop_since, drop_ok, drop_floor = _counter_drop(last_ts, now)
+        used_counter = drop_since * counter["kg_per_percent"] if counter["calibrated"] and drop_ok and not drop_floor else None
         used_burner = est_kg(kwh) if not kwh_missing and calib["calibrated"] else None
         used_model = (model["base_kg_per_day"] * hours / 24 + model["kg_per_hdd"] * hdd_since) if model else None
-        if used_burner is not None and calib["periods_used"] >= 3:
+        if used_counter is not None:
+            used, method = used_counter, "licznik podajnika skalibrowany do dosypek"
+        elif used_burner is not None and calib["days"] >= 7:
             used, method = used_burner, "moc palnika skalibrowana do dosypek"
         elif used_model is not None:
             used, method = used_model, "model domu z dosypek i temperatur"
@@ -713,6 +817,7 @@ def _summary() -> dict:
                 "capacity_kg": capacity,
                 "reserve_kg": round(reserve, 1),
                 "used_kg": round(used, 1),
+                "used_kg_counter": round(used_counter, 1) if used_counter is not None else None,
                 "used_kg_model": round(used_model, 1) if used_model is not None else None,
                 "used_kg_burner": round(used_burner, 1) if used_burner is not None else None,
                 "remaining_kg": round(remaining, 1),
@@ -733,6 +838,7 @@ def _summary() -> dict:
         "forecast": [{"day": d.isoformat(), "t_mean": t,
                       "kg": round(_predict_kg_per_day(model, t), 1)} for d, t in forecast] if model else [],
         "calibration": calib,
+        "counter_calibration": counter,
         "last7": week,
         "refills_based": refills_based,
         "last_refill": last,
