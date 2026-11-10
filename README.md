@@ -96,6 +96,10 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/history?hours=12&step=120&series=thermoflow-valve4d` | Historia ThingSpeak z filtrem serii, oknem 1–24 h i opcjonalnym próbkowaniem |
 | `/api/modules` | Nazwy, identyfikatory i wersje sterowników na koncie |
 | `/api/diagnostics` | Odczyty diagnostyczne eModul: kafelki, kompletna struktura stref, dostępność menu MU/MI/MS/MP oraz podsumowanie serii statystyk |
+| `/api/fuel/stats?days=30` | Zużycie peletu: okresy między dosypkami, stopniodni, kg na stopniodzień, szacunek dzienny z mocy palnika |
+| `/api/fuel/refills` | Lista dosypek z kanału ThingSpeak „Pelet” |
+| `POST /api/fuel/refill` | Dodanie dosypki `{"kg": 30}` lub `{"bags": 2}`, opcjonalnie `ts` i `note`; wymaga nagłówka `X-Api-Token` |
+| `DELETE /api/fuel/refill/<id>` | Anulowanie błędnej dosypki (ThingSpeak nie usuwa pojedynczych wpisów); wymaga `X-Api-Token` |
 
 Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Nowe próbki wysyłane są do dwóch kanałów ThingSpeak co 40 sekund (minimum 35 s), bez zapisywania historii na dysku Raspberry Pi. Wykres i CSV korzystają wyłącznie z ThingSpeak. Kanały muszą być prywatne lub publiczne z odpowiednimi kluczami odczytu; każde pole należy włączyć i nazwać zgodnie z listą poniżej. ThingSpeak zwraca starsze dane w agregowanych przedziałach: 10 minut dla miesiąca i 4 godziny dla roku; dlatego szczegóły przełączeń pomp najlepiej analizować dla krótszych zakresów. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz czasu lokalnego `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Próbki sprzed konfiguracji kanałów nie zostaną uzupełnione.
 Endpoint diagnostyczny pobiera dane bezpośrednio z eModul na żądanie. Oprócz kafelków i ich surowych parametrów zwraca całą strukturę `zones` (w tym `system`, `globalSchedules` i `controllerParameters`), wykryte pozycje menu MU/MI/MS/MP z informacją, które menu konto może odczytać, oraz zwarte podsumowanie serii statystyk. Pełne próbki zapisane w ThingSpeak są dostępne przez `/api/history?hours=12`. `hours` przyjmuje 1–24; alternatywnie można podać dokładne `start` i `end` w ISO 8601 (zakres maksymalnie 24 h). Parametr `series` filtruje serie, a `step=120` łączy je w przedziały 120-sekundowe: temperatury i moc są uśredniane, zaś nastawy, otwarcie, pompy i paliwo zachowują ostatnią wartość z przedziału. `step` może wynosić 60–3600 sekund. Punkty mają zwarty format `[unix_timestamp_seconds, value]`. Alias `thermoflow-valve4d` wybiera temperaturę zaworu, otwarcie, powrót i zadaną po korekcie; działają też aliasy `valve-opening`, `return` i `setpoint`. Serie zaworu są zwracane na początku, zerowe odczyty temperatury pokoju są pomijane, a duplikaty łączone po serii i czasie. Menu serwisowe lub producenta może być niedostępne bez kodu albo na koncie użytkownika; diagnostyka pokaże wtedy błąd dostępności zamiast zakładać, że dane istnieją. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
@@ -112,6 +116,12 @@ Endpoint diagnostyczny pobiera dane bezpośrednio z eModul na żądanie. Oprócz
 | `THINGSPEAK_WRITE_KEYS` | Tak dla historii | Dwa klucze Write API w tej samej kolejności co kanały. Sekret Portainera. |
 | `THINGSPEAK_READ_KEYS` | Nie | Dwa klucze Read API w tej samej kolejności. Dla kanałów publicznych można zostawić puste. |
 | `THINGSPEAK_WRITE_INTERVAL_SECONDS` | Nie | Odstęp zapisu; domyślnie 40 sekund, minimum 35. |
+| `THINGSPEAK_FUEL_CHANNEL_ID` | Nie | Osobny kanał ThingSpeak na dosypki peletu. Bez niego endpointy `/api/fuel/*` zwracają pustą listę dosypek. |
+| `THINGSPEAK_FUEL_WRITE_KEY` | Dla dosypek | Klucz Write API kanału „Pelet”. Sekret Portainera. |
+| `THINGSPEAK_FUEL_READ_KEY` | Nie | Klucz Read API kanału „Pelet”, jeśli kanał jest prywatny. |
+| `FUEL_API_TOKEN` | Dla dosypek | Token wymagany w nagłówku `X-Api-Token` przy dodawaniu i anulowaniu dosypek, np. wynik `openssl rand -hex 24`. |
+| `FUEL_LAT`, `FUEL_LON` | Zalecane | Współrzędne domu. Stopniodni dla dni sprzed kanału temperatur są liczone z archiwum Open-Meteo. |
+| `PELLET_BAG_KG` | Nie | Masa worka przy dodawaniu dosypki przez `bags`; domyślnie 15 kg. |
 | `PORTAINER_WEBHOOK_URL` | Nie | Sekret GitHub Actions do wywołania webhooka po publikacji obrazów; wymaga osiągalnego adresu z runnera. |
 
 ### Pola kanałów ThingSpeak
@@ -125,6 +135,23 @@ W obu kanałach włącz pola i nadaj im poniższe nazwy. Zmienne `THINGSPEAK_CHA
 
 Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpisana korekta `setTempCorrection`; korekta dodatnia podwyższa, a ujemna obniża temperaturę. W Portainerze ustaw dokładnie dwa ID oraz dwa klucze zapisu w tej samej kolejności, bez spacji. Dla prywatnych kanałów ustaw również dwa klucze odczytu. Nie dodawaj starego kanału 3566098. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
 
+### Zużycie peletu
+
+Dosypki są zapisywane w osobnym kanale ThingSpeak „Pelet”, bez zapisu na dysk Raspberry Pi. Kanał ma trzy pola: Field 1 `kg`, Field 2 `notatka`, Field 3 `anulowany_wpis`. Darmowe konto ThingSpeak przyjmuje jeden zapis na 15 sekund na kanał; przy zbyt szybkim kolejnym wpisie API zwraca HTTP 429.
+
+Założenie: przy każdej dosypce zasobnik jest uzupełniany do tego samego poziomu, więc ilość dosypana jest zużyciem od poprzedniej dosypki. Pierwsza dosypka jest punktem startowym. Dla każdego okresu między dosypkami `/api/fuel/stats` liczy stopniodni (baza 18 °C), kg na dobę i kg na stopniodzień. Temperatura zewnętrzna pochodzi z pierwszego kanału ThingSpeak, a dla dni sprzed jego utworzenia z archiwum Open-Meteo. Energia palnika jest całkowana z serii mocy chwilowej i po co najmniej jednym pełnym okresie kalibrowana względem rzeczywistych dosypek. Latem, przy znikomych stopniodniach, wskaźnik kg na stopniodzień nie ma sensu, a zużycie odpowiada głównie przygotowaniu CWU. Agregaty dzienne są trzymane w pamięci, więc pierwsze wywołanie po restarcie kontenera trwa kilka sekund dłużej.
+
+Historię dosypek można jednorazowo zaimportować skryptem `tools/import_refills.py` z pliku z wierszami `DD.MM.YYYY<TAB>kg` (wiersze w innym formacie są pomijane):
+
+```bash
+export THINGSPEAK_FUEL_CHANNEL_ID=...
+export THINGSPEAK_FUEL_WRITE_KEY=...
+python3 tools/import_refills.py dosypki.txt          # podgląd
+python3 tools/import_refills.py dosypki.txt --send   # zapis do ThingSpeak
+```
+
+Import wykonaj przed pierwszym wpisem dodanym przez API. Nowe dosypki najwygodniej dodawać Skrótem w iOS: „Poproś o dane wejściowe” (liczba) → „Pobierz zawartość URL” z metodą POST na `https://TWOJA-DOMENA/api/fuel/refill`, nagłówkami `X-Api-Token` i `Content-Type: application/json` oraz treścią JSON `kg` = dane wejściowe → „Pokaż powiadomienie”.
+
 ## Struktura repozytorium
 
 ```text
@@ -132,7 +159,10 @@ Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpis
 ├── README.md                     # opis, wdrożenie i konfiguracja
 ├── .github/workflows/docker.yml  # budowanie i publikowanie obrazów
 ├── api.py                        # tylko-odczytowy backend eModul
+├── fuel.py                       # zużycie peletu (kanał ThingSpeak „Pelet”)
+├── tools/import_refills.py       # jednorazowy import historii dosypek
 ├── index.html                    # dashboard i animowany schemat
+├── favicon.svg                   # ikona dashboardu
 ├── nginx.conf                    # serwowanie strony i proxy do API
 ├── Dockerfile                    # obraz frontendu
 ├── Dockerfile.api                # obraz backendu
@@ -144,4 +174,4 @@ Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpis
 └── .gitignore
 ```
 
-Repozytorium zawiera 12 plików źródłowych i konfiguracyjnych. Każdy jest używany przez aplikację, lokalne uruchomienie, CI albo ochronę sekretów; katalogu nie zaśmiecają kopie wynikowych obrazów ani wygenerowane pliki.
+Repozytorium zawiera 15 plików źródłowych i konfiguracyjnych. Każdy jest używany przez aplikację, lokalne uruchomienie, CI albo ochronę sekretów; katalogu nie zaśmiecają kopie wynikowych obrazów ani wygenerowane pliki.

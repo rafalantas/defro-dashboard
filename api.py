@@ -17,6 +17,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import fuel
+
 
 API_BASE = "https://emodul.eu/api/v1/"
 POLL_CACHE_SECONDS = 20
@@ -68,40 +70,7 @@ VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
 VALVE_SETPOINT_SERIES_ID = "thermoflow-valve4d-setpoint"
 VALVE_SETPOINT_SERIES_LABEL = "Temperatura zadana zaworu 4D"
 THINGSPEAK_WRITE_INTERVAL_SECONDS = max(35, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
-THINGSPEAK_LAST_WRITES = [0.0, 0.0, 0.0]
 THINGSPEAK_WRITE_LOCK = threading.Lock()
-THINGSPEAK_CHANNEL_FIELDS = (
-    (
-        ("thermoflow-co", "Temperatura CO", "temperatures.co"),
-        ("thermoflow-dhw", "Temperatura CWU", "temperatures.dhw"),
-        ("thermoflow-flue", "Temperatura spalin", "temperatures.flue"),
-        ("thermoflow-outdoor", "Temperatura zewnętrzna", "temperatures.outdoor"),
-        ("thermoflow-room", "Temperatura pokoju", "temperatures.room"),
-        ("thermoflow-floor", "Temperatura podłogówki (C1)", "temperatures.buffer_upper"),
-        (None, "Pole nieużywane", None),
-        ("thermoflow-boiler-power", "Moc chwilowa pieca", "boiler_power_kw"),
-    ),
-    (
-        ("thermoflow-valve4d-current", "Temperatura zaworu 4D", "valve.current"),
-        (VALVE_SETPOINT_SERIES_ID, VALVE_SETPOINT_SERIES_LABEL, "valve.set"),
-        (VALVE_OPENING_SERIES_ID, VALVE_OPENING_SERIES_LABEL, "valve.opening"),
-        ("thermoflow-valve4d-return", "Temperatura powrotu", "valve.return"),
-        ("thermoflow-pump-valve4d", "Pompa zaworu 4D", "pumps.valve4d"),
-        ("thermoflow-pump-floor", "Pompa podłogowa", "pumps.floor"),
-        ("thermoflow-pump-dhw", "Pompa CWU", "pumps.dhw"),
-        ("thermoflow-pump-circulation", "Pompa cyrkulacyjna", "pumps.circulation"),
-    ),
-    (
-        ("thermoflow-co-setpoint", "Temperatura zadana CO", "setpoints.co"),
-        ("thermoflow-dhw-setpoint", "Temperatura zadana CWU", "setpoints.dhw"),
-        ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
-        (None, "Pole nieużywane", None),
-        ("thermoflow-valve4d-effective-setpoint", "Temperatura zadana zaworu 4D po korekcie", "valve.set_after_correction"),
-        ("thermoflow-valve-hysteresis", "Histereza zaworu 4D", "hysteresis.valve"),
-        ("thermoflow-co-hysteresis", "Histereza CO", "hysteresis.boiler"),
-        ("thermoflow-dhw-hysteresis", "Histereza CWU", "hysteresis.dhw"),
-    ),
-)
 THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
     (
         ("thermoflow-co", "Temperatura CO", "temperatures.co"),
@@ -124,6 +93,9 @@ THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
         ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
     ),
 )
+
+
+THINGSPEAK_LAST_WRITES = [0.0] * len(THINGSPEAK_COMPACT_CHANNEL_FIELDS)
 
 
 def _thingspeak_field_schema() -> tuple:
@@ -1090,7 +1062,45 @@ def snapshot() -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _send_json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_fuel(self, method: str) -> bool:
+        """Zużycie peletu: osobny moduł fuel.py, dane w osobnym kanale ThingSpeak."""
+        parsed = urlsplit(self.path)
+        if not parsed.path.startswith("/api/fuel/"):
+            return False
+        try:
+            length = min(int(self.headers.get("Content-Length") or 0), 65536)
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else b""
+        try:
+            result = fuel.handle(method, parsed.path, parse_qs(parsed.query), self.headers, body)
+        except Exception as error:
+            result = (500, {"error": str(error)[:180]})
+        if result is None:
+            return False
+        self._send_json(*result)
+        return True
+
+    def do_POST(self):
+        if not self._handle_fuel("POST"):
+            self.send_error(404)
+
+    def do_DELETE(self):
+        if not self._handle_fuel("DELETE"):
+            self.send_error(404)
+
     def do_GET(self):
+        if self._handle_fuel("GET"):
+            return
         parsed = urlsplit(self.path)
         path = parsed.path
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
@@ -1160,13 +1170,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = snapshot()
             if path == "/api/health":
                 payload = {key: payload.get(key) for key in ("configured", "connected", "source", "error", "fetched_at")}
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_json(200, payload)
 
     def log_message(self, _format, *_args):
         # Do not emit credentials or account-specific API response bodies.
@@ -1174,7 +1178,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _poll_forever() -> None:
-    """Keep live-derived history recording even when no dashboard tab is open."""
+    """Keep ThingSpeak history recording even when no dashboard tab is open."""
     while True:
         snapshot()
         time.sleep(30)
