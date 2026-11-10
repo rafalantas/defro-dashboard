@@ -58,7 +58,14 @@ FUEL_LON = os.getenv("FUEL_LON", "")
 OM_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OM_FORECAST = "https://api.open-meteo.com/v1/forecast"
 
-HDD_BASE = float(os.getenv("HDD_BASE", "18.0"))
+# Temperatura bazowa stopniodni, gdy nie da się jeszcze dopasować modelu budynku (za mało okresów).
+HDD_BASE = float(os.getenv("HDD_BASE", "") or 14.0)
+# Zakres temperatur granicznych sprawdzanych przy dopasowaniu modelu (powyżej nich dom nie potrzebuje ogrzewania).
+MODEL_BASES = [value / 2 for value in range(24, 34)]   # 12,0 ... 16,5 °C
+MIN_MODEL_PERIODS = 4
+OFFSET_MIN_DAYS = 3                                  # tyle pełnych dób z obu źródeł, żeby liczyć korektę
+OFFSET_CACHE_SECONDS = 3600
+FORECAST_CACHE_SECONDS = 3600
 PELLET_KWH_PER_KG = float(os.getenv("PELLET_KWH_PER_KG", "4.8"))
 BOILER_EFF = float(os.getenv("BOILER_EFF", "0.88"))
 BAG_KG = float(os.getenv("PELLET_BAG_KG", "15"))
@@ -80,6 +87,9 @@ _om_cache: dict[str, float] = {}
 _temps_start: list = []   # [date | None] po pierwszym sprawdzeniu
 _refills_cache: dict = {"at": 0.0, "data": None}
 _summary_cache: dict = {"at": 0.0, "data": None}
+_offset_cache: dict = {"at": 0.0, "data": None}
+_forecast_cache: dict = {"at": 0.0, "data": None}
+_model_cache: dict = {"key": None, "data": None}
 
 
 class FuelError(Exception):
@@ -207,7 +217,8 @@ def _temps_data_start():
     return _temps_start[0]
 
 
-def _get_daily(day: date) -> dict:
+def _get_daily_raw(day: date) -> dict:
+    """Doba z jednego źródła, bez korekty Open-Meteo."""
     key = day.isoformat()
     today = datetime.now(TZ).date()
     if day < today and key in _daily_cache:
@@ -242,7 +253,177 @@ def _get_daily(day: date) -> dict:
     return dict(rec)
 
 
-def _period_sums(start: datetime, end: datetime):
+def _om_offset() -> dict:
+    """Średnia różnica: czujnik sterownika (ThingSpeak) minus Open-Meteo, z dób z obu źródeł."""
+    cached = _offset_cache["data"]
+    if cached is not None and time.monotonic() - _offset_cache["at"] < OFFSET_CACHE_SECONDS:
+        return cached
+    diffs = []
+    ts_start = _temps_data_start()
+    today = datetime.now(TZ).date()
+    if ts_start and FUEL_LAT and FUEL_LON:
+        day = ts_start
+        while day < today:
+            try:
+                rec = _get_daily_raw(day)
+                if rec.get("source") == "thingspeak" and rec.get("t_mean") is not None and rec.get("samples", 0) >= 1000:
+                    om = _openmeteo_mean(day)
+                    if om is not None:
+                        diffs.append(rec["t_mean"] - om)
+            except FuelError:
+                pass
+            day += timedelta(days=1)
+    applied = len(diffs) >= OFFSET_MIN_DAYS
+    data = {"offset": round(sum(diffs) / len(diffs), 2) if applied else 0.0, "days": len(diffs), "applied": applied}
+    _offset_cache.update(at=time.monotonic(), data=data)
+    return data
+
+
+def _active_base() -> float:
+    model = _model_cache["data"]
+    return model["balance_temp"] if model else HDD_BASE
+
+
+def _get_daily(day: date, base: float | None = None) -> dict:
+    """Doba z korektą Open-Meteo do czujnika sterownika i stopniodniami dla bazy budynku."""
+    rec = _get_daily_raw(day)
+    if rec.get("source") == "open-meteo" and rec.get("t_mean") is not None:
+        offset = _om_offset()
+        rec["t_mean_raw"] = rec["t_mean"]
+        rec["t_mean"] = round(rec["t_mean"] + offset["offset"], 2)
+        rec["om_offset"] = offset["offset"]
+    base = _active_base() if base is None else base
+    rec["hdd"] = round(max(0.0, base - rec["t_mean"]), 2) if rec.get("t_mean") is not None else None
+    rec["hdd_base"] = base
+    return rec
+
+
+def _period_temps(start: datetime, end: datetime):
+    """[(udział doby, średnia temperatura)] w przedziale oraz liczba dób bez temperatury."""
+    temps, missing = [], 0
+    d, last = start.astimezone(TZ).date(), end.astimezone(TZ).date()
+    while d <= last:
+        day_start, day_end = _day_bounds(d)
+        overlap = (min(end, day_end) - max(start, day_start)).total_seconds()
+        if overlap > 0:
+            rec = _get_daily(d)
+            if rec.get("t_mean") is None:
+                missing += 1
+            else:
+                temps.append((overlap / 86400, rec["t_mean"]))
+        d += timedelta(days=1)
+    return temps, missing
+
+
+def _hdd_from(temps, base: float) -> float:
+    return sum(fraction * max(0.0, base - t) for fraction, t in temps)
+
+
+def _fit_model(refills: list[dict]):
+    """Model budynku z dosypek: kg/dobę = stała + kg_na_stopień × stopniodni/dobę.
+
+    Stała to CWU i straty niezależne od pogody, temperatura graniczna jest dobierana tak,
+    żeby model najlepiej pasował do wszystkich okresów między dosypkami.
+    """
+    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"])
+    if _model_cache["key"] == key:
+        return _model_cache["data"]
+    rows = []
+    for prev, cur in zip(refills, refills[1:]):
+        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
+        days = (end - start).total_seconds() / 86400
+        if not MIN_PERIOD_DAYS <= days <= MAX_DAYS:
+            continue
+        temps, missing = _period_temps(start, end)
+        if missing or not temps:
+            continue
+        rows.append((days, cur["kg"], temps))
+    best = None
+    if len(rows) >= MIN_MODEL_PERIODS:
+        for base in MODEL_BASES:
+            w = [days for days, _kg, _t in rows]
+            x = [_hdd_from(temps, base) / days for days, _kg, temps in rows]
+            y = [kg / days for days, kg, _t in rows]
+            sw = sum(w)
+            mx = sum(wi * xi for wi, xi in zip(w, x)) / sw
+            my = sum(wi * yi for wi, yi in zip(w, y)) / sw
+            sxx = sum(wi * (xi - mx) ** 2 for wi, xi in zip(w, x))
+            if sxx <= 1e-9:
+                continue
+            slope = sum(wi * (xi - mx) * (yi - my) for wi, xi, yi in zip(w, x, y)) / sxx
+            intercept = my - slope * mx
+            if intercept < 0:   # stała część nie może być ujemna: prosta przez zero
+                intercept = 0.0
+                slope = sum(wi * xi * yi for wi, xi, yi in zip(w, x, y)) / sum(wi * xi * xi for wi, xi in zip(w, x))
+            if slope <= 0:
+                continue
+            sse = sum(wi * (yi - intercept - slope * xi) ** 2 for wi, xi, yi in zip(w, x, y))
+            sst = sum(wi * (yi - my) ** 2 for wi, yi in zip(w, y))
+            if best is None or sse < best["_sse"]:
+                best = {
+                    "balance_temp": base,
+                    "base_kg_per_day": round(intercept, 2),
+                    "kg_per_hdd": round(slope, 2),
+                    "r2": round(1 - sse / sst, 3) if sst > 0 else None,
+                    "rms_kg_per_day": round((sse / sw) ** 0.5, 1),
+                    "periods_used": len(rows),
+                    "_sse": sse,
+                }
+    if best:
+        best.pop("_sse")
+    _model_cache.update(key=key, data=best)
+    return best
+
+
+def _predict_kg_per_day(model: dict, t_mean: float) -> float:
+    return model["base_kg_per_day"] + model["kg_per_hdd"] * max(0.0, model["balance_temp"] - t_mean)
+
+
+def _forecast():
+    """Prognoza średnich dobowych temperatur (z korektą do czujnika sterownika)."""
+    cached = _forecast_cache["data"]
+    if cached is not None and time.monotonic() - _forecast_cache["at"] < FORECAST_CACHE_SECONDS:
+        return cached
+    days = []
+    if FUEL_LAT and FUEL_LON:
+        try:
+            daily = _request_json(OM_FORECAST, {"latitude": FUEL_LAT, "longitude": FUEL_LON,
+                                                "daily": "temperature_2m_mean", "timezone": str(TZ),
+                                                "forecast_days": 7}).get("daily", {})
+            offset = _om_offset()["offset"]
+            days = [(date.fromisoformat(t), round(v + offset, 1))
+                    for t, v in zip(daily.get("time", []), daily.get("temperature_2m_mean", [])) if v is not None]
+        except FuelError:
+            days = []
+    _forecast_cache.update(at=time.monotonic(), data=days)
+    return days
+
+
+def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime):
+    """Ile dób (od teraz) wystarczy kg_needed przy prognozie pogody i modelu domu."""
+    if kg_needed <= 0:
+        return 0.0
+    by_day = dict(forecast)
+    elapsed, day = 0.0, now.date()
+    fraction = (_day_bounds(day)[1] - now).total_seconds() / 86400
+    last_t = forecast[-1][1] if forecast else None
+    for _ in range(60):
+        t = by_day.get(day, last_t)
+        if t is None:
+            return None
+        rate = _predict_kg_per_day(model, t)
+        if rate <= 0:
+            return None
+        if kg_needed <= rate * fraction:
+            return round(elapsed + kg_needed / rate, 1)
+        kg_needed -= rate * fraction
+        elapsed += fraction
+        day += timedelta(days=1)
+        fraction = 1.0
+    return round(elapsed, 1)
+
+
+def _period_sums(start: datetime, end: datetime, base: float | None = None):
     now = datetime.now(TZ)
     hdd = kwh = 0.0
     hdd_missing = kwh_missing = 0
@@ -251,7 +432,7 @@ def _period_sums(start: datetime, end: datetime):
         day_start, day_end = _day_bounds(d)
         overlap = (min(end, day_end) - max(start, day_start)).total_seconds()
         if overlap > 0:
-            rec = _get_daily(d)
+            rec = _get_daily(d, base)
             if rec.get("hdd") is None:
                 hdd_missing += 1
             else:
@@ -279,6 +460,7 @@ def _refills() -> list[dict]:
 
 
 def _invalidate_caches():
+    _model_cache.update(key=None, data=None)
     _refills_cache.update(at=0.0, data=None)
     _summary_cache.update(at=0.0, data=None)
 
@@ -327,6 +509,12 @@ def _periods(refills: list[dict]) -> list[dict]:
             continue
         hdd, kwh, hdd_missing, kwh_missing = _period_sums(start, end)
         est_raw = kwh / (PELLET_KWH_PER_KG * BOILER_EFF) if not kwh_missing else None
+        model = _model_cache["data"]
+        heating = None
+        if model and hdd >= 5:
+            heating_kg = cur["kg"] - model["base_kg_per_day"] * days
+            heating = {"kg": round(heating_kg, 1), "kg_per_hdd": round(heating_kg / hdd, 2),
+                       "model_kg": round(model["base_kg_per_day"] * days + model["kg_per_hdd"] * hdd, 1)}
         out.append({
             "start": prev["ts"],
             "end": cur["ts"],
@@ -340,6 +528,8 @@ def _periods(refills: list[dict]) -> list[dict]:
             "est_kg_raw": round(est_raw, 1) if est_raw is not None else None,
             "days_missing_temp": hdd_missing,
             "days_missing_burner": kwh_missing,
+            "hdd_base": _active_base(),
+            "heating": heating,
         })
     return out
 
@@ -365,6 +555,12 @@ def _stats(query: dict) -> dict:
     today = datetime.now(TZ).date()
     errors = []
 
+    def prefetch(d: date):
+        try:
+            _get_daily_raw(d)
+        except FuelError:
+            pass
+
     def safe_daily(d: date) -> dict:
         try:
             return _get_daily(d)
@@ -375,13 +571,15 @@ def _stats(query: dict) -> dict:
         wanted = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
         # pierwsze wywołanie: niezapamiętane doby pobieramy równolegle (limit nginx to 60 s)
         with ThreadPoolExecutor(max_workers=4) as pool:
-            daily = list(pool.map(safe_daily, wanted))
+            list(pool.map(prefetch, wanted))
         try:
             refills = _refills()
+            model = _fit_model(refills)      # najpierw model: ustala temperaturę bazową stopniodni
             periods = _periods(refills)
         except FuelError as e:
-            refills, periods = [], []
+            refills, periods, model = [], [], None
             errors.append(e.message)
+        daily = [safe_daily(d) for d in wanted]
 
     calib = _calibration(periods)
     for r in daily:
@@ -390,12 +588,16 @@ def _stats(query: dict) -> dict:
         est = r["burner_kwh"] / (PELLET_KWH_PER_KG * BOILER_EFF) * calib["factor"]
         r["est_kg"] = round(est, 1)
         r["est_kg_per_hdd"] = round(est / r["hdd"], 3) if r.get("hdd") else None
+        if model and r.get("hdd") and r["hdd"] >= 2:
+            r["heating_kg_per_hdd"] = round((est - model["base_kg_per_day"]) / r["hdd"], 2)
 
     valid = [r for r in daily if r.get("hdd") is not None and "est_kg" in r]
     tot_hdd = sum(r["hdd"] for r in valid)
     tot_kg = sum(r["est_kg"] for r in valid)
     return {
-        "config": {"hdd_base": HDD_BASE, "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
+        "model": model,
+        "om_offset": _om_offset(),
+        "config": {"hdd_base": _active_base(), "hdd_base_default": HDD_BASE, "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
                    "boiler_eff": BOILER_EFF, "bag_kg": BAG_KG},
         "calibration": calib,
         "summary": {"days_with_burner_data": len(valid), "hdd": round(tot_hdd, 1),
@@ -420,18 +622,19 @@ def _summary() -> dict:
     today = now.date()
     with _lock:
         refills = _refills()
-        # tylko ostatnie okresy: szybciej, a kalibracja i tak wymaga danych palnika
-        periods = _periods(refills[-7:])
+        model = _fit_model(refills)                 # model ze wszystkich okresów
+        periods = _periods(refills[-7:])            # okresy z ostatnich tygodni do wskaźników
         calib = _calibration(periods)
         last7 = [_get_daily(today - timedelta(days=i)) for i in range(7, 0, -1)]
+        offset = _om_offset()
+    forecast = _forecast() if model else []
 
     def est_kg(kwh: float) -> float:
         return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * calib["factor"]
 
     # 1) ostatnie 7 pełnych dób: szacunek z mocy palnika (skalibrowany)
     with_burner = [d for d in last7 if d.get("burner_kwh") is not None and d.get("hdd") is not None]
-    # pomijamy niepełne doby (np. dzień uruchomienia kanału), żeby nie zaniżały sumy
-    if with_burner:
+    if with_burner:   # pomijamy niepełne doby (np. dzień uruchomienia kanału)
         full = max(d.get("samples", 0) for d in with_burner)
         with_burner = [d for d in with_burner if d.get("samples", 0) >= 0.7 * full]
     week = None
@@ -446,13 +649,18 @@ def _summary() -> dict:
             "kg_per_hdd": round(kg / hdd, 2) if hdd > 0 else None,
             "t_mean": round(sum(d["t_mean"] for d in with_burner) / len(with_burner), 1),
         }
+        if model:
+            week["model_kg"] = round(sum(_predict_kg_per_day(model, d["t_mean"]) for d in with_burner), 1)
+            heat = kg - model["base_kg_per_day"] * len(with_burner)
+            week["heating_kg_per_hdd"] = round(heat / hdd, 2) if hdd >= 5 else None
 
-    # 2) kg na stopniodzień z rzeczywistych dosypek (ostatnie okresy z ok. 30 dni)
-    recent = [p for p in periods if p["hdd"] > 0][-4:]
+    # 2) kg na stopniodzień z rzeczywistych dosypek (ostatnie 4 okresy grzewcze)
+    recent = [p for p in periods if p["hdd"] >= 5][-4:]
     refills_based = None
     if recent:
         kg = sum(p["kg"] for p in recent)
         hdd = sum(p["hdd"] for p in recent)
+        days = sum(p["days"] for p in recent)
         refills_based = {
             "periods": len(recent),
             "from": recent[0]["start"],
@@ -461,6 +669,8 @@ def _summary() -> dict:
             "hdd": round(hdd, 1),
             "kg_per_hdd": round(kg / hdd, 2),
         }
+        if model:
+            refills_based["heating_kg_per_hdd"] = round((kg - model["base_kg_per_day"] * days) / hdd, 2)
 
     # 3) od ostatniej dosypki i 4) szacowany stan zasobnika
     last = None
@@ -472,9 +682,15 @@ def _summary() -> dict:
         last = {"ts": lr["ts"], "kg": lr["kg"], "hours_ago": round(hours, 1)}
 
         with _lock:
-            _hdd, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
-        if not kwh_missing:
-            used, method = est_kg(kwh), "moc palnika skalibrowana do dosypek"
+            hdd_since, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
+        used_burner = est_kg(kwh) if not kwh_missing and calib["calibrated"] else None
+        used_model = (model["base_kg_per_day"] * hours / 24 + model["kg_per_hdd"] * hdd_since) if model else None
+        if used_burner is not None and calib["periods_used"] >= 3:
+            used, method = used_burner, "moc palnika skalibrowana do dosypek"
+        elif used_model is not None:
+            used, method = used_model, "model domu z dosypek i temperatur"
+        elif used_burner is not None:
+            used, method = used_burner, "moc palnika skalibrowana do dosypek"
         elif periods:
             used, method = periods[-1]["kg_per_day"] * hours / 24, "średnia z ostatniego okresu"
         else:
@@ -485,22 +701,37 @@ def _summary() -> dict:
         if used is not None:
             remaining = max(0.0, capacity - used)
             to_reserve = max(0.0, remaining - reserve)
-            rate = (week or {}).get("kg_per_day") or (periods[-1]["kg_per_day"] if periods else None)
+            days_to_reserve, rate_source = None, None
+            if model and forecast:
+                days_to_reserve = _days_until(to_reserve, model, forecast, now)
+                rate_source = "prognoza pogody i model domu"
+            if days_to_reserve is None:
+                rate = (week or {}).get("kg_per_day") or (periods[-1]["kg_per_day"] if periods else None)
+                days_to_reserve = round(to_reserve / rate, 1) if rate else None
+                rate_source = "średnie zużycie z ostatnich dni"
             hopper = {
                 "capacity_kg": capacity,
                 "reserve_kg": round(reserve, 1),
                 "used_kg": round(used, 1),
+                "used_kg_model": round(used_model, 1) if used_model is not None else None,
+                "used_kg_burner": round(used_burner, 1) if used_burner is not None else None,
                 "remaining_kg": round(remaining, 1),
                 "remaining_percent": round(100 * remaining / capacity) if capacity else None,
                 "to_reserve_kg": round(to_reserve, 1),
                 "below_reserve": remaining <= reserve,
                 # czas do rezerwy 15 % (zalecane minimum z instrukcji kotła)
-                "days_to_reserve": round(to_reserve / rate, 1) if rate else None,
+                "days_to_reserve": days_to_reserve,
+                "days_source": rate_source,
                 "method": method,
             }
 
     result = {
         "configured": True,
+        "model": model,
+        "hdd_base": _active_base(),
+        "om_offset": offset,
+        "forecast": [{"day": d.isoformat(), "t_mean": t,
+                      "kg": round(_predict_kg_per_day(model, t), 1)} for d, t in forecast] if model else [],
         "calibration": calib,
         "last7": week,
         "refills_based": refills_based,
