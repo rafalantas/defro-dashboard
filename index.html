@@ -134,7 +134,7 @@
     <section class="card" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Zużycie peletu</h2><div class="subhead">Dosypki z kanału ThingSpeak „Pelet” · zużycie bieżące szacowane z mocy palnika i kalibrowane do dosypek</div></div></div>
       <div class="telemetry-grid fuel-grid">
         <div class="telemetry-tile live"><div class="telemetry-label">Ostatnie 7 dni</div><div class="telemetry-value" id="fuelWeek">—</div><div class="telemetry-meta" id="fuelWeekMeta">szacunek z mocy palnika</div></div>
-        <div class="telemetry-tile live"><div class="telemetry-label">kg na stopniodzień</div><div class="telemetry-value" id="fuelHdd">—</div><div class="telemetry-meta" id="fuelHddMeta">z rzeczywistych dosypek</div></div>
+        <div class="telemetry-tile live"><div class="telemetry-label" id="fuelHddLabel">kg na stopniodzień</div><div class="telemetry-value" id="fuelHdd">—</div><div class="telemetry-meta" id="fuelHddMeta">z rzeczywistych dosypek</div></div>
         <div class="telemetry-tile live"><div class="telemetry-label">Od ostatniej dosypki</div><div class="telemetry-value" id="fuelSince">—</div><div class="telemetry-meta" id="fuelSinceMeta">—</div></div>
         <div class="telemetry-tile ok" id="fuelHopperTile"><div class="telemetry-label">W zasobniku · szacunek</div><div class="telemetry-value" id="fuelHopper">—</div><div class="telemetry-meta" id="fuelHopperMeta">—</div></div>
       </div><div class="telemetry-footer" id="fuelFooter">Oczekiwanie na dane zużycia peletu.</div>
@@ -222,14 +222,22 @@ function fuelDate(value){const date=new Date(value);return Number.isNaN(date.get
 function renderFuel(summary){const week=summary.last7,refills=summary.refills_based,last=summary.last_refill,hopper=summary.hopper,calib=summary.calibration||{};
   $('fuelWeek').textContent=week?`${fuelNum(week.kg)} kg`:'—';
   $('fuelWeekMeta').textContent=week?`${fuelNum(week.kg_per_day,1)} kg/dobę · śr. ${fuelNum(week.t_mean,1)} °C · ${week.days} z 7 dób z danymi`:'brak danych mocy palnika';
-  const hddValue=refills?.kg_per_hdd??week?.kg_per_hdd;$('fuelHdd').textContent=hddValue==null?'—':`${fuelNum(hddValue,2)} kg`;
-  $('fuelHddMeta').textContent=refills?`z dosypek ${fuelDate(refills.from).slice(0,5)}–${fuelDate(refills.to).slice(0,5)}${week?.kg_per_hdd!=null?` · 7 dni: ${fuelNum(week.kg_per_hdd,2)} kg`:''}`:week?'szacunek z ostatnich 7 dni':'za mało dosypek';
+  const model=summary.model;const hddValue=model?(refills?.heating_kg_per_hdd??week?.heating_kg_per_hdd??model.kg_per_hdd):(refills?.kg_per_hdd??week?.kg_per_hdd);$('fuelHdd').textContent=hddValue==null?'—':`${fuelNum(hddValue,2)} kg`;
+  $('fuelHddLabel').textContent=model?'kg na stopniodzień · ogrzewanie':'kg na stopniodzień';
+  $('fuelHddMeta').textContent=model?`stałe ${fuelNum(model.base_kg_per_day,1)} kg/dobę (CWU i straty) · grzanie poniżej ${fuelNum(model.balance_temp,1)} °C`:refills?`z dosypek ${fuelDate(refills.from).slice(0,5)}–${fuelDate(refills.to).slice(0,5)}${week?.kg_per_hdd!=null?` · 7 dni: ${fuelNum(week.kg_per_hdd,2)} kg`:''}`:week?'szacunek z ostatnich 7 dni':'za mało dosypek';
   if(last){const hours=Math.max(0,last.hours_ago),days=Math.floor(hours/24),rest=Math.round(hours%24);$('fuelSince').textContent=days?`${days} d ${rest} h`:`${rest} h`;$('fuelSinceMeta').textContent=`${fuelDate(last.ts)} · dosypano ${fuelNum(last.kg)} kg`;}
   else{$('fuelSince').textContent='—';$('fuelSinceMeta').textContent='brak zapisanych dosypek';}
   const tile=$('fuelHopperTile');tile.classList.remove('ok','alert');
-  if(hopper){const left=hopper.days_to_reserve,hoursLeft=left!=null?Math.round(left*24):null;$('fuelHopper').textContent=`≈ ${fuelNum(hopper.remaining_kg)} kg`;$('fuelHopperMeta').textContent=hopper.below_reserve?`poniżej zalecanego minimum ${fuelNum(hopper.reserve_kg)} kg, dosyp teraz`:`${hopper.remaining_percent??'—'}%${left!=null?` · do rezerwy ${left<1?`ok. ${hoursLeft} h`:`ok. ${fuelNum(left,1)} dnia`}`:''} · z ${fuelNum(hopper.capacity_kg)} kg`;tile.classList.add(hopper.below_reserve||(left!=null&&left<1)?'alert':'ok');}
+  if(hopper){const left=hopper.days_to_reserve,hoursLeft=left!=null?Math.round(left*24):null;$('fuelHopper').textContent=`≈ ${fuelNum(hopper.remaining_kg)} kg`;$('fuelHopperMeta').textContent=hopper.below_reserve?`poniżej zalecanego minimum ${fuelNum(hopper.reserve_kg)} kg, dosyp teraz`:`${hopper.remaining_percent??'—'}%${left!=null?` · do rezerwy ${left<1?`ok. ${hoursLeft} h`:`ok. ${fuelNum(left,1)} dnia`}${hopper.days_source?.startsWith('prognoza')?' wg prognozy':''}`:''} · z ${fuelNum(hopper.capacity_kg)} kg`;tile.classList.add(hopper.below_reserve||(left!=null&&left<1)?'alert':'ok');}
   else{$('fuelHopper').textContent='—';$('fuelHopperMeta').textContent='brak danych do szacunku';tile.classList.add('ok');}
-  $('fuelFooter').textContent=(calib.calibrated?`Kalibracja do dosypek z ${calib.periods_used} ${calib.periods_used===1?'okresu':'okresów'} (×${fuelNum(calib.factor,2)})`:'Szacunek bez kalibracji: potrzebny pełny okres między dosypkami z danymi palnika')+` · stopniodni przy bazie 18 °C · stan zasobnika zakłada dosypywanie do pełna, rezerwa 15% to zalecane minimum z instrukcji kotła${hopper?.method?` · ${hopper.method}`:''} · ${fuelDate(summary.fetched_at)}`;
+  const forecast=(summary.forecast||[]).slice(0,3).map(day=>`${fuelNum(day.kg)}`).join(' / ');const offset=summary.om_offset;
+  $('fuelFooter').textContent=[model?`Model domu z ${model.periods_used} okresów między dosypkami (R² ${fuelNum(model.r2,2)})`:'Za mało dosypek na model domu',
+    calib.calibrated?`moc palnika ×${fuelNum(calib.factor,2)}`:null,
+    `stopniodni przy bazie ${fuelNum(summary.hdd_base??model?.balance_temp,1)} °C`,
+    offset?.applied?`Open-Meteo skorygowane o ${fuelNum(offset.offset,1)} K do czujnika sterownika`:null,
+    forecast?`prognoza zużycia na 3 dni: ${forecast} kg`:null,
+    'stan zasobnika zakłada dosypywanie do pełna, rezerwa 15% to zalecane minimum z instrukcji kotła',
+    hopper?.method||null,fuelDate(summary.fetched_at)].filter(Boolean).join(' · ');
   $('fuelCard').hidden=false;}
 async function loadFuel(){try{const response=await fetch('/api/fuel/summary',{cache:'no-store'});if(!response.ok)return;const summary=await response.json();if(summary.configured)renderFuel(summary);}catch(_){}}
 function tick(){const d=new Date();$('clock').textContent=d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}tick();setInterval(tick,1000);loadStatus();setInterval(loadStatus,30000);loadFuel();setInterval(loadFuel,300000);

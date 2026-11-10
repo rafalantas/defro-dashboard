@@ -29,6 +29,7 @@ services:
       PELLET_BAG_KG: ${PELLET_BAG_KG:-15}
       PELLET_HOPPER_KG: ${PELLET_HOPPER_KG:-}
       PELLET_HOPPER_RESERVE_PERCENT: ${PELLET_HOPPER_RESERVE_PERCENT:-}
+      HDD_BASE: ${HDD_BASE:-}
     expose:
       - "8000"
     restart: unless-stopped

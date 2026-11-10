@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from bisect import bisect_right
 import os
 import re
 import threading
@@ -429,7 +430,148 @@ HISTORY_SERIES_ORDER = (
     "thermoflow-valve4d-opening",
     "thermoflow-valve4d-return",
     "thermoflow-valve4d-effective-setpoint",
+    "thermoflow-outdoor",
+    "thermoflow-room",
+    "thermoflow-co",
+    "thermoflow-boiler-power",
+    "thermoflow-flue",
+    "thermoflow-floor",
+    "thermoflow-dhw",
+    "thermoflow-pump-valve4d",
+    "thermoflow-pump-floor",
+    "thermoflow-pump-dhw",
+    "thermoflow-pump-circulation",
+    "thermoflow-fuel-percent",
 )
+# Otwarcie zaworu po ochronie powrotu nie schodzi niżej niż minimalne otwarcie (menu 2203).
+HISTORY_PROTECTION_MIN_OPENING = 35
+HISTORY_COLD_GAP_MARGIN = 5.0
+
+
+def _value_at(points: list, timestamp: int):
+    """Ostatnia wartość serii w chwili timestamp (seria schodkowa)."""
+    index = bisect_right([point[0] for point in points], timestamp) - 1
+    return points[index][1] if index >= 0 else None
+
+
+def _compress_changes(points: list) -> list:
+    """Bezstratnie: punkt tylko przy zmianie wartości, plus ostatnia próbka."""
+    if not points:
+        return []
+    compact = [points[0]]
+    for point in points[1:]:
+        if point[1] != compact[-1][1]:
+            compact.append(point)
+    if compact[-1][0] != points[-1][0]:
+        compact.append(points[-1])
+    return compact
+
+
+def _intervals(points: list) -> list:
+    """Przedziały, w których seria 0/1 miała wartość 1: [[start, koniec], ...]."""
+    result, opened = [], None
+    for timestamp, value in points:
+        if value and opened is None:
+            opened = timestamp
+        elif not value and opened is not None:
+            result.append([opened, timestamp])
+            opened = None
+    if opened is not None and points:
+        result.append([opened, points[-1][0]])
+    return result
+
+
+def _local_iso(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp, ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
+
+
+def _history_analysis(raw: dict) -> dict:
+    """Cykle palnika i ochrony powrotu wyliczone z próbek (to, co wcześniej liczone było ręcznie)."""
+    power = raw.get("thermoflow-boiler-power", [])
+    burner = []
+    run_start = peak = None
+    for timestamp, value in power:
+        if value > 0 and run_start is None:
+            run_start, peak = timestamp, value
+        elif value > 0:
+            peak = max(peak, value)
+        elif run_start is not None:
+            burner.append({"start": _local_iso(run_start), "end": _local_iso(timestamp),
+                           "minutes": round((timestamp - run_start) / 60, 1), "peak_kw": peak})
+            run_start = None
+    if run_start is not None and power:
+        burner.append({"start": _local_iso(run_start), "end": None, "running": True,
+                       "minutes": round((power[-1][0] - run_start) / 60, 1), "peak_kw": peak})
+
+    opening = raw.get("thermoflow-valve4d-opening", [])
+    valve = raw.get("thermoflow-valve4d-current", [])
+    setpoint = raw.get("thermoflow-valve4d-effective-setpoint", [])
+    returns = raw.get("thermoflow-valve4d-return", [])
+    floor = raw.get("thermoflow-pump-floor", [])
+    cycles = []
+    index = 1
+    while index < len(opening):
+        before, now = opening[index - 1][1], opening[index][1]
+        if not (before >= 70 and now <= before - 15):
+            index += 1
+            continue
+        start = opening[index][0]
+        # dojście do minimum
+        low = index
+        while low < len(opening) and opening[low][1] > HISTORY_PROTECTION_MIN_OPENING:
+            low += 1
+        if low >= len(opening):
+            break
+        floor_level = opening[low][1]
+        rise = low
+        while rise < len(opening) and opening[rise][1] <= floor_level + 1:
+            rise += 1
+        ramp = rise
+        while ramp < len(opening) and opening[ramp][1] < 80:
+            ramp += 1
+        gap_end = None
+        for timestamp, value in valve:
+            if timestamp <= start:
+                continue
+            target = _value_at(setpoint, timestamp)
+            if target is not None and value >= target - HISTORY_COLD_GAP_MARGIN:
+                gap_end = timestamp
+                break
+        window_end = gap_end or (opening[-1][0])
+        gap_returns = [value for timestamp, value in returns if start <= timestamp <= window_end]
+        gap_valve = [value for timestamp, value in valve if start <= timestamp <= window_end]
+        cycles.append({
+            "protection_start": _local_iso(start),
+            "floor_pump_on": bool(_value_at(floor, start)) if floor else None,
+            "min_opening": floor_level,
+            "wait_at_min_minutes": round((opening[rise][0] - opening[low][0]) / 60, 1) if rise < len(opening) else None,
+            "ramp_to_80_minutes": round((opening[ramp][0] - opening[rise][0]) / 60, 1) if ramp < len(opening) and rise < len(opening) else None,
+            "cold_gap_minutes": round((gap_end - start) / 60, 1) if gap_end else None,
+            "cold_gap_definition": f"do 4D >= zadana - {HISTORY_COLD_GAP_MARGIN:g} K",
+            "min_return": min(gap_returns) if gap_returns else None,
+            "min_valve4d": min(gap_valve) if gap_valve else None,
+            "complete": gap_end is not None,
+        })
+        # następna ochrona dopiero po powrocie zaworu powyżej 70 %
+        index = max(ramp, low + 1)
+
+    def mean(values):
+        values = [value for value in values if value is not None]
+        return round(sum(values) / len(values), 1) if values else None
+
+    done = [cycle for cycle in cycles if cycle["complete"]]
+    return {
+        "burner_runs": burner,
+        "burner_starts": len([run for run in burner]),
+        "protection_cycles": cycles,
+        "summary": {
+            "cycles": len(cycles),
+            "cold_gap_mean_floor_on": mean([c["cold_gap_minutes"] for c in done if c["floor_pump_on"]]),
+            "cold_gap_mean_floor_off": mean([c["cold_gap_minutes"] for c in done if c["floor_pump_on"] is False]),
+            "min_return": min([c["min_return"] for c in cycles if c["min_return"] is not None], default=None),
+            "burner_minutes_total": round(sum(run["minutes"] for run in burner), 1),
+        },
+    }
 
 
 def _history_query_datetime(value: str) -> datetime:
@@ -440,7 +582,7 @@ def _history_query_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw")) if parsed.tzinfo is None else parsed
 
 
-def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0) -> dict:
+def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True) -> dict:
     """Return recent ThingSpeak samples as compact [unix_seconds, value] pairs."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
@@ -456,9 +598,13 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
     if end.timestamp() - start.timestamp() > 24 * 3600:
         return {"configured": True, "connected": False, "error": "Zakres historii nie może przekraczać 24 godzin"}
 
+    auto_step = False
+    if not step and output_format == "compact" and end.timestamp() - start.timestamp() > 12 * 3600:
+        # pełna doba bez przerzedzenia nie mieści się w jednej odpowiedzi do analizy
+        step, auto_step = 120, True
     range_key = f"last-{hours}h" if requested_start is None else f"{start.isoformat()}_{end.isoformat()}"
     filter_key = ",".join(sorted(requested_series or []))
-    cache_key = (",".join(channel_ids), f"{range_key}|step={step}", filter_key)
+    cache_key = (",".join(channel_ids), f"{range_key}|step={step}|fmt={output_format}|an={int(with_analysis)}", filter_key)
     now_monotonic = time.monotonic()
     with _history_cache_lock:
         cached = _history_cache.get(cache_key)
@@ -521,8 +667,10 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
                 series_by_id[series_id]["_points_by_time"][int(timestamp.timestamp())] = [int(timestamp.timestamp()), value]
 
     series = []
+    raw_by_id: dict[str, list] = {}
     for item in series_by_id.values():
         raw_points = [point for _, point in sorted(item.pop("_points_by_time").items())]
+        raw_by_id[item["id"]] = raw_points
         if step:
             buckets = {}
             for timestamp, value in raw_points:
@@ -541,7 +689,22 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
                 [stats["last_timestamp"], round(stats["sum"] / stats["count"], 1) if average_series else stats["last_value"]]
                 for stats in buckets.values()
             ]
-        item["points"] = raw_points
+        values = [value for _timestamp, value in raw_points]
+        if values:
+            item["summary"] = {
+                "samples": len(values), "min": min(values), "max": max(values),
+                "mean": round(sum(values) / len(values), 2), "first": values[0], "last": values[-1],
+            }
+        if output_format == "full":
+            item["format"] = "points"
+            item["points"] = raw_points
+        elif item["unit"] == "0/1":
+            item["format"] = "intervals"
+            item["intervals"] = _intervals(raw_points)
+            item["on_minutes"] = round(sum(end - begin for begin, end in item["intervals"]) / 60, 1)
+        else:
+            item["format"] = "changes"
+            item["points"] = _compress_changes(raw_points)
         series.append(item)
     order = {series_id: index for index, series_id in enumerate(HISTORY_SERIES_ORDER)}
     series.sort(key=lambda item: (order.get(item["id"], len(order)), item["label"]))
@@ -554,12 +717,22 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         "from": start.isoformat(),
         "to": end.isoformat(),
         "resolution": "Próbki zapisane w ThingSpeak (zwykle co około 40 sekund).",
-        "point_format": "[unix_timestamp_seconds, value]",
+        "point_format": (
+            "[unix_timestamp_seconds, value]" if output_format == "full" else
+            "changes: [unix_timestamp_seconds, value] tylko przy zmianie wartości (wartość obowiązuje do następnego punktu) "
+            "+ ostatnia próbka; intervals: [[start, koniec], ...] okresy pracy pomp"
+        ),
         "step_seconds": step or None,
+        "step_automatic": auto_step,
         "downsampling": "Średnia w przedziale dla temperatur i mocy; ostatnia wartość dla nastaw, otwarcia, pomp i paliwa." if step else None,
         "series": series,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
+    if with_analysis:
+        try:
+            result["analysis"] = _history_analysis(raw_by_id)
+        except Exception as error:   # analiza nie może zablokować samych danych
+            result["analysis"] = {"error": str(error)[:180]}
     with _history_cache_lock:
         _history_cache[cache_key] = (now_monotonic, result)
     return result
@@ -1150,7 +1323,12 @@ class Handler(BaseHTTPRequestHandler):
                     if unknown:
                         raise ValueError("Nieznana seria: " + ", ".join(sorted(unknown)))
                     requested_series = expanded
-                payload = _read_history(hours, requested_series, requested_start, requested_end, step)
+                output_format = query.get("format", ["compact"])[0]
+                if output_format not in ("compact", "full"):
+                    raise ValueError("Parametr format przyjmuje wartości compact albo full")
+                with_analysis = query.get("analysis", ["1"])[0] not in ("0", "false", "no")
+                payload = _read_history(hours, requested_series, requested_start, requested_end, step,
+                                        output_format, with_analysis)
             except (HTTPError, URLError, TimeoutError, OSError) as error:
                 status = error.code if isinstance(error, HTTPError) else None
                 message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
