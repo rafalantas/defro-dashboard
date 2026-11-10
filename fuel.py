@@ -62,8 +62,11 @@ HDD_BASE = float(os.getenv("HDD_BASE", "18.0"))
 PELLET_KWH_PER_KG = float(os.getenv("PELLET_KWH_PER_KG", "4.8"))
 BOILER_EFF = float(os.getenv("BOILER_EFF", "0.88"))
 BAG_KG = float(os.getenv("PELLET_BAG_KG", "15"))
-# Pojemność zasobnika; pusto = największa zapisana dosypka (szacunek).
-HOPPER_KG = float(os.getenv("PELLET_HOPPER_KG", "0") or 0)
+# Pojemność zasobnika: Gamma 40 wg instrukcji ~228 kg (gęstość nasypowa 0,6 kg/dm3).
+HOPPER_KG = float(os.getenv("PELLET_HOPPER_KG", "") or 228)
+# Zalecany minimalny poziom wg instrukcji: 15 % objętości. Bez czujnika poziomu pusty zasobnik
+# kończy się zgaśnięciem płomienia i alarmem nieudanego rozpalenia, więc ostrzegamy przed rezerwą.
+HOPPER_RESERVE_PERCENT = float(os.getenv("PELLET_HOPPER_RESERVE_PERCENT", "") or 15)
 SUMMARY_CACHE_SECONDS = 60
 
 MAX_GAP_S = 300
@@ -477,17 +480,22 @@ def _summary() -> dict:
         else:
             used, method = None, None
 
-        capacity = HOPPER_KG or max(r["kg"] for r in refills)
+        capacity = HOPPER_KG
+        reserve = capacity * HOPPER_RESERVE_PERCENT / 100
         if used is not None:
             remaining = max(0.0, capacity - used)
+            to_reserve = max(0.0, remaining - reserve)
             rate = (week or {}).get("kg_per_day") or (periods[-1]["kg_per_day"] if periods else None)
             hopper = {
                 "capacity_kg": capacity,
-                "capacity_estimated": not HOPPER_KG,
+                "reserve_kg": round(reserve, 1),
                 "used_kg": round(used, 1),
                 "remaining_kg": round(remaining, 1),
                 "remaining_percent": round(100 * remaining / capacity) if capacity else None,
-                "days_left": round(remaining / rate, 1) if rate else None,
+                "to_reserve_kg": round(to_reserve, 1),
+                "below_reserve": remaining <= reserve,
+                # czas do rezerwy 15 % (zalecane minimum z instrukcji kotła)
+                "days_to_reserve": round(to_reserve / rate, 1) if rate else None,
                 "method": method,
             }
 
