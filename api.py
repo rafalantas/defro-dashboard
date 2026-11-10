@@ -362,7 +362,8 @@ def _live_statistics(udid: str, token: str) -> tuple[float | None, str | None, f
 def _linear_statistics(udid: str, token: str, period: str, year: int, month: int) -> dict:
     """Read chart history exclusively from the configured ThingSpeak channels."""
     now = time.monotonic()
-    cache_key = ("thingspeak", period, year, month if period in ("month", "year") else 0)
+    # day/week/month są pobierane dla całego miesiąca, year dla całego roku.
+    cache_key = ("thingspeak", period, year, 0 if period == "year" else month)
     with _chart_cache_lock:
         cached = _chart_cache.get(cache_key)
         if cached and now - cached[0] < 300:
@@ -575,6 +576,8 @@ def _history_analysis(raw: dict) -> dict:
 
 
 def _history_query_datetime(value: str) -> datetime:
+    # W URL-u niezakodowany "+" w offsecie zamienia się w spację ("12:00:00 01:00").
+    value = re.sub(r"\s+(\d{2}:?\d{2})$", r"+\1", value.strip())
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
@@ -728,7 +731,9 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         "series": series,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
-    if with_analysis:
+    if with_analysis and requested_series is not None:
+        result["analysis"] = {"error": "Analiza wymaga pełnego zestawu serii; pomiń parametr series albo ustaw analysis=0"}
+    elif with_analysis:
         try:
             result["analysis"] = _history_analysis(raw_by_id)
         except Exception as error:   # analiza nie może zablokować samych danych
