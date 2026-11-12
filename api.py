@@ -1375,5 +1375,6 @@ def _poll_forever() -> None:
 
 if __name__ == "__main__":
     threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
+    fuel.warmup()   # karta zużycia peletu: cache liczony w tle od startu kontenera
     server = ThreadingHTTPServer(("0.0.0.0", 8000), Handler)
     server.serve_forever()

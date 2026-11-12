@@ -79,6 +79,7 @@ HOPPER_KG = float(os.getenv("PELLET_HOPPER_KG", "") or 228)
 # kończy się zgaśnięciem płomienia i alarmem nieudanego rozpalenia, więc ostrzegamy przed rezerwą.
 HOPPER_RESERVE_PERCENT = float(os.getenv("PELLET_HOPPER_RESERVE_PERCENT", "") or 15)
 SUMMARY_CACHE_SECONDS = 60
+SUMMARY_WAIT_SECONDS = 25                # tyle czeka zapytanie przy zimnym starcie (limit nginx to 60 s)
 
 MAX_GAP_S = 300
 MAX_DAYS = 120
@@ -91,6 +92,8 @@ _om_cache: dict[str, float] = {}
 _temps_start: list = []   # [date | None] po pierwszym sprawdzeniu
 _refills_cache: dict = {"at": 0.0, "data": None}
 _summary_cache: dict = {"at": 0.0, "data": None}
+_summary_state: dict = {"thread": None, "error": None}
+_summary_guard = threading.Lock()
 _offset_cache: dict = {"at": 0.0, "data": None}
 _forecast_cache: dict = {"at": 0.0, "data": None}
 _model_cache: dict = {"key": None, "data": None}
@@ -913,14 +916,79 @@ def _stats(query: dict) -> dict:
     }
 
 
+def _prefetch(days: int = 400):
+    """Równolegle pobiera doby z ThingSpeak (temperatury, licznik), żeby zimny start nie trwał minut."""
+    if not TS_CHANNEL_TEMPS:
+        return
+    ts_start = _temps_data_start()   # raz, przed wątkami
+    today = datetime.now(TZ).date()
+    first = max(ts_start or today - timedelta(days=MAX_DAYS), today - timedelta(days=days))
+    wanted = [first + timedelta(days=i) for i in range((today - first).days + 1)]
+
+    def one(day: date):
+        for fetch in (_get_daily_raw, _counter_points):
+            try:
+                fetch(day)
+            except FuelError:
+                pass   # brak jednej doby nie przerywa rozgrzewania pozostałych
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(one, wanted))
+
+
+def _summary_job():
+    """Liczy podsumowanie w tle i zapisuje je w cache (błąd zostaje do odczytu przez _summary)."""
+    try:
+        _prefetch()
+        _summary_build()
+        _summary_state["error"] = None
+    except FuelError as e:
+        _summary_state["error"] = e.message
+    except Exception as e:   # nieoczekiwany błąd nie może zabić wątku po cichu
+        _summary_state["error"] = f"{type(e).__name__}: {e}"[:180]
+
+
+def _summary_kick():
+    with _summary_guard:
+        thread = _summary_state["thread"]
+        if thread is None or not thread.is_alive():
+            thread = threading.Thread(target=_summary_job, name="fuel-summary", daemon=True)
+            _summary_state["thread"] = thread
+            thread.start()
+        return thread
+
+
+def warmup():
+    """Rozgrzewa cache przy starcie kontenera, zanim dashboard poprosi o kartę."""
+    if TS_CHANNEL_FUEL:
+        _summary_kick()
+
+
 def _summary() -> dict:
-    """Lekkie podsumowanie do karty w dashboardzie (cache 60 s)."""
-    cached = _summary_cache["data"]
-    if cached is not None and time.monotonic() - _summary_cache["at"] < SUMMARY_CACHE_SECONDS:
-        return cached
+    """Podsumowanie do karty w dashboardzie. Zawsze odpowiada szybko, ciężkie liczenie idzie w tle.
+
+    Ostatni wynik jest zwracany od razu (po 60 s odświeża się w tle). Przy zimnym starcie
+    czekamy do SUMMARY_WAIT_SECONDS, a potem zwracamy {"warming": true}, żeby nginx (60 s)
+    nie ucinał zapytania, a dashboard ponowił je po chwili.
+    """
     if not TS_CHANNEL_FUEL:
         return {"configured": False}
+    cached = _summary_cache["data"]
+    if cached is not None:
+        if time.monotonic() - _summary_cache["at"] >= SUMMARY_CACHE_SECONDS:
+            _summary_kick()
+        return cached
+    thread = _summary_kick()
+    thread.join(timeout=SUMMARY_WAIT_SECONDS)
+    cached = _summary_cache["data"]
+    if cached is not None:
+        return cached
+    if not thread.is_alive() and _summary_state["error"]:
+        raise FuelError(502, _summary_state["error"])
+    return {"configured": True, "warming": True}
 
+
+def _summary_build() -> dict:
     now = datetime.now(TZ)
     today = now.date()
     with _lock:
@@ -1076,6 +1144,7 @@ def _daily(query: dict) -> dict:
         days = max(1, min(int(query.get("days", ["60"])[0]), MAX_DAYS))
     except ValueError:
         raise FuelError(400, "days musi być liczbą") from None
+    _prefetch(days + 2)
     with _lock:
         refills = _refills()
         model = _fit_model(refills)
