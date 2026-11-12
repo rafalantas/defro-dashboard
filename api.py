@@ -509,6 +509,7 @@ def _history_analysis(raw: dict) -> dict:
     setpoint = raw.get("thermoflow-valve4d-effective-setpoint", [])
     returns = raw.get("thermoflow-valve4d-return", [])
     floor = raw.get("thermoflow-pump-floor", [])
+    valve_pump = raw.get("thermoflow-pump-valve4d", [])
     cycles = []
     index = 1
     while index < len(opening):
@@ -524,6 +525,11 @@ def _history_analysis(raw: dict) -> dict:
         if low >= len(opening):
             break
         floor_level = opening[low][1]
+        # nie ochrona powrotu: pompa zaworu stała albo zawór zjechał wyraźnie poniżej minimum (np. przerwa w pracy sterownika)
+        pump_on = _value_at(valve_pump, opening[low][0]) if valve_pump else 1
+        if not pump_on or floor_level < HISTORY_PROTECTION_MIN_OPENING - 15:
+            index = low + 1
+            continue
         rise = low
         while rise < len(opening) and opening[rise][1] <= floor_level + 1:
             rise += 1
