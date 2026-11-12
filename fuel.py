@@ -9,6 +9,7 @@ Kanał ThingSpeak "Pelet":
 
 Endpointy (obsługiwane przez fuel.handle(), wywoływane z api.py):
   GET    /api/fuel/stats?days=30
+  GET    /api/fuel/daily?days=60   zużycie dobowe z licznika, temperatura, słońce, wiatr, model dobowy
   GET    /api/fuel/refills
   GET    /api/fuel/summary         podsumowanie do karty w dashboardzie
   POST   /api/fuel/refill          {"kg": 30} lub {"bags": 2}, opcjonalnie "ts", "note"   (X-Api-Token)
@@ -94,6 +95,12 @@ _offset_cache: dict = {"at": 0.0, "data": None}
 _forecast_cache: dict = {"at": 0.0, "data": None}
 _model_cache: dict = {"key": None, "data": None}
 _counter_cache: dict[str, list] = {}   # zakończone doby: punkty zmian licznika zapasu
+_weather_cache: dict[str, dict] = {}   # słońce i wiatr z Open-Meteo dla dób
+_weather_fetched: dict[str, float] = {}  # kiedy pobrano prognozę dla dziś i kolejnych dób
+_daily_model_cache: dict = {"key": None, "data": None}
+WEATHER_VARS = "shortwave_radiation_sum,wind_speed_10m_max"
+MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby dopasować model dobowy
+DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
 MIN_COUNTER_DROP = 20                  # minimalny spadek licznika (pp) do kalibracji
 
 
@@ -206,6 +213,45 @@ def _openmeteo_mean(day: date):
         # dzisiejsza wartość z prognozy zmienia się w ciągu doby: nie zamrażamy jej w cache
         return _om_cache.pop(key, None)
     return _om_cache.get(key)
+
+
+def _weather_fill(url: str, params: dict):
+    daily = _request_json(url, params).get("daily", {})
+    today = datetime.now(TZ).date().isoformat()
+    solar = daily.get("shortwave_radiation_sum", [])
+    wind = daily.get("wind_speed_10m_max", [])
+    for i, t in enumerate(daily.get("time", [])):
+        rec = {"solar_mj": solar[i] if i < len(solar) else None,
+               "wind_max_kmh": wind[i] if i < len(wind) else None}
+        if rec["solar_mj"] is not None or rec["wind_max_kmh"] is not None:
+            _weather_cache[t] = rec
+            if t >= today:
+                _weather_fetched[t] = time.monotonic()
+
+
+def _weather(day: date) -> dict:
+    """Suma promieniowania słonecznego (MJ/m²) i maks. prędkość wiatru (km/h) dla doby."""
+    key = day.isoformat()
+    today = datetime.now(TZ).date()
+    if not (FUEL_LAT and FUEL_LON):
+        return {}
+    if key in _weather_cache:
+        # prognoza dla dziś i kolejnych dób zmienia się w ciągu doby: odświeżamy co FORECAST_CACHE_SECONDS
+        fresh = day < today or time.monotonic() - _weather_fetched.get(key, 0.0) < FORECAST_CACHE_SECONDS
+        if fresh:
+            return _weather_cache[key]
+    common = {"latitude": FUEL_LAT, "longitude": FUEL_LON, "daily": WEATHER_VARS, "timezone": str(TZ)}
+    try:
+        if day < today - timedelta(days=7):
+            start = day.replace(day=1)
+            month_end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+            end = min(month_end, today - timedelta(days=6))
+            _weather_fill(OM_ARCHIVE, {**common, "start_date": start.isoformat(), "end_date": end.isoformat()})
+        else:
+            _weather_fill(OM_FORECAST, {**common, "past_days": 14, "forecast_days": 7})
+    except FuelError:
+        return _weather_cache.get(key, {})   # Open-Meteo tylko uzupełnia: zostaje ostatnia znana wartość
+    return _weather_cache.get(key, {})
 
 
 def _temps_data_start():
@@ -367,6 +413,156 @@ def _counter_calibration(refills: list[dict]) -> dict:
             "drop_percent": round(drop, 1), "kg": round(kg, 1)}
 
 
+def _counter_day_kg(day: date, kg_per_percent: float | None):
+    """Zużycie w pełnej dobie z licznika podajnika (None, gdy doba niepełna lub brak kalibracji)."""
+    if not kg_per_percent or day >= datetime.now(TZ).date():
+        return None
+    start, end = _day_bounds(day)
+    try:
+        points = _counter_points(day)
+        before = _counter_points(day - timedelta(days=1))
+    except FuelError:
+        return None
+    if not points or not before:
+        return None   # brak danych z poprzedniej doby: nie wiadomo, od jakiej wartości startowała
+    if points[-1][0] < end.timestamp() - 900:
+        return None   # doba urwana (np. przerwa w zapisie)
+    drop, complete, floor_hit = _counter_drop(start, end)
+    if not complete or floor_hit or drop is None:
+        return None
+    return round(drop * kg_per_percent, 1)
+
+
+def _solve(a: list, b: list):
+    """Rozwiązanie układu a·x = b (eliminacja Gaussa z wyborem elementu)."""
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(m[r][col]))
+        if abs(m[pivot][col]) < 1e-12:
+            return None
+        m[col], m[pivot] = m[pivot], m[col]
+        for r in range(n):
+            if r != col:
+                f = m[r][col] / m[col][col]
+                m[r] = [x - f * y for x, y in zip(m[r], m[col])]
+    return [m[i][n] / m[i][i] for i in range(n)]
+
+
+def _ols_loo(rows: list, y: list):
+    """Regresja liniowa z błędem prognozy liczonym metodą pomijania po jednej dobie (LOO)."""
+    k = len(rows[0])
+    xtx = [[sum(r[i] * r[j] for r in rows) for j in range(k)] for i in range(k)]
+    xty = [sum(r[i] * yi for r, yi in zip(rows, y)) for i in range(k)]
+    beta = _solve(xtx, xty)
+    if beta is None:
+        return None
+    inv_cols = [_solve(xtx, [1.0 if i == j else 0.0 for i in range(k)]) for j in range(k)]
+    if any(col is None for col in inv_cols):
+        return None
+    inv = [[inv_cols[j][i] for j in range(k)] for i in range(k)]
+    loo, fit = [], []
+    for r, yi in zip(rows, y):
+        pred = sum(b * x for b, x in zip(beta, r))
+        h = sum(r[i] * sum(inv[i][j] * r[j] for j in range(k)) for i in range(k))
+        fit.append(yi - pred)
+        loo.append((yi - pred) / (1 - h) if h < 0.999 else yi - pred)
+    return {"beta": beta,
+            "rmse": (sum(e * e for e in fit) / len(fit)) ** 0.5,
+            "rmse_loo": (sum(e * e for e in loo) / len(loo)) ** 0.5}
+
+
+def _daily_rows(days: int = 120):
+    """Pełne doby z licznikiem podajnika, temperaturą, słońcem i wiatrem."""
+    counter = _counter_calibration(_refills())
+    kpp = counter.get("kg_per_percent") if counter.get("calibrated") else None
+    ts_start = _temps_data_start()
+    today = datetime.now(TZ).date()
+    out = []
+    if not ts_start:
+        return out, counter
+    d = max(ts_start + timedelta(days=1), today - timedelta(days=days))
+    while d < today:
+        rec = _get_daily(d)
+        weather = _weather(d)
+        kg = _counter_day_kg(d, kpp)
+        out.append({"day": d.isoformat(), "t_mean": rec.get("t_mean"), "hdd": rec.get("hdd"),
+                    "solar_mj": weather.get("solar_mj"), "wind_max_kmh": weather.get("wind_max_kmh"),
+                    "kg_counter": kg})
+        d += timedelta(days=1)
+    return out, counter
+
+
+def _fit_daily_model(rows: list):
+    """Model dobowy: sprawdza, czy słońce i wiatr poprawiają prognozę ponad samą temperaturę.
+
+    Każdy dodatkowy czynnik zostaje tylko wtedy, gdy zmniejsza błąd prognozy dla dób,
+    których model nie widział (LOO) o co najmniej DAILY_MODEL_MIN_GAIN i ma sensowny znak
+    (słońce zmniejsza zużycie, wiatr przy mrozie je zwiększa).
+    """
+    usable = [r for r in rows if r["kg_counter"] is not None and r["hdd"] is not None
+              and r["solar_mj"] is not None and r["wind_max_kmh"] is not None]
+    key = (len(usable), usable[-1]["day"] if usable else None, _active_base())
+    if _daily_model_cache["key"] == key:
+        return _daily_model_cache["data"]
+    status = {"status": "zbiera dane", "days": len(usable), "days_needed": MIN_DAILY_DAYS}
+    if len(usable) < MIN_DAILY_DAYS:
+        _daily_model_cache.update(key=key, data=status)
+        return status
+
+    y = [r["kg_counter"] for r in usable]
+    features = {
+        "hdd": lambda r: r["hdd"],
+        "solar": lambda r: r["solar_mj"],
+        "wind_hdd": lambda r: r["wind_max_kmh"] * r["hdd"] / 100,
+    }
+    expected_sign = {"solar": -1, "wind_hdd": 1}
+    candidates = [["hdd"], ["hdd", "solar"], ["hdd", "wind_hdd"], ["hdd", "solar", "wind_hdd"]]
+    results = []
+    for names in candidates:
+        rows_x = [[1.0] + [features[n](r) for n in names] for r in usable]
+        fit = _ols_loo(rows_x, y)
+        if not fit:
+            continue
+        coefs = dict(zip(["base"] + names, fit["beta"]))
+        if any(n in expected_sign and coefs[n] * expected_sign[n] < 0 for n in names):
+            continue   # znak niezgodny z fizyką: czynnik odrzucony
+        results.append({"terms": names, "coefs": coefs, **fit})
+    if not results:
+        _daily_model_cache.update(key=key, data=status)
+        return status
+    baseline = next((r for r in results if r["terms"] == ["hdd"]), results[0])
+    best = baseline
+    for r in results:
+        if r is not baseline and r["rmse_loo"] < best["rmse_loo"] * (1 - DAILY_MODEL_MIN_GAIN):
+            best = r
+    c = best["coefs"]
+    data = {
+        "status": "aktywny",
+        "days": len(usable),
+        "balance_temp": _active_base(),
+        "terms": best["terms"],
+        "base_kg_per_day": round(c["base"], 2),
+        "kg_per_hdd": round(c["hdd"], 2),
+        "kg_per_solar_mj": round(c["solar"], 3) if "solar" in c else None,
+        "kg_per_wind_hdd": round(c["wind_hdd"], 3) if "wind_hdd" in c else None,
+        "rmse_kg_per_day": round(best["rmse"], 1),
+        "rmse_loo_kg_per_day": round(best["rmse_loo"], 1),
+        "rmse_loo_temperature_only": round(baseline["rmse_loo"], 1),
+    }
+    _daily_model_cache.update(key=key, data=data)
+    return data
+
+
+def _predict_daily(model: dict, hdd: float, solar, wind):
+    kg = model["base_kg_per_day"] + model["kg_per_hdd"] * hdd
+    if model.get("kg_per_solar_mj") is not None and solar is not None:
+        kg += model["kg_per_solar_mj"] * solar
+    if model.get("kg_per_wind_hdd") is not None and wind is not None:
+        kg += model["kg_per_wind_hdd"] * wind * hdd / 100
+    return max(kg, 0.0)
+
+
 def _active_base() -> float:
     model = _model_cache["data"]
     return model["balance_temp"] if model else HDD_BASE
@@ -481,13 +677,23 @@ def _forecast():
             offset = _om_offset()["offset"]
             days = [(date.fromisoformat(t), round(v + offset, 1))
                     for t, v in zip(daily.get("time", []), daily.get("temperature_2m_mean", [])) if v is not None]
+            for d, _t in days:
+                _weather(d)   # słońce i wiatr do prognozy (w cache po pierwszym zapytaniu)
         except FuelError:
             days = []
     _forecast_cache.update(at=time.monotonic(), data=days)
     return days
 
 
-def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime):
+def _rate_for(model: dict, daily_model, day: date, t: float) -> float:
+    if daily_model and daily_model.get("status") == "aktywny" and len(daily_model["terms"]) > 1:
+        weather = _weather(day)
+        return _predict_daily(daily_model, max(0.0, daily_model["balance_temp"] - t),
+                              weather.get("solar_mj"), weather.get("wind_max_kmh"))
+    return _predict_kg_per_day(model, t)
+
+
+def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime, daily_model=None):
     """Ile dób (od teraz) wystarczy kg_needed przy prognozie pogody i modelu domu."""
     if kg_needed <= 0:
         return 0.0
@@ -499,7 +705,7 @@ def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime):
         t = by_day.get(day, last_t)
         if t is None:
             return None
-        rate = _predict_kg_per_day(model, t)
+        rate = _rate_for(model, daily_model, day, t)
         if rate <= 0:
             return None
         if kg_needed <= rate * fraction:
@@ -726,6 +932,12 @@ def _summary() -> dict:
         last7 = [_get_daily(today - timedelta(days=i)) for i in range(7, 0, -1)]
         offset = _om_offset()
     forecast = _forecast() if model else []
+    try:
+        with _lock:
+            daily_rows, _counter_info = _daily_rows()
+            daily_model = _fit_daily_model(daily_rows)
+    except FuelError:
+        daily_model = None
 
     def est_kg(kwh: float) -> float:
         return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * calib["factor"]
@@ -813,7 +1025,7 @@ def _summary() -> dict:
             to_reserve = max(0.0, remaining - reserve)
             days_to_reserve, rate_source = None, None
             if model and forecast:
-                days_to_reserve = _days_until(to_reserve, model, forecast, now)
+                days_to_reserve = _days_until(to_reserve, model, forecast, now, daily_model)
                 rate_source = "prognoza pogody i model domu"
             if days_to_reserve is None:
                 rate = (week or {}).get("kg_per_day") or (periods[-1]["kg_per_day"] if periods else None)
@@ -841,8 +1053,11 @@ def _summary() -> dict:
         "model": model,
         "hdd_base": _active_base(),
         "om_offset": offset,
+        "daily_model": daily_model,
         "forecast": [{"day": d.isoformat(), "t_mean": t,
-                      "kg": round(_predict_kg_per_day(model, t), 1)} for d, t in forecast] if model else [],
+                      "solar_mj": _weather(d).get("solar_mj"),
+                      "wind_max_kmh": _weather(d).get("wind_max_kmh"),
+                      "kg": round(_rate_for(model, daily_model, d, t), 1)} for d, t in forecast] if model else [],
         "calibration": calib,
         "counter_calibration": counter,
         "last7": week,
@@ -853,6 +1068,28 @@ def _summary() -> dict:
     }
     _summary_cache.update(at=time.monotonic(), data=result)
     return result
+
+
+def _daily(query: dict) -> dict:
+    """Dobowe zużycie z licznika obok temperatury, słońca i wiatru oraz stan modelu dobowego."""
+    try:
+        days = max(1, min(int(query.get("days", ["60"])[0]), MAX_DAYS))
+    except ValueError:
+        raise FuelError(400, "days musi być liczbą") from None
+    with _lock:
+        refills = _refills()
+        model = _fit_model(refills)
+        rows, counter = _daily_rows(days)
+        daily_model = _fit_daily_model(rows)
+    for r in rows:
+        if model and r["t_mean"] is not None:
+            r["model_kg"] = round(_predict_kg_per_day(model, r["t_mean"]), 1)
+            if r["kg_counter"] is not None:
+                r["residual_kg"] = round(r["kg_counter"] - r["model_kg"], 1)
+    return {"model": model, "daily_model": daily_model, "counter_calibration": counter,
+            "weather_vars": {"solar_mj": "suma promieniowania krótkofalowego, MJ/m²",
+                             "wind_max_kmh": "maksymalna prędkość wiatru na 10 m, km/h"},
+            "days": rows}
 
 
 def _add_refill(data: dict) -> dict:
@@ -906,6 +1143,8 @@ def handle(method: str, path: str, query: dict, headers, body: bytes):
             return 200, _stats(query)
         if method == "GET" and path.rstrip("/") == "/api/fuel/summary":
             return 200, _summary()
+        if method == "GET" and path == "/api/fuel/daily":
+            return 200, _daily(query)
         if method == "GET" and path == "/api/fuel/refills":
             return 200, {"refills": _refills()}
         if method == "POST" and path == "/api/fuel/refill":

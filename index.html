@@ -259,13 +259,14 @@ function renderFuel(summary){const week=summary.last7,refills=summary.refills_ba
   const tile=$('fuelHopperTile');tile.classList.remove('ok','alert');
   if(hopper){const left=hopper.days_to_reserve,hoursLeft=left!=null?Math.round(left*24):null;$('fuelHopper').textContent=`≈ ${fuelNum(hopper.remaining_kg)} kg`;$('fuelHopperMeta').textContent=hopper.below_reserve?`poniżej zalecanego minimum ${fuelNum(hopper.reserve_kg)} kg, dosyp teraz`:`${hopper.remaining_percent??'—'}%${left!=null?` · do rezerwy ${left<1?`ok. ${hoursLeft} h`:`ok. ${fuelNum(left,1)} dnia`}${hopper.days_source?.startsWith('prognoza')?' wg prognozy':''}`:''} · z ${fuelNum(hopper.capacity_kg)} kg`;tile.classList.add(hopper.below_reserve||(left!=null&&left<1)?'alert':'ok');}
   else{$('fuelHopper').textContent='—';$('fuelHopperMeta').textContent='brak danych do szacunku';tile.classList.add('ok');}
-  const forecast=(summary.forecast||[]).slice(0,3).map(day=>`${fuelNum(day.kg)}`).join(' / ');const offset=summary.om_offset;
+  const forecast=(summary.forecast||[]).slice(0,3).map(day=>`${fuelNum(day.kg)} kg (${fuelNum(day.t_mean,1)} °C)`).join(' / ');const offset=summary.om_offset;const dm=summary.daily_model;const dmText=!dm?null:dm.status!=='aktywny'?`model dobowy ze słońcem i wiatrem: zbiera dane (${dm.days}/${dm.days_needed} dób)`:dm.terms.length>1?`model dobowy: ${[dm.kg_per_solar_mj!=null?`słońce ${fuelNum(dm.kg_per_solar_mj,2)} kg na MJ/m²`:null,dm.kg_per_wind_hdd!=null?`wiatr +${fuelNum(dm.kg_per_wind_hdd,2)} kg na 100 km/h×stopniodzień`:null].filter(Boolean).join(', ')} (błąd prognozy ${fuelNum(dm.rmse_loo_kg_per_day,1)} kg/dobę zamiast ${fuelNum(dm.rmse_loo_temperature_only,1)})`:`model dobowy: słońce i wiatr bez istotnego wpływu (${dm.days} dób)`;
   $('fuelFooter').textContent=[model?`Model domu z ${model.periods_used} okresów między dosypkami (R² ${fuelNum(model.r2,2)})`:'Za mało dosypek na model domu',
     summary.counter_calibration?.calibrated?`licznik podajnika ${fuelNum(summary.counter_calibration.kg_per_percent,2)} kg/%`:null,
     calib.calibrated?`moc palnika ×${fuelNum(calib.factor,2)}`:null,
     `stopniodni przy bazie ${fuelNum(summary.hdd_base??model?.balance_temp,1)} °C`,
     offset?.applied?`Open-Meteo skorygowane o ${fuelNum(offset.offset,1)} K do czujnika sterownika`:null,
-    forecast?`prognoza zużycia na 3 dni: ${forecast} kg`:null,
+    forecast?`prognoza zużycia na 3 dni: ${forecast}`:null,
+    dmText,
     'stan zasobnika zakłada dosypywanie do pełna, rezerwa 15% to zalecane minimum z instrukcji kotła',
     hopper?.method||null,fuelDate(summary.fetched_at)].filter(Boolean).join(' · ');
   $('fuelCard').hidden=false;}
