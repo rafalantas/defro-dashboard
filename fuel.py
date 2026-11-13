@@ -105,6 +105,20 @@ WEATHER_VARS = "shortwave_radiation_sum,wind_speed_10m_max"
 MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby dopasować model dobowy
 DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
 MIN_COUNTER_DROP = 20                  # minimalny spadek licznika (pp) do kalibracji
+COUNTER_COLLECTING_MESSAGE = "kalibracja licznika po zmianie podajnika: zbieranie danych"
+
+
+def _parse_epoch(raw: str) -> datetime:
+    """Chwila zmiany wydajności podajnika: od niej licznik ma inny współczynnik kg na 1 %."""
+    default = datetime.fromisoformat("2026-11-13T18:27:00+01:00")
+    try:
+        parsed = datetime.fromisoformat(raw.strip()) if raw.strip() else default
+    except ValueError:
+        return default
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=TZ)
+
+
+COUNTER_EPOCH = _parse_epoch(os.getenv("FUEL_COUNTER_EPOCH", ""))
 
 
 class FuelError(Exception):
@@ -398,11 +412,11 @@ def _counter_drop(start: datetime, end: datetime):
     return drop, True, floor_hit
 
 
-def _counter_calibration(refills: list[dict]) -> dict:
-    """kg na 1 % licznika zapasu z całego przedziału dosypek z danymi licznika."""
+def _calibrate_pairs(pairs: list) -> dict:
+    """kg na 1 % licznika zapasu z podanych okresów między dosypkami (z danymi licznika)."""
     kg = drop = 0.0
     used = 0
-    for prev, cur in zip(refills, refills[1:]):
+    for prev, cur in pairs:
         start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
         d, complete, floor_hit = _counter_drop(start, end)
         if not complete or floor_hit or not d:
@@ -416,11 +430,81 @@ def _counter_calibration(refills: list[dict]) -> dict:
             "drop_percent": round(drop, 1), "kg": round(kg, 1)}
 
 
-def _counter_day_kg(day: date, kg_per_percent: float | None):
-    """Zużycie w pełnej dobie z licznika podajnika (None, gdy doba niepełna lub brak kalibracji)."""
-    if not kg_per_percent or day >= datetime.now(TZ).date():
-        return None
+def _counter_calibration(refills: list[dict]) -> dict:
+    """Współczynnik kg na 1 % licznika, osobno przed i po zmianie wydajności podajnika (COUNTER_EPOCH).
+
+    Okres między dosypkami kalibruje „stary” współczynnik, gdy kończy się przed epoką,
+    i „nowy”, gdy zaczyna się po niej. Okres obejmujący epokę nie kalibruje żadnego z nich.
+    Pola najwyższego poziomu opisują współczynnik obowiązujący teraz.
+    """
+    old_pairs, new_pairs = [], []
+    for prev, cur in zip(refills, refills[1:]):
+        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
+        if end <= COUNTER_EPOCH:
+            old_pairs.append((prev, cur))
+        elif start >= COUNTER_EPOCH:
+            new_pairs.append((prev, cur))
+    old, new = _calibrate_pairs(old_pairs), _calibrate_pairs(new_pairs)
+    after = datetime.now(TZ) >= COUNTER_EPOCH
+    current = new if after else old
+    collecting = after and not new["calibrated"]
+    return {
+        "epoch": COUNTER_EPOCH.isoformat(), "after_epoch": after,
+        "old": old, "new": new,
+        "collecting": collecting, "message": COUNTER_COLLECTING_MESSAGE if collecting else None,
+        "kg_per_percent": current["kg_per_percent"], "calibrated": current["calibrated"],
+        "periods_used": current["periods_used"], "drop_percent": current["drop_percent"],
+    }
+
+
+def _counter_factor(counter: dict, moment: datetime):
+    """Współczynnik kg/% właściwy dla chwili (przed epoką stary, od epoki nowy); None bez kalibracji."""
+    group = counter["old"] if moment < COUNTER_EPOCH else counter["new"]
+    return group["kg_per_percent"] if group["calibrated"] else None
+
+
+def _counter_kg(start: datetime, end: datetime, counter: dict):
+    """kg z licznika w przedziale; część przed epoką liczona starym, po epoce nowym współczynnikiem.
+
+    Zwraca (kg, czy komplet danych i kalibracji, czy licznik doszedł do zera).
+    """
+    parts = []
+    if start < COUNTER_EPOCH:
+        parts.append((start, min(end, COUNTER_EPOCH)))
+    if end > COUNTER_EPOCH:
+        parts.append((max(start, COUNTER_EPOCH), end))
+    if not parts:
+        return None, False, False
+    total, floor = 0.0, False
+    for a, b in parts:
+        factor = _counter_factor(counter, a)
+        if factor is None:
+            return None, False, False
+        drop, complete, floor_hit = _counter_drop(a, b)
+        if not complete or drop is None:
+            return None, False, False
+        total += drop * factor
+        floor = floor or floor_hit
+    return total, True, floor
+
+
+def _counter_regime(day: date) -> str:
     start, end = _day_bounds(day)
+    if end <= COUNTER_EPOCH:
+        return "old"
+    return "new" if start >= COUNTER_EPOCH else "epoch"
+
+
+def _counter_day_kg(day: date, counter: dict):
+    """Zużycie w pełnej dobie z licznika podajnika (None: doba niepełna, ze zmianą podajnika lub bez kalibracji)."""
+    if day >= datetime.now(TZ).date():
+        return None
+    if _counter_regime(day) == "epoch":
+        return None   # doba ze zmianą wydajności podajnika nie ma jednego współczynnika
+    start, end = _day_bounds(day)
+    factor = _counter_factor(counter, start)
+    if not factor:
+        return None
     try:
         points = _counter_points(day)
         before = _counter_points(day - timedelta(days=1))
@@ -433,7 +517,7 @@ def _counter_day_kg(day: date, kg_per_percent: float | None):
     drop, complete, floor_hit = _counter_drop(start, end)
     if not complete or floor_hit or drop is None:
         return None
-    return round(drop * kg_per_percent, 1)
+    return round(drop * factor, 1)
 
 
 def _solve(a: list, b: list):
@@ -478,7 +562,6 @@ def _ols_loo(rows: list, y: list):
 def _daily_rows(days: int = 120):
     """Pełne doby z licznikiem podajnika, temperaturą, słońcem i wiatrem."""
     counter = _counter_calibration(_refills())
-    kpp = counter.get("kg_per_percent") if counter.get("calibrated") else None
     ts_start = _temps_data_start()
     today = datetime.now(TZ).date()
     out = []
@@ -488,10 +571,10 @@ def _daily_rows(days: int = 120):
     while d < today:
         rec = _get_daily(d)
         weather = _weather(d)
-        kg = _counter_day_kg(d, kpp)
+        kg = _counter_day_kg(d, counter)
         out.append({"day": d.isoformat(), "t_mean": rec.get("t_mean"), "hdd": rec.get("hdd"),
                     "solar_mj": weather.get("solar_mj"), "wind_max_kmh": weather.get("wind_max_kmh"),
-                    "kg_counter": kg})
+                    "kg_counter": kg, "counter_regime": _counter_regime(d)})
         d += timedelta(days=1)
     return out, counter
 
@@ -505,7 +588,8 @@ def _fit_daily_model(rows: list):
     """
     usable = [r for r in rows if r["kg_counter"] is not None and r["hdd"] is not None
               and r["solar_mj"] is not None and r["wind_max_kmh"] is not None]
-    key = (len(usable), usable[-1]["day"] if usable else None, _active_base())
+    key = (len(usable), usable[-1]["day"] if usable else None, _active_base(),
+           round(sum(r["kg_counter"] for r in usable), 1))
     if _daily_model_cache["key"] == key:
         return _daily_model_cache["data"]
     status = {"status": "zbiera dane", "days": len(usable), "days_needed": MIN_DAILY_DAYS}
@@ -830,6 +914,7 @@ def _periods(refills: list[dict]) -> list[dict]:
             "heating": heating,
             "counter_drop_percent": round(counter_drop, 1) if counter_ok else None,
             "kg_per_counter_percent": round(cur["kg"] / counter_drop, 2) if counter_ok and counter_drop and not counter_floor else None,
+            "counter_regime": "old" if end <= COUNTER_EPOCH else "new" if start >= COUNTER_EPOCH else "epoch",
         })
     return out
 
@@ -1019,12 +1104,11 @@ def _summary_build() -> dict:
     if with_burner:
         kg = sum(est_kg(d["burner_kwh"]) for d in with_burner)
         source = "moc palnika"
-        if counter["calibrated"]:
-            first, last_day = _day_bounds(date.fromisoformat(with_burner[0]["day"]))[0], _day_bounds(date.fromisoformat(with_burner[-1]["day"]))[1]
-            with _lock:
-                drop, ok, floor_hit = _counter_drop(first, last_day)
-            if ok and not floor_hit and drop:
-                kg, source = drop * counter["kg_per_percent"], "licznik podajnika"
+        first, last_day = _day_bounds(date.fromisoformat(with_burner[0]["day"]))[0], _day_bounds(date.fromisoformat(with_burner[-1]["day"]))[1]
+        with _lock:
+            counter_kg, ok, floor_hit = _counter_kg(first, last_day, counter)
+        if ok and not floor_hit and counter_kg:
+            kg, source = counter_kg, "licznik podajnika"
         hdd = sum(d["hdd"] for d in with_burner)
         week = {
             "days": len(with_burner),
@@ -1069,8 +1153,8 @@ def _summary_build() -> dict:
 
         with _lock:
             hdd_since, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
-            drop_since, drop_ok, drop_floor = _counter_drop(last_ts, now)
-        used_counter = drop_since * counter["kg_per_percent"] if counter["calibrated"] and drop_ok and not drop_floor else None
+            kg_since, drop_ok, drop_floor = _counter_kg(last_ts, now, counter)
+        used_counter = kg_since if drop_ok and not drop_floor else None
         used_burner = est_kg(kwh) if not kwh_missing and calib["calibrated"] else None
         used_model = (model["base_kg_per_day"] * hours / 24 + model["kg_per_hdd"] * hdd_since) if model else None
         if used_counter is not None:
@@ -1104,6 +1188,7 @@ def _summary_build() -> dict:
                 "reserve_kg": round(reserve, 1),
                 "used_kg": round(used, 1),
                 "used_kg_counter": round(used_counter, 1) if used_counter is not None else None,
+                "counter_note": counter["message"],
                 "used_kg_model": round(used_model, 1) if used_model is not None else None,
                 "used_kg_burner": round(used_burner, 1) if used_burner is not None else None,
                 "remaining_kg": round(remaining, 1),
