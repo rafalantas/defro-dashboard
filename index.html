@@ -250,7 +250,7 @@ function fuelNum(value,digits=0){return value==null||Number.isNaN(Number(value))
 function fuelDate(value){const date=new Date(value);return Number.isNaN(date.getTime())?'—':date.toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
 function renderFuel(summary){const week=summary.last7,refills=summary.refills_based,last=summary.last_refill,hopper=summary.hopper,calib=summary.calibration||{};
   $('fuelWeek').textContent=week?`${fuelNum(week.kg)} kg`:'—';
-  const counterNote=summary.counter_calibration?.collecting?summary.counter_calibration.message:null;
+  const cc=summary.counter_calibration,counterNote=cc?.collecting?cc.message:null;
   $('fuelWeekMeta').textContent=week?`${fuelNum(week.kg_per_day,1)} kg/dobę · śr. ${fuelNum(week.t_mean,1)} °C · ${week.days} z 7 dób z danymi${week.source?` · ${week.source}`:''}${counterNote?` · ${counterNote}`:''}`:'brak danych mocy palnika';
   const model=summary.model;const hddValue=model?(refills?.heating_kg_per_hdd??week?.heating_kg_per_hdd??model.kg_per_hdd):(refills?.kg_per_hdd??week?.kg_per_hdd);$('fuelHdd').textContent=hddValue==null?'—':`${fuelNum(hddValue,2)} kg`;
   $('fuelHddLabel').textContent=model?'kg na stopniodzień · ogrzewanie':'kg na stopniodzień';
@@ -262,7 +262,7 @@ function renderFuel(summary){const week=summary.last7,refills=summary.refills_ba
   else{$('fuelHopper').textContent='—';$('fuelHopperMeta').textContent='brak danych do szacunku';tile.classList.add('ok');}
   const forecast=(summary.forecast||[]).slice(0,3).map(day=>`${fuelNum(day.kg)} kg (${fuelNum(day.t_mean,1)} °C)`).join(' / ');const offset=summary.om_offset;const dm=summary.daily_model;const dmText=!dm?null:dm.status!=='aktywny'?`model dobowy ze słońcem i wiatrem: zbiera dane (${dm.days}/${dm.days_needed} dób)`:dm.terms.length>1?`model dobowy: ${[dm.kg_per_solar_mj!=null?`słońce ${fuelNum(dm.kg_per_solar_mj,2)} kg na MJ/m²`:null,dm.kg_per_wind_hdd!=null?`wiatr +${fuelNum(dm.kg_per_wind_hdd,2)} kg na 100 km/h×stopniodzień`:null].filter(Boolean).join(', ')} (błąd prognozy ${fuelNum(dm.rmse_loo_kg_per_day,1)} kg/dobę zamiast ${fuelNum(dm.rmse_loo_temperature_only,1)})`:`model dobowy: słońce i wiatr bez istotnego wpływu (${dm.days} dób)`;
   $('fuelFooter').textContent=[model?`Model domu z ${model.periods_used} okresów między dosypkami (R² ${fuelNum(model.r2,2)})`:'Za mało dosypek na model domu',
-    counterNote||(summary.counter_calibration?.calibrated?`licznik podajnika ${fuelNum(summary.counter_calibration.kg_per_percent,2)} kg/%`:null),
+    counterNote||(cc?.calibrated?`licznik podajnika ${fuelNum(cc.kg_per_percent,2)} kg/%`:null),
     calib.calibrated?`moc palnika ×${fuelNum(calib.factor,2)}`:calib.provisional?`moc palnika ×${fuelNum(calib.factor,2)} (szacunek do kalibracji po zmianie podajnika)`:null,
     `stopniodni przy bazie ${fuelNum(summary.hdd_base??model?.balance_temp,1)} °C`,
     offset?.applied?`Open-Meteo skorygowane o ${fuelNum(offset.offset,1)} K do czujnika sterownika`:null,

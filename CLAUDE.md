@@ -67,7 +67,7 @@ for p in status diagnostics "fuel/summary" "fuel/refills" "fuel/daily" "fuel/sta
 ```
 Przy zmianach w `fuel.py` albo analizie historii dopisz test z podmienionym `_request_json`
 (atrapa ThingSpeak i Open-Meteo), zamiast polegać na prawdziwych usługach.
-Test kalibracji licznika przed i po zmianie podajnika: `python3 tests/test_counter_epoch.py` (ok. 25 s).
+Test kalibracji licznika przed i po zmianie podajnika: `python3 tests/test_counter_epoch.py` (ok. 70 s; licznik zaokrąglany do 1 %, scalanie wpisów dosypek, oszacowanie z okresu obejmującego epokę).
 
 ## Sposób pracy
 
