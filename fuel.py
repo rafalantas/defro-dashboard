@@ -106,8 +106,10 @@ MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby 
 DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
 MIN_COUNTER_DROP = 20                  # minimalny spadek licznika (pp) do kalibracji
 COUNTER_COLLECTING_MESSAGE = "kalibracja licznika po zmianie podajnika: zbieranie danych"
-# Do pierwszego pełnego okresu między dosypkami po epoce: cały zasobnik odpowiada 100 % licznika.
-COUNTER_PROVISIONAL_KG_PER_PERCENT = HOPPER_KG / 100
+COUNTER_PROVISIONAL_KG_PER_PERCENT = 3.4   # tymczasowo po epoce, do pierwszego oszacowania/kalibracji (szacunek)
+COUNTER_ESTIMATE_UNCERTAINTY = 0.10        # niepewność wartości tymczasowej i oszacowania z okresu obejmującego epokę
+MIN_SPAN_DROP = 10                     # minimalny spadek licznika po epoce (pp) do oszacowania z okresu obejmującego
+REFILL_MERGE_SECONDS = 30 * 60         # wpisy dosypek bliższe niż 30 minut są jedną dosypką
 # Oczekiwany współczynnik mocy palnika po zmianie podajnika, do czasu własnej kalibracji.
 BURNER_FACTOR_AFTER_EPOCH = 0.94
 
@@ -434,11 +436,49 @@ def _calibrate_pairs(pairs: list) -> dict:
             "drop_percent": round(drop, 1), "kg": round(kg, 1)}
 
 
+def _fmt_pl(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def _span_estimate(refills: list[dict], old: dict):
+    """Współczynnik po epoce z okresu obejmującego epokę (pomiędzy dosypką przed i po niej).
+
+    Część przed epoką liczona starym współczynnikiem, reszta dosypanych kg jest przypisana
+    części po epoce. Błąd starego współczynnika i zaokrąglenie licznika zostają w wyniku,
+    stąd niepewność ok. ±10 %.
+    """
+    if not old["calibrated"]:
+        return None
+    for prev, cur in zip(refills, refills[1:]):
+        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
+        if not start < COUNTER_EPOCH < end:
+            continue
+        before, ok_before, floor_before = _counter_drop(start, COUNTER_EPOCH)
+        after, ok_after, floor_after = _counter_drop(COUNTER_EPOCH, end)
+        if not (ok_before and ok_after) or floor_before or floor_after:
+            return None
+        kg_before = before * old["kg_per_percent"]
+        kg_after = cur["kg"] - kg_before
+        if after < MIN_SPAN_DROP or kg_after <= 0:
+            return None
+        factor = kg_after / after
+        return {"kg_per_percent": round(factor, 3),
+                "uncertainty_percent": round(COUNTER_ESTIMATE_UNCERTAINTY * 100),
+                "low": round(factor * (1 - COUNTER_ESTIMATE_UNCERTAINTY), 3),
+                "high": round(factor * (1 + COUNTER_ESTIMATE_UNCERTAINTY), 3),
+                "drop_before_percent": round(before, 1), "drop_after_percent": round(after, 1),
+                "kg_before": round(kg_before, 1), "kg_after": round(kg_after, 1), "refill_ts": cur["ts"]}
+    return None
+
+
 def _counter_calibration(refills: list[dict]) -> dict:
     """Współczynnik kg na 1 % licznika, osobno przed i po zmianie wydajności podajnika (COUNTER_EPOCH).
 
-    Okres między dosypkami kalibruje „stary” współczynnik, gdy kończy się przed epoką,
-    i „nowy”, gdy zaczyna się po niej. Okres obejmujący epokę nie kalibruje żadnego z nich.
+    „Stary” z okresów kończących się przed epoką, „nowy” z okresów zaczynających się po niej.
+    Okres obejmujący epokę nie kalibruje nowego współczynnika wprost, ale daje jego oszacowanie
+    (część przed epoką wg starego współczynnika, reszta po epoce, niepewność ok. ±10 %).
+    Po epoce obowiązuje kolejno: nowy z pełnych okresów, oszacowanie z okresu obejmującego epokę,
+    a bez nich wartość tymczasowa COUNTER_PROVISIONAL_KG_PER_PERCENT (szacunek, ±10 %).
     Pola najwyższego poziomu opisują współczynnik obowiązujący teraz.
     """
     old_pairs, new_pairs = [], []
@@ -449,35 +489,45 @@ def _counter_calibration(refills: list[dict]) -> dict:
         elif start >= COUNTER_EPOCH:
             new_pairs.append((prev, cur))
     old, new = _calibrate_pairs(old_pairs), _calibrate_pairs(new_pairs)
+    span = _span_estimate(refills, old)
     after = datetime.now(TZ) >= COUNTER_EPOCH
-    current = new if after else old
+    uncertainty = round(COUNTER_ESTIMATE_UNCERTAINTY * 100)
+
+    if new["calibrated"]:
+        effective = {"kg_per_percent": new["kg_per_percent"], "source": "okresy po epoce", "measured": True}
+    elif span:
+        effective = {"kg_per_percent": span["kg_per_percent"], "source": "okres obejmujący epokę",
+                     "measured": True, "uncertainty_percent": span["uncertainty_percent"]}
+    else:
+        effective = {"kg_per_percent": COUNTER_PROVISIONAL_KG_PER_PERCENT, "source": "wartość tymczasowa",
+                     "measured": False, "uncertainty_percent": uncertainty}
     collecting = after and not new["calibrated"]
-    provisional = round(COUNTER_PROVISIONAL_KG_PER_PERCENT, 3)
+
     message = None
-    if collecting:
-        message = f"{COUNTER_COLLECTING_MESSAGE}, tymczasowo {provisional:.2f} kg/% (szacunek)".replace(".", ",")
+    if collecting and effective["source"] == "okres obejmujący epokę":
+        message = (f"{COUNTER_COLLECTING_MESSAGE}, szacunek z okresu obejmującego zmianę podajnika: "
+                   f"{_fmt_pl(effective['kg_per_percent'])} kg/% (±{uncertainty}%)")
+    elif collecting:
+        message = f"{COUNTER_COLLECTING_MESSAGE}, tymczasowo {_fmt_pl(effective['kg_per_percent'])} kg/% (szacunek, ±{uncertainty}%)"
+
+    current = new if after else old
     return {
         "epoch": COUNTER_EPOCH.isoformat(), "after_epoch": after,
-        "old": old, "new": new,
-        "collecting": collecting, "provisional": collecting, "provisional_kg_per_percent": provisional,
-        "message": message,
-        "kg_per_percent": provisional if collecting else current["kg_per_percent"],
+        "old": old, "new": new, "span": span, "new_effective": effective,
+        "collecting": collecting, "provisional": collecting, "message": message,
+        "kg_per_percent": effective["kg_per_percent"] if after else old["kg_per_percent"],
         "calibrated": current["calibrated"],
         "periods_used": current["periods_used"], "drop_percent": current["drop_percent"],
     }
 
 
 def _counter_factor(counter: dict, moment: datetime):
-    """Współczynnik kg/% właściwy dla chwili: przed epoką stary (None bez kalibracji), od epoki nowy.
-
-    Dopóki po epoce nie ma pełnego okresu między dosypkami, obowiązuje wartość tymczasowa.
-    """
+    """Współczynnik kg/% właściwy dla chwili: przed epoką stary (None bez kalibracji), od epoki nowy,
+    jego oszacowanie z okresu obejmującego epokę albo wartość tymczasowa."""
     if moment < COUNTER_EPOCH:
         group = counter["old"]
         return group["kg_per_percent"] if group["calibrated"] else None
-    if counter["new"]["calibrated"]:
-        return counter["new"]["kg_per_percent"]
-    return counter["provisional_kg_per_percent"]
+    return counter["new_effective"]["kg_per_percent"]
 
 
 def _counter_kg(start: datetime, end: datetime, counter: dict):
@@ -506,10 +556,20 @@ def _counter_kg(start: datetime, end: datetime, counter: dict):
 
 
 def _counter_regime(day: date) -> str:
+    """„old” / „new” / „epoch”: doba przed epoką, po niej albo ze zmianą podajnika."""
     start, end = _day_bounds(day)
     if end <= COUNTER_EPOCH:
         return "old"
     return "new" if start >= COUNTER_EPOCH else "epoch"
+
+
+def _counter_method(counter: dict) -> str:
+    """Opis źródła współczynnika licznika, gdy nie jest jeszcze skalibrowany po epoce."""
+    effective = counter["new_effective"]
+    value, uncertainty = _fmt_pl(counter["kg_per_percent"]), effective["uncertainty_percent"]
+    if effective["source"] == "okres obejmujący epokę":
+        return f"licznik podajnika, współczynnik z okresu obejmującego zmianę podajnika {value} kg/% (szacunek, ±{uncertainty}%)"
+    return f"licznik podajnika, współczynnik tymczasowy {value} kg/% (szacunek, ±{uncertainty}%)"
 
 
 def _counter_day_kg(day: date, counter: dict):
@@ -848,7 +908,28 @@ def _period_sums(start: datetime, end: datetime, base: float | None = None):
 
 # ---------------------------------------------------------------- dosypki
 
+def _merge_close_refills(refills: list[dict]) -> list[dict]:
+    """Wpisy oddalone o mniej niż 30 minut to jedna dosypka: suma kg, czas i id ostatniego wpisu."""
+    merged: list[dict] = []
+    for r in refills:
+        if merged and (_parse_ts(r["ts"]) - _parse_ts(merged[-1]["ts"])).total_seconds() < REFILL_MERGE_SECONDS:
+            m = merged[-1]
+            m["kg"] = round(m["kg"] + r["kg"], 3)
+            m["ts"], m["id"] = r["ts"], r["id"]
+            m["ids"].append(r["id"])
+            notes = [x for x in (m.get("note"), r.get("note")) if x]
+            m["note"] = " + ".join(notes) if notes else None
+        else:
+            merged.append({**r, "ids": [r["id"]]})
+    return merged
+
+
 def _refills() -> list[dict]:
+    """Dosypki po scaleniu wpisów dodanych w odstępie krótszym niż 30 minut."""
+    return _merge_close_refills(_refills_raw())
+
+
+def _refills_raw() -> list[dict]:
     if not TS_CHANNEL_FUEL:
         return []
     cached = _refills_cache["data"]
@@ -1222,7 +1303,7 @@ def _summary_build() -> dict:
         if used_counter is not None:
             used, method = used_counter, "licznik podajnika skalibrowany do dosypek"
             if counter["collecting"]:
-                method = f"licznik podajnika, współczynnik tymczasowy {counter['provisional_kg_per_percent']:.2f} kg/% (szacunek)".replace(".", ",")
+                method = _counter_method(counter)
         elif used_burner is not None and calib["days"] >= 7:
             used, method = used_burner, "moc palnika skalibrowana do dosypek"
         elif used_model is not None:
@@ -1338,7 +1419,7 @@ def _void_refill(raw_id: str) -> dict:
         refill_id = int(raw_id)
     except ValueError:
         raise FuelError(400, "Nieprawidłowe id") from None
-    if refill_id not in {r["id"] for r in _refills()}:
+    if refill_id not in {r["id"] for r in _refills_raw()}:   # anulujemy pojedynczy wpis, scalenie liczy się od nowa
         raise FuelError(404, "Nie ma takiej dosypki")
     return {"voided": refill_id, "void_entry": _ts_write({"field3": refill_id})}
 
