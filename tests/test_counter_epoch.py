@@ -2,6 +2,8 @@
 
 Uruchomienie z katalogu repo: python3 tests/test_counter_epoch.py
 Scenariusze: brak dosypki po epoce, jedna (okres obejmuje epokę), jeden i dwa pełne okresy po epoce.
+Po epoce, do pierwszego pełnego okresu, licznik używa współczynnika tymczasowego (HOPPER_KG/100),
+a moc palnika oczekiwanego BURNER_FACTOR_AFTER_EPOCH; oba są kalibrowane osobno przed i po epoce.
 """
 import math
 import os
@@ -21,6 +23,7 @@ D0 = today - timedelta(days=80)
 EPOCH = datetime(today.year, today.month, today.day, 18, 27, tzinfo=TZ) - timedelta(days=20)
 fuel.COUNTER_EPOCH = EPOCH
 KPP_OLD, KPP_NEW = 3.2, 2.4
+F_OLD, F_NEW = 1.7, 0.80   # współczynnik mocy palnika przed i po epoce (po epoce inny niż oczekiwane 0,94)
 
 
 def truth(d):
@@ -89,7 +92,12 @@ def fake(url, params=None, form=None, payload=None, timeout=10):
         s, e = parse(params["start"]), parse(params["end"])
         t = truth(datetime.fromtimestamp(s + 3600, TZ).date())[0]
         now = datetime.now(timezone.utc).timestamp()
-        return {"feeds": [{"created_at": iso(x), "field4": str(round(t, 2)), "field8": "6.0"}
+
+        def power(x):   # kW tak, żeby kWh/(4,8*0,88)*F dawało prawdziwe kg danej doby
+            kg = truth(datetime.fromtimestamp(x, TZ).date())[3]
+            return kg * fuel.PELLET_KWH_PER_KG * fuel.BOILER_EFF / 24 / (F_OLD if x < EPOCH.timestamp() else F_NEW)
+
+        return {"feeds": [{"created_at": iso(x), "field4": str(round(t, 2)), "field8": str(round(power(x), 4))}
                           for x in range(int(s), int(min(e, now)), 60)]}
     if "/channels/2/fields/8.json" in url:
         s, e = parse(params["start"]), parse(params["end"])
@@ -137,15 +145,18 @@ for name, refills in SCENARIOS.items():
     print("stary: %s (%s okr.)  nowy: %s (%s okr.)  collecting=%s" % (old["kg_per_percent"], old["periods_used"], new["kg_per_percent"], new["periods_used"], cal["collecting"]))
     assert old["calibrated"] and abs(old["kg_per_percent"] - KPP_OLD) < 0.05, old
     full_new = sum(1 for p, c in zip(refills, refills[1:]) if p >= EPOCH)
+    PROV = fuel.COUNTER_PROVISIONAL_KG_PER_PERCENT
+    assert abs(PROV - 2.28) < 1e-9, PROV
     if full_new == 0:
-        assert not new["calibrated"] and cal["collecting"] and cal["message"] == fuel.COUNTER_COLLECTING_MESSAGE
-        assert cal["calibrated"] is False and cal["kg_per_percent"] is None   # teraz obowiązuje nowy, jeszcze nieznany
+        assert not new["calibrated"] and cal["collecting"] and cal["provisional"]
+        assert cal["message"].startswith(fuel.COUNTER_COLLECTING_MESSAGE) and "2,28 kg/%" in cal["message"] and "szacunek" in cal["message"], cal["message"]
+        assert cal["calibrated"] is False and cal["kg_per_percent"] == 2.28   # tymczasowo cały zasobnik = 100 %
     else:
         assert new["calibrated"] and abs(new["kg_per_percent"] - KPP_NEW) < 0.05, new
         assert not cal["collecting"] and abs(cal["kg_per_percent"] - KPP_NEW) < 0.05
     rows = {r["day"]: r for r in daily["days"]}
     epoch_day = EPOCH.date().isoformat()
-    errs_old, errs_new = [], []
+    errs_old, errs_new, errs_prov = [], [], []
     for day, r in rows.items():
         d = date.fromisoformat(day)
         if r["counter_regime"] == "epoch":
@@ -155,8 +166,10 @@ for name, refills in SCENARIOS.items():
                 errs_old.append(abs(r["kg_counter"] - truth(d)[3]))
         else:
             if full_new == 0:
-                assert r["kg_counter"] is None, (day, r)
+                assert r["estimate"] is True and r["kg_counter"] is not None, (day, r)
+                errs_prov.append(abs(r["kg_counter"] - truth(d)[3] * PROV / KPP_NEW))   # drop*2,28 = kg*2,28/2,4
             elif r["kg_counter"] is not None:
+                assert r["estimate"] is False
                 errs_new.append(abs(r["kg_counter"] - truth(d)[3]))
     assert errs_old and max(errs_old) < 0.5, errs_old[:5]
     print("doby przed epoką: %d (maks. błąd %.2f kg)" % (len(errs_old), max(errs_old)))
@@ -164,20 +177,24 @@ for name, refills in SCENARIOS.items():
         assert errs_new and max(errs_new) < 0.5, errs_new[:5]
         print("doby po epoce: %d (maks. błąd %.2f kg)" % (len(errs_new), max(errs_new)))
     else:
-        print("doby po epoce z licznikiem: 0 (zbieranie danych)")
+        assert errs_prov and max(errs_prov) < 0.3, errs_prov[:5]
+        print("doby po epoce ze współczynnikiem tymczasowym (szacunek): %d (zgodne z 2,28 kg/%%, prawdziwe zużycie jest %.0f%% wyższe)" % (len(errs_prov), (KPP_NEW / PROV - 1) * 100))
     dm = daily["daily_model"]
     print("model dobowy:", dm["status"], dm.get("terms"), "dób:", dm["days"])
+    n_exact = len(errs_old) + len(errs_new)
+    assert dm["days"] == n_exact, (dm["days"], n_exact)   # doby-szacunki nie uczą modelu
 
     # przedział obejmujący epokę: starym przed, nowym po
     a, b = EPOCH - timedelta(days=2), EPOCH + timedelta(days=2)
     kg, ok, _ = fuel._counter_kg(a, b, cal)
+    want = cum(b.timestamp()) - cum(a.timestamp())
     if full_new:
-        want = cum(b.timestamp()) - cum(a.timestamp())
         assert ok and abs(kg - want) < 1.0, (kg, want)
         print("przedział przez epokę: %.1f kg (prawda %.1f)" % (kg, want))
     else:
-        assert not ok and kg is None
-        print("przedział przez epokę: brak (nowy współczynnik nieznany)")
+        want_prov = (cum(EPOCH.timestamp()) - cum(a.timestamp())) + (cum(b.timestamp()) - cum(EPOCH.timestamp())) * PROV / KPP_NEW
+        assert ok and abs(kg - want_prov) < 1.0, (kg, want_prov)
+        print("przedział przez epokę: %.1f kg (szacunek z 2,28 po epoce; prawda %.1f)" % (kg, want))
     kg0, ok0, _ = fuel._counter_kg(EPOCH - timedelta(days=5), EPOCH - timedelta(days=1), cal)
     assert ok0 and abs(kg0 - (cum((EPOCH - timedelta(days=1)).timestamp()) - cum((EPOCH - timedelta(days=5)).timestamp()))) < 1.0
 
@@ -188,16 +205,50 @@ for name, refills in SCENARIOS.items():
     print("karta: collecting=%s | tydzień: %s | zasobnik: %s | notatka: %s" % (
         cc["collecting"], (summ["last7"] or {}).get("source"), hop["method"], hop["counter_note"]))
     if full_new == 0:
-        assert cc["collecting"] and cc["message"] == fuel.COUNTER_COLLECTING_MESSAGE
-        assert hop["used_kg_counter"] is None and hop["counter_note"] == fuel.COUNTER_COLLECTING_MESSAGE
-        assert (summ["last7"] or {}).get("source") != "licznik podajnika"
-        assert "licznik" not in hop["method"]
+        assert cc["collecting"] and cc["message"].startswith(fuel.COUNTER_COLLECTING_MESSAGE)
+        assert hop["counter_note"] == cc["message"] and hop["counter_provisional"] is True
+        e_ts, now_ts, r_ts = EPOCH.timestamp(), datetime.now(TZ).timestamp(), refills[-1].timestamp()
+        want = (cum(e_ts) - cum(r_ts)) + (cum(now_ts) - cum(e_ts)) * PROV / KPP_NEW   # przed epoką stary współczynnik, po niej tymczasowy
+        if r_ts >= e_ts:
+            want = (cum(now_ts) - cum(r_ts)) * PROV / KPP_NEW
+        assert abs(hop["used_kg_counter"] - want) < 1.5, (hop["used_kg_counter"], want)
+        assert "tymczasowy" in hop["method"] and "szacunek" in hop["method"] and "2,28" in hop["method"], hop["method"]
+        assert (summ["last7"] or {}).get("source") == "licznik podajnika (szacunek)", summ["last7"]
     else:
-        assert not cc["collecting"] and hop["counter_note"] is None
+        assert not cc["collecting"] and hop["counter_note"] is None and hop["counter_provisional"] is False
         assert hop["used_kg_counter"] is not None and (summ["last7"] or {}).get("source") == "licznik podajnika"
         # zużycie od ostatniej dosypki z licznika ≈ prawda
         want = cum(datetime.now(TZ).timestamp()) - cum(refills[-1].timestamp())
         assert abs(hop["used_kg_counter"] - want) < 1.5, (hop["used_kg_counter"], want)
+
+    # moc palnika: osobna kalibracja przed i po epoce
+    st = fuel._stats({"days": ["40"]})
+    bc = st["calibration"]
+    print("moc palnika: stary x%s (skalibr.=%s)  nowy x%s (skalibr.=%s, tymczasowy=%s)" % (
+        bc["old"]["factor"], bc["old"]["calibrated"], bc["new"]["factor"], bc["new"]["calibrated"], bc["new"].get("provisional", False)))
+    assert bc["old"]["calibrated"] and abs(bc["old"]["factor"] - F_OLD) < 0.03, bc["old"]
+    if full_new == 0:
+        assert not bc["new"]["calibrated"] and bc["new"]["provisional"] and bc["new"]["factor"] == fuel.BURNER_FACTOR_AFTER_EPOCH == 0.94
+        assert bc["provisional"] and bc["factor"] == 0.94 and bc["calibrated"] is False
+    else:
+        assert bc["new"]["calibrated"] and abs(bc["new"]["factor"] - F_NEW) < 0.03 and not bc["new"].get("provisional"), bc["new"]
+        assert abs(bc["factor"] - F_NEW) < 0.03 and not bc["provisional"]
+    errs_b = {"old": [], "new": []}
+    for r in st["daily"]:
+        if r.get("est_kg") is None or r.get("samples", 0) < 1000:
+            continue
+        d = date.fromisoformat(r["day"])
+        regime = fuel._counter_regime(d)
+        if regime == "epoch":
+            continue
+        if regime == "new" and full_new == 0:
+            assert r["est_provisional"] is True
+            continue
+        errs_b[regime].append(abs(r["est_kg"] - truth(d)[3]))
+    assert errs_b["old"] and max(errs_b["old"]) < 0.7, errs_b["old"][:5]
+    if full_new:
+        assert errs_b["new"] and max(errs_b["new"]) < 0.7, errs_b["new"][:5]
+    print("kg z mocy palnika dobowo: błąd maks. przed epoką %.2f kg%s" % (max(errs_b["old"]), (", po epoce %.2f kg" % max(errs_b["new"])) if errs_b["new"] else ""))
 
     # okresy: reżim licznika
     st = fuel._stats({"days": ["5"]})

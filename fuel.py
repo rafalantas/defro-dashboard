@@ -106,6 +106,10 @@ MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby 
 DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
 MIN_COUNTER_DROP = 20                  # minimalny spadek licznika (pp) do kalibracji
 COUNTER_COLLECTING_MESSAGE = "kalibracja licznika po zmianie podajnika: zbieranie danych"
+# Do pierwszego pełnego okresu między dosypkami po epoce: cały zasobnik odpowiada 100 % licznika.
+COUNTER_PROVISIONAL_KG_PER_PERCENT = HOPPER_KG / 100
+# Oczekiwany współczynnik mocy palnika po zmianie podajnika, do czasu własnej kalibracji.
+BURNER_FACTOR_AFTER_EPOCH = 0.94
 
 
 def _parse_epoch(raw: str) -> datetime:
@@ -448,19 +452,32 @@ def _counter_calibration(refills: list[dict]) -> dict:
     after = datetime.now(TZ) >= COUNTER_EPOCH
     current = new if after else old
     collecting = after and not new["calibrated"]
+    provisional = round(COUNTER_PROVISIONAL_KG_PER_PERCENT, 3)
+    message = None
+    if collecting:
+        message = f"{COUNTER_COLLECTING_MESSAGE}, tymczasowo {provisional:.2f} kg/% (szacunek)".replace(".", ",")
     return {
         "epoch": COUNTER_EPOCH.isoformat(), "after_epoch": after,
         "old": old, "new": new,
-        "collecting": collecting, "message": COUNTER_COLLECTING_MESSAGE if collecting else None,
-        "kg_per_percent": current["kg_per_percent"], "calibrated": current["calibrated"],
+        "collecting": collecting, "provisional": collecting, "provisional_kg_per_percent": provisional,
+        "message": message,
+        "kg_per_percent": provisional if collecting else current["kg_per_percent"],
+        "calibrated": current["calibrated"],
         "periods_used": current["periods_used"], "drop_percent": current["drop_percent"],
     }
 
 
 def _counter_factor(counter: dict, moment: datetime):
-    """Współczynnik kg/% właściwy dla chwili (przed epoką stary, od epoki nowy); None bez kalibracji."""
-    group = counter["old"] if moment < COUNTER_EPOCH else counter["new"]
-    return group["kg_per_percent"] if group["calibrated"] else None
+    """Współczynnik kg/% właściwy dla chwili: przed epoką stary (None bez kalibracji), od epoki nowy.
+
+    Dopóki po epoce nie ma pełnego okresu między dosypkami, obowiązuje wartość tymczasowa.
+    """
+    if moment < COUNTER_EPOCH:
+        group = counter["old"]
+        return group["kg_per_percent"] if group["calibrated"] else None
+    if counter["new"]["calibrated"]:
+        return counter["new"]["kg_per_percent"]
+    return counter["provisional_kg_per_percent"]
 
 
 def _counter_kg(start: datetime, end: datetime, counter: dict):
@@ -574,7 +591,8 @@ def _daily_rows(days: int = 120):
         kg = _counter_day_kg(d, counter)
         out.append({"day": d.isoformat(), "t_mean": rec.get("t_mean"), "hdd": rec.get("hdd"),
                     "solar_mj": weather.get("solar_mj"), "wind_max_kmh": weather.get("wind_max_kmh"),
-                    "kg_counter": kg, "counter_regime": _counter_regime(d)})
+                    "kg_counter": kg, "counter_regime": _counter_regime(d),
+                    "estimate": kg is not None and counter["collecting"] and _counter_regime(d) == "new"})
         d += timedelta(days=1)
     return out, counter
 
@@ -587,6 +605,7 @@ def _fit_daily_model(rows: list):
     (słońce zmniejsza zużycie, wiatr przy mrozie je zwiększa).
     """
     usable = [r for r in rows if r["kg_counter"] is not None and r["hdd"] is not None
+              and not r.get("estimate")   # doby ze współczynnikiem tymczasowym nie uczą modelu
               and r["solar_mj"] is not None and r["wind_max_kmh"] is not None]
     key = (len(usable), usable[-1]["day"] if usable else None, _active_base(),
            round(sum(r["kg_counter"] for r in usable), 1))
@@ -925,13 +944,51 @@ def _calibration(periods: list[dict]) -> dict:
     Liczony z sumy wszystkich okresów (także krótkich): różnice w poziomie „do pełna”
     znoszą się między kolejnymi dosypkami, zostaje tylko niepewność pierwszej i ostatniej.
     """
-    usable = [p for p in periods if p["est_kg_raw"] and p["days_missing_burner"] == 0]
+    def usable(group):
+        return [p for p in group if p["est_kg_raw"] and p["days_missing_burner"] == 0]
+
+    old = _calibrate_burner(usable([p for p in periods if datetime.fromisoformat(p["end"]) <= COUNTER_EPOCH]))
+    new = _calibrate_burner(usable([p for p in periods if datetime.fromisoformat(p["start"]) >= COUNTER_EPOCH]))
+    if not new["calibrated"]:
+        new = {**new, "factor": BURNER_FACTOR_AFTER_EPOCH, "provisional": True}
+    after = datetime.now(TZ) >= COUNTER_EPOCH
+    current = new if after else old
+    return {"old": old, "new": new, "after_epoch": after,
+            "factor": current["factor"], "calibrated": current["calibrated"],
+            "provisional": bool(current.get("provisional")),
+            "periods_used": current["periods_used"], "days": current["days"]}
+
+
+def _calibrate_burner(usable: list) -> dict:
     actual = sum(p["kg"] for p in usable)
     est = sum(p["est_kg_raw"] for p in usable)
     days = sum(p["days"] for p in usable)
     if not usable or est <= 0 or days < MIN_PERIOD_DAYS:
         return {"factor": 1.0, "calibrated": False, "periods_used": len(usable), "days": round(days, 1)}
     return {"factor": round(actual / est, 3), "calibrated": True, "periods_used": len(usable), "days": round(days, 1)}
+
+
+def _burner_factor(calib: dict, moment: datetime) -> float:
+    """Współczynnik mocy palnika właściwy dla chwili (przed epoką stary, od epoki nowy lub oczekiwany)."""
+    return (calib["old"] if moment < COUNTER_EPOCH else calib["new"])["factor"]
+
+
+def _burner_kg(start: datetime, end: datetime, calib: dict):
+    """kg z mocy palnika w przedziale; część przed epoką liczona starym, po epoce nowym współczynnikiem."""
+    parts = []
+    if start < COUNTER_EPOCH:
+        parts.append((start, min(end, COUNTER_EPOCH)))
+    if end > COUNTER_EPOCH:
+        parts.append((max(start, COUNTER_EPOCH), end))
+    if not parts:
+        return None
+    total = 0.0
+    for a, b in parts:
+        _hdd, kwh, _hdd_missing, kwh_missing = _period_sums(a, b)
+        if kwh_missing:
+            return None
+        total += kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, a)
+    return total
 
 
 # ---------------------------------------------------------------- akcje
@@ -975,8 +1032,10 @@ def _stats(query: dict) -> dict:
     for r in daily:
         if r.get("burner_kwh") is None:
             continue
-        est = r["burner_kwh"] / (PELLET_KWH_PER_KG * BOILER_EFF) * calib["factor"]
+        day_start = _day_bounds(date.fromisoformat(r["day"]))[0]
+        est = r["burner_kwh"] / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, day_start)
         r["est_kg"] = round(est, 1)
+        r["est_provisional"] = day_start >= COUNTER_EPOCH and bool(calib["new"].get("provisional"))
         r["est_kg_per_hdd"] = round(est / r["hdd"], 3) if r.get("hdd") else None
         if model and r.get("hdd") and r["hdd"] >= 2:
             r["heating_kg_per_hdd"] = round((est - model["base_kg_per_day"]) / r["hdd"], 2)
@@ -1092,8 +1151,8 @@ def _summary_build() -> dict:
     except FuelError:
         daily_model = None
 
-    def est_kg(kwh: float) -> float:
-        return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * calib["factor"]
+    def est_kg(kwh: float, moment: datetime) -> float:
+        return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, moment)
 
     # 1) ostatnie 7 pełnych dób: szacunek z mocy palnika (skalibrowany)
     with_burner = [d for d in last7 if d.get("burner_kwh") is not None and d.get("hdd") is not None]
@@ -1102,13 +1161,15 @@ def _summary_build() -> dict:
         with_burner = [d for d in with_burner if d.get("samples", 0) >= 0.7 * full]
     week = None
     if with_burner:
-        kg = sum(est_kg(d["burner_kwh"]) for d in with_burner)
-        source = "moc palnika"
+        kg = sum(est_kg(d["burner_kwh"], _day_bounds(date.fromisoformat(d["day"]))[0]) for d in with_burner)
         first, last_day = _day_bounds(date.fromisoformat(with_burner[0]["day"]))[0], _day_bounds(date.fromisoformat(with_burner[-1]["day"]))[1]
+        after_epoch = last_day > COUNTER_EPOCH
+        source = "moc palnika (szacunek)" if after_epoch and calib["new"].get("provisional") else "moc palnika"
         with _lock:
             counter_kg, ok, floor_hit = _counter_kg(first, last_day, counter)
         if ok and not floor_hit and counter_kg:
-            kg, source = counter_kg, "licznik podajnika"
+            kg = counter_kg
+            source = "licznik podajnika (szacunek)" if after_epoch and counter["collecting"] else "licznik podajnika"
         hdd = sum(d["hdd"] for d in with_burner)
         week = {
             "days": len(with_burner),
@@ -1154,11 +1215,14 @@ def _summary_build() -> dict:
         with _lock:
             hdd_since, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
             kg_since, drop_ok, drop_floor = _counter_kg(last_ts, now, counter)
+            burner_since = _burner_kg(last_ts, now, calib) if not kwh_missing and calib["calibrated"] else None
         used_counter = kg_since if drop_ok and not drop_floor else None
-        used_burner = est_kg(kwh) if not kwh_missing and calib["calibrated"] else None
+        used_burner = burner_since
         used_model = (model["base_kg_per_day"] * hours / 24 + model["kg_per_hdd"] * hdd_since) if model else None
         if used_counter is not None:
             used, method = used_counter, "licznik podajnika skalibrowany do dosypek"
+            if counter["collecting"]:
+                method = f"licznik podajnika, współczynnik tymczasowy {counter['provisional_kg_per_percent']:.2f} kg/% (szacunek)".replace(".", ",")
         elif used_burner is not None and calib["days"] >= 7:
             used, method = used_burner, "moc palnika skalibrowana do dosypek"
         elif used_model is not None:
@@ -1189,6 +1253,7 @@ def _summary_build() -> dict:
                 "used_kg": round(used, 1),
                 "used_kg_counter": round(used_counter, 1) if used_counter is not None else None,
                 "counter_note": counter["message"],
+                "counter_provisional": used_counter is not None and counter["collecting"],
                 "used_kg_model": round(used_model, 1) if used_model is not None else None,
                 "used_kg_burner": round(used_burner, 1) if used_burner is not None else None,
                 "remaining_kg": round(remaining, 1),
