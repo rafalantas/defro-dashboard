@@ -64,11 +64,32 @@ OM_FORECAST = "https://api.open-meteo.com/v1/forecast"
 
 # Temperatura bazowa stopniodni, gdy nie da się jeszcze dopasować modelu budynku (za mało okresów).
 HDD_BASE = float(os.getenv("HDD_BASE", "") or 14.0)
+
+
+def _parse_hdd_base_fixed(raw: str):
+    """FUEL_HDD_BASE_FIXED: stała temperatura bazowa stopniodni (domyślnie 15,5 °C).
+
+    Puste ustawienie daje domyślną wartość, a „off”/„auto”/„0” wyłącza stałą bazę (baza dopasowywana).
+    """
+    raw = (raw or "").strip().lower().replace(",", ".")
+    if not raw:
+        return 15.5
+    if raw in ("off", "auto", "none", "false", "0"):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return 15.5
+
+
+HDD_BASE_FIXED = _parse_hdd_base_fixed(os.getenv("FUEL_HDD_BASE_FIXED", ""))
 # Zakres temperatur granicznych sprawdzanych przy dopasowaniu modelu (powyżej nich dom nie potrzebuje ogrzewania).
 MODEL_BASES = [value / 2 for value in range(24, 34)]   # 12,0 ... 16,5 °C
 MIN_MODEL_PERIODS = 4
 OFFSET_MIN_DAYS = 3                                  # tyle pełnych dób z obu źródeł, żeby liczyć korektę
 OFFSET_CACHE_SECONDS = 3600
+OFFSET_FREEZE_DAYS = 14                              # od tylu dób z obu źródeł korekta Open-Meteo jest zamrożona
+OFFSET_RECALC_SECONDS = 7 * 24 * 3600                # zamrożoną korektę przeliczamy raz w tygodniu
 FORECAST_CACHE_SECONDS = 3600
 PELLET_KWH_PER_KG = float(os.getenv("PELLET_KWH_PER_KG", "4.8"))
 BOILER_EFF = float(os.getenv("BOILER_EFF", "0.88"))
@@ -336,8 +357,10 @@ def _get_daily_raw(day: date) -> dict:
 def _om_offset() -> dict:
     """Średnia różnica: czujnik sterownika (ThingSpeak) minus Open-Meteo, z dób z obu źródeł."""
     cached = _offset_cache["data"]
-    if cached is not None and time.monotonic() - _offset_cache["at"] < OFFSET_CACHE_SECONDS:
-        return cached
+    if cached is not None:
+        ttl = OFFSET_RECALC_SECONDS if cached.get("frozen") else OFFSET_CACHE_SECONDS
+        if time.monotonic() - _offset_cache["at"] < ttl:
+            return cached
     diffs = []
     ts_start = _temps_data_start()
     today = datetime.now(TZ).date()
@@ -354,7 +377,8 @@ def _om_offset() -> dict:
                 pass
             day += timedelta(days=1)
     applied = len(diffs) >= OFFSET_MIN_DAYS
-    data = {"offset": round(sum(diffs) / len(diffs), 2) if applied else 0.0, "days": len(diffs), "applied": applied}
+    data = {"offset": round(sum(diffs) / len(diffs), 2) if applied else 0.0, "days": len(diffs), "applied": applied,
+            "frozen": len(diffs) >= OFFSET_FREEZE_DAYS}
     _offset_cache.update(at=time.monotonic(), data=data)
     return data
 
@@ -730,6 +754,9 @@ def _predict_daily(model: dict, hdd: float, solar, wind):
 
 
 def _active_base() -> float:
+    """Temperatura bazowa stopniodni: stała (FUEL_HDD_BASE_FIXED) albo dopasowana do modelu."""
+    if HDD_BASE_FIXED is not None:
+        return HDD_BASE_FIXED
     model = _model_cache["data"]
     return model["balance_temp"] if model else HDD_BASE
 
@@ -769,13 +796,46 @@ def _hdd_from(temps, base: float) -> float:
     return sum(fraction * max(0.0, base - t) for fraction, t in temps)
 
 
+def _fit_at(rows: list, base: float):
+    """Regresja kg/dobę = stała + kg_na_stopień × stopniodni/dobę przy zadanej temperaturze bazowej."""
+    w = [days for days, _kg, _t in rows]
+    x = [_hdd_from(temps, base) / days for days, _kg, temps in rows]
+    y = [kg / days for days, kg, _t in rows]
+    sw = sum(w)
+    mx = sum(wi * xi for wi, xi in zip(w, x)) / sw
+    my = sum(wi * yi for wi, yi in zip(w, y)) / sw
+    sxx = sum(wi * (xi - mx) ** 2 for wi, xi in zip(w, x))
+    if sxx <= 1e-9:
+        return None
+    slope = sum(wi * (xi - mx) * (yi - my) for wi, xi, yi in zip(w, x, y)) / sxx
+    intercept = my - slope * mx
+    if intercept < 0:   # stała część nie może być ujemna: prosta przez zero
+        intercept = 0.0
+        slope = sum(wi * xi * yi for wi, xi, yi in zip(w, x, y)) / sum(wi * xi * xi for wi, xi in zip(w, x))
+    if slope <= 0:
+        return None
+    sse = sum(wi * (yi - intercept - slope * xi) ** 2 for wi, xi, yi in zip(w, x, y))
+    sst = sum(wi * (yi - my) ** 2 for wi, yi in zip(w, y))
+    return {
+        "balance_temp": base,
+        "base_kg_per_day": round(intercept, 2),
+        "kg_per_hdd": round(slope, 2),
+        "r2": round(1 - sse / sst, 3) if sst > 0 else None,
+        "rms_kg_per_day": round((sse / sw) ** 0.5, 1),
+        "periods_used": len(rows),
+        "_sse": sse,
+    }
+
+
 def _fit_model(refills: list[dict]):
     """Model budynku z dosypek: kg/dobę = stała + kg_na_stopień × stopniodni/dobę.
 
-    Stała to CWU i straty niezależne od pogody, temperatura graniczna jest dobierana tak,
-    żeby model najlepiej pasował do wszystkich okresów między dosypkami.
+    Stała to CWU i straty niezależne od pogody. Przy FUEL_HDD_BASE_FIXED temperatura bazowa jest
+    stała i model dopasowuje tylko stałą część i kg na stopień; dopasowanie bazy z zakresu
+    MODEL_BASES jest liczone dalej, ale tylko informacyjnie (best_fit_balance_temp).
+    Bez stałej bazy używana jest najlepiej dopasowana.
     """
-    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"])
+    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)
     if _model_cache["key"] == key:
         return _model_cache["data"]
     rows = []
@@ -788,41 +848,18 @@ def _fit_model(refills: list[dict]):
         if missing or not temps:
             continue
         rows.append((days, cur["kg"], temps))
-    best = None
+    model = None
     if len(rows) >= MIN_MODEL_PERIODS:
-        for base in MODEL_BASES:
-            w = [days for days, _kg, _t in rows]
-            x = [_hdd_from(temps, base) / days for days, _kg, temps in rows]
-            y = [kg / days for days, kg, _t in rows]
-            sw = sum(w)
-            mx = sum(wi * xi for wi, xi in zip(w, x)) / sw
-            my = sum(wi * yi for wi, yi in zip(w, y)) / sw
-            sxx = sum(wi * (xi - mx) ** 2 for wi, xi in zip(w, x))
-            if sxx <= 1e-9:
-                continue
-            slope = sum(wi * (xi - mx) * (yi - my) for wi, xi, yi in zip(w, x, y)) / sxx
-            intercept = my - slope * mx
-            if intercept < 0:   # stała część nie może być ujemna: prosta przez zero
-                intercept = 0.0
-                slope = sum(wi * xi * yi for wi, xi, yi in zip(w, x, y)) / sum(wi * xi * xi for wi, xi in zip(w, x))
-            if slope <= 0:
-                continue
-            sse = sum(wi * (yi - intercept - slope * xi) ** 2 for wi, xi, yi in zip(w, x, y))
-            sst = sum(wi * (yi - my) ** 2 for wi, yi in zip(w, y))
-            if best is None or sse < best["_sse"]:
-                best = {
-                    "balance_temp": base,
-                    "base_kg_per_day": round(intercept, 2),
-                    "kg_per_hdd": round(slope, 2),
-                    "r2": round(1 - sse / sst, 3) if sst > 0 else None,
-                    "rms_kg_per_day": round((sse / sw) ** 0.5, 1),
-                    "periods_used": len(rows),
-                    "_sse": sse,
-                }
-    if best:
-        best.pop("_sse")
-    _model_cache.update(key=key, data=best)
-    return best
+        fits = [fit for fit in (_fit_at(rows, base) for base in MODEL_BASES) if fit]
+        best = min(fits, key=lambda fit: fit["_sse"]) if fits else None
+        chosen = _fit_at(rows, HDD_BASE_FIXED) if HDD_BASE_FIXED is not None else best
+        if chosen:
+            model = {k: v for k, v in chosen.items() if k != "_sse"}
+            model["base_fixed"] = HDD_BASE_FIXED is not None
+            model["best_fit_balance_temp"] = best["balance_temp"] if best else None
+            model["best_fit_r2"] = best["r2"] if best else None
+    _model_cache.update(key=key, data=model)
+    return model
 
 
 def _predict_kg_per_day(model: dict, t_mean: float) -> float:
@@ -1127,7 +1164,7 @@ def _stats(query: dict) -> dict:
     return {
         "model": model,
         "om_offset": _om_offset(),
-        "config": {"hdd_base": _active_base(), "hdd_base_default": HDD_BASE, "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
+        "config": {"hdd_base": _active_base(), "hdd_base_default": HDD_BASE, "hdd_base_fixed": HDD_BASE_FIXED, "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
                    "boiler_eff": BOILER_EFF, "bag_kg": BAG_KG},
         "calibration": calib,
         "counter_calibration": _counter_calibration(refills) if refills else None,
@@ -1351,6 +1388,7 @@ def _summary_build() -> dict:
         "configured": True,
         "model": model,
         "hdd_base": _active_base(),
+        "hdd_base_fixed": HDD_BASE_FIXED is not None,
         "om_offset": offset,
         "daily_model": daily_model,
         "forecast": [{"day": d.isoformat(), "t_mean": t,

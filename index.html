@@ -265,6 +265,7 @@ function renderFuel(summary){const week=summary.last7,refills=summary.refills_ba
     counterNote||(cc?.calibrated?`licznik podajnika ${fuelNum(cc.kg_per_percent,2)} kg/%`:null),
     calib.calibrated?`moc palnika ×${fuelNum(calib.factor,2)}`:calib.provisional?`moc palnika ×${fuelNum(calib.factor,2)} (szacunek do kalibracji po zmianie podajnika)`:null,
     `stopniodni przy bazie ${fuelNum(summary.hdd_base??model?.balance_temp,1)} °C`,
+    model?.base_fixed&&model.best_fit_balance_temp!=null&&model.best_fit_balance_temp!==model.balance_temp?`dopasowanie bazy (informacyjnie): ${fuelNum(model.best_fit_balance_temp,1)} °C`:null,
     offset?.applied?`Open-Meteo skorygowane o ${fuelNum(offset.offset,1)} K do czujnika sterownika`:null,
     forecast?`prognoza zużycia na 3 dni: ${forecast}`:null,
     dmText,
