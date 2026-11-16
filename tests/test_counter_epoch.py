@@ -289,6 +289,8 @@ def run(name, times, kind, split_last=False):
         start, end = fuel._day_bounds(d)
         if d >= today or start < EPOCH < end:   # dzisiejsza doba jest niepełna, doba zmiany podajnika ma dwa współczynniki
             continue
+        if end.astimezone(timezone.utc) - start.astimezone(timezone.utc) != timedelta(hours=24):
+            continue   # doba zmiany czasu (23/25 h): atrapa mocy zakłada 24 h
         if start >= EPOCH and kind != "full":
             assert r["est_provisional"] is True
             continue
