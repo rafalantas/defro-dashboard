@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "ThermoFlow — monitoring kotła",
+  "short_name": "ThermoFlow",
+  "description": "Monitoring i wizualizacja instalacji grzewczej oraz kotła Defro.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a1118",
+  "theme_color": "#0a1118",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
