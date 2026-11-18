@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+ <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#071c24"/><stop offset=".55" stop-color="#0c3439"/><stop offset="1" stop-color="#071923"/></linearGradient>
+ <linearGradient id="wave" x2="1" y2="0"><stop stop-color="#16bda8" stop-opacity=".95"/><stop offset="1" stop-color="#0a6f70" stop-opacity=".15"/></linearGradient>
+ <linearGradient id="boiler" x2="0" y2="1"><stop stop-color="#dce8e9"/><stop offset="1" stop-color="#718994"/></linearGradient>
+ <filter id="shadow"><feGaussianBlur stdDeviation="12"/></filter>
+</defs>
+<rect width="1200" height="630" rx="34" fill="url(#bg)"/>
+<path d="M0 0H1200V120C1010 90 940 180 760 130S410 20 250 100 60 130 0 160Z" fill="#0e6970" opacity=".32"/>
+<path d="M0 470C180 390 270 520 460 465S790 390 940 455 1110 490 1200 430V630H0Z" fill="url(#wave)" opacity=".72"/>
+<path d="M0 535C210 470 300 585 490 530S810 455 1000 525 1120 550 1200 510V630H0Z" fill="#071820" opacity=".55"/>
+<g transform="translate(70 135)">
+ <rect x="0" y="0" width="74" height="74" rx="20" fill="#10212a"/>
+ <path d="M40 10C35 25 21 35 21 49a16 16 0 0 0 32 0c0-10-6-18-12-26 1 10-4 14-9 18 1-11 9-18 8-31Z" fill="#49d3bb"/>
+ <path d="M27 57c6 4 15 3 21-1" fill="none" stroke="#10212a" stroke-width="4" stroke-linecap="round"/>
+ <text x="94" y="56" fill="#f3fbfa" font-family="Arial,sans-serif" font-size="54" font-weight="700">Thermo<tspan fill="#49d3bb">Flow</tspan></text>
+ <text x="2" y="125" fill="#e1eeee" font-family="Arial,sans-serif" font-size="27">Monitoring i wizualizacja</text>
+ <text x="2" y="160" fill="#e1eeee" font-family="Arial,sans-serif" font-size="27">instalacji grzewczej</text>
+ <text x="2" y="215" fill="#8eafb3" font-family="Arial,sans-serif" font-size="17" letter-spacing="2">DEFRO · HEATING MONITOR</text>
+</g>
+<g transform="translate(505 160)">
+ <ellipse cx="155" cy="360" rx="190" ry="24" fill="#000" opacity=".25" filter="url(#shadow)"/>
+ <path d="M145 50V15H210" stroke="#fb6d63" stroke-width="10" fill="none" stroke-linecap="round"/>
+ <path d="M270 80H345V15H410" stroke="#54bdf2" stroke-width="10" fill="none" stroke-linecap="round"/>
+ <rect x="30" y="55" width="165" height="285" rx="18" fill="url(#boiler)" stroke="#d7e4e6" stroke-width="3"/>
+ <rect x="48" y="75" width="129" height="35" rx="7" fill="#243d48"/>
+ <text x="112" y="99" fill="#e8f2f2" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="700">DEFRO</text>
+ <text x="112" y="134" fill="#263d48" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700">Gamma</text>
+ <rect x="55" y="210" width="116" height="98" rx="8" fill="#10212a" stroke="#6f8993" stroke-width="3"/>
+ <g fill="#c98a4a"><circle cx="78" cy="279" r="8"/><circle cx="99" cy="287" r="8"/><circle cx="121" cy="277" r="8"/><circle cx="144" cy="288" r="8"/><circle cx="88" cy="260" r="8"/><circle cx="113" cy="259" r="8"/><circle cx="137" cy="260" r="8"/></g>
+ <path d="M210 90H295V20H410" stroke="#ff665d" stroke-width="9" fill="none" stroke-linecap="round"/>
+ <path d="M210 280H315V160H410" stroke="#57bff0" stroke-width="9" fill="none" stroke-linecap="round"/>
+ <rect x="410" y="0" width="90" height="95" rx="10" fill="#d7e4e8" stroke="#8fa8b0" stroke-width="3"/>
+ <g stroke="#829ba5" stroke-width="7"><path d="M428 12V83M447 12V83M466 12V83M485 12V83"/></g>
+ <rect x="380" y="210" width="120" height="62" rx="30" fill="#152f3a" stroke="#49d3bb" stroke-width="3"/>
+ <path d="M398 241H480" stroke="#49d3bb" stroke-width="5" stroke-linecap="round"/>
+ <path d="M439 226V256" stroke="#49d3bb" stroke-width="5" stroke-linecap="round"/>
+</g>
+<g transform="translate(930 92)" font-family="Arial,sans-serif">
+ <g><rect width="220" height="94" rx="18" fill="#102d36" stroke="#2d7f7d" stroke-width="2"/><circle cx="43" cy="47" r="25" fill="#0b2029"/><path d="M43 26V68M35 34H51M35 59H51" stroke="#49d3bb" stroke-width="5" stroke-linecap="round"/><text x="82" y="38" fill="#a8c4c7" font-size="17">Kocioł</text><text x="82" y="70" fill="#f3fbfa" font-size="28" font-weight="700">70.0 °C</text></g>
+ <g transform="translate(0 112)"><rect width="220" height="94" rx="18" fill="#102d36" stroke="#2d7f7d" stroke-width="2"/><circle cx="43" cy="47" r="25" fill="#0b2029"/><path d="M55 47H31M31 47L41 37M31 47L41 57" stroke="#49d3bb" stroke-width="5" stroke-linecap="round" fill="none"/><text x="82" y="38" fill="#a8c4c7" font-size="17">Powrót</text><text x="82" y="70" fill="#f3fbfa" font-size="28" font-weight="700">56.2 °C</text></g>
+ <g transform="translate(0 224)"><rect width="220" height="94" rx="18" fill="#102d36" stroke="#2d7f7d" stroke-width="2"/><circle cx="43" cy="47" r="25" fill="#0b2029"/><path d="M43 24C35 39 29 46 34 58a10 10 0 0 0 18 0c4-10-2-19-9-34Z" fill="#ffae45"/><text x="82" y="38" fill="#a8c4c7" font-size="17">Spaliny</text><text x="82" y="70" fill="#f3fbfa" font-size="28" font-weight="700">124 °C</text></g>
+ <g transform="translate(14 352)" fill="#21c9b1"><rect x="0" y="38" width="13" height="30" rx="2"/><rect x="25" y="24" width="13" height="44" rx="2"/><rect x="50" y="31" width="13" height="37" rx="2"/><rect x="75" y="12" width="13" height="56" rx="2"/><rect x="100" y="20" width="13" height="48" rx="2"/><rect x="125" y="3" width="13" height="65" rx="2"/><rect x="150" y="-8" width="13" height="76" rx="2"/></g>
+</g>
+<path d="M0 586H1200" stroke="#49d3bb" stroke-opacity=".25"/>
+</svg>
