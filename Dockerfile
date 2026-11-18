@@ -3,6 +3,7 @@ ARG APP_COMMIT=local
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html /usr/share/nginx/html/index.html
 COPY favicon.svg /usr/share/nginx/html/favicon.svg
+COPY og-image.svg /usr/share/nginx/html/og-image.svg
 COPY favicon-32x32.png /usr/share/nginx/html/favicon-32x32.png
 COPY apple-touch-icon.png /usr/share/nginx/html/apple-touch-icon.png
 COPY icon-192.png /usr/share/nginx/html/icon-192.png
