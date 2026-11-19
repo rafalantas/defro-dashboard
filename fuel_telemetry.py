@@ -78,11 +78,13 @@ def analyze(feeds_by_channel, channel_ids, days):
     for channel_index, schema in enumerate(CHANNELS):
         feeds = feeds_by_channel[channel_index] if channel_index < len(feeds_by_channel) else []
         parsed_count = 0
+        channel_times = []
         for feed in feeds:
             ts = _timestamp(feed.get("created_at"))
             if ts is None:
                 continue
             parsed_count += 1
+            channel_times.append(ts)
             for field_index, (key, _label, _series_id, kind) in enumerate(schema["series"], 1):
                 value = _number(feed.get(f"field{field_index}"))
                 if value is not None:
@@ -92,8 +94,8 @@ def analyze(feeds_by_channel, channel_ids, days):
             "configured": bool(channel_ids[channel_index]) if channel_index < len(channel_ids) else False,
             "feed_count": len(feeds),
             "timestamped_feeds": parsed_count,
-            "first_sample": min((p[0] for values in points.values() for p in values), default=None).isoformat() if parsed_count else None,
-            "last_sample": max((p[0] for values in points.values() for p in values), default=None).isoformat() if parsed_count else None,
+            "first_sample": min(channel_times).isoformat() if channel_times else None,
+            "last_sample": max(channel_times).isoformat() if channel_times else None,
         })
 
     series_audit = []
