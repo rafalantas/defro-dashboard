@@ -25,6 +25,8 @@ jobs:
         run: python -m py_compile api.py fuel.py
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
+      - name: History analysis regression
+        run: python tests/test_history_analysis.py
 
   frontend-regression:
     runs-on: ubuntu-latest
