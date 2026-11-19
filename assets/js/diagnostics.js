@@ -63,6 +63,6 @@
     $('diagnosticsHistoryMeta').textContent='Źródło: ThingSpeak · '+fmt(payload.range_hours)+' h · luki według progów API oznaczane jako niepełne · odświeżanie co 60 s · tylko odczyt.';
   }
   const configPromise=ThermoFlowApi.get('/api/diagnostics').then(response=>response.json()).catch(()=>null);
-  async function load(){try{const [historyResponse,config]=await Promise.all([ThermoFlowApi.get('/api/history?hours=24&format=full'),configPromise]);render(await historyResponse.json(),config);}catch(_){render({configured:true,connected:false,error:'Nie udało się pobrać historii ThingSpeak.'},null);}}
+  async function load(){try{const config=await configPromise;const minimum=config?.analysis_config?.valve_minimum_opening;const historyPath='/api/history?hours=24&format=full'+(Number.isFinite(Number(minimum))?'&minimum_opening='+encodeURIComponent(minimum):'');const historyResponse=await ThermoFlowApi.get(historyPath);render(await historyResponse.json(),config);}catch(_){render({configured:true,connected:false,error:'Nie udało się pobrać historii ThingSpeak.'},null);}}
   load();setInterval(load,60000);
 })();
