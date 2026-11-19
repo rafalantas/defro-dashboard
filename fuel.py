@@ -29,10 +29,9 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 from fuel_schema import field_number, timezone as thermoflow_timezone
+from fuel_errors import FuelError
+from fuel_http import request_json as _request_json
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
     calibrate_pairs as _calibrate_pairs_impl,
@@ -187,38 +186,6 @@ def _parse_epoch(raw: str) -> datetime:
 
 
 COUNTER_EPOCH = _parse_epoch(os.getenv("FUEL_COUNTER_EPOCH", ""))
-
-
-class FuelError(Exception):
-    def __init__(self, status: int, message: str):
-        super().__init__(message)
-        self.status = status
-        self.message = message
-
-
-# ---------------------------------------------------------------- HTTP
-
-def _request_json(url: str, params: dict | None = None, form: dict | None = None,
-                  payload: dict | None = None, timeout: int = 10):
-    if params:
-        url = f"{url}?{urlencode(params)}"
-    headers = {"Accept": "application/json", "User-Agent": "defro-dashboard-fuel"}
-    data = None
-    if form is not None:
-        data = urlencode(form).encode()
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-    elif payload is not None:
-        data = json.dumps(payload).encode()
-        headers["Content-Type"] = "application/json"
-    req = Request(url, data=data, headers=headers, method="POST" if data is not None else "GET")
-    base = url.split("?")[0]
-    try:
-        with urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except HTTPError as e:
-        raise FuelError(502, f"{base}: HTTP {e.code}") from None
-    except (URLError, TimeoutError, OSError) as e:
-        raise FuelError(502, f"{base}: {e}") from None
 
 
 def _parse_ts(s: str) -> datetime:
