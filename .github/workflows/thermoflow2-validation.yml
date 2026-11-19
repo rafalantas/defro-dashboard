@@ -22,7 +22,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python syntax
-        run: python -m py_compile api.py fuel.py
+        run: python -m py_compile api.py fuel.py fuel_ai.py
+      - name: Fuel Intelligence regression
+        run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py
+      - name: API module import smoke test
+        run: python -c "import fuel; import fuel_ai"
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
       - name: History analysis regression

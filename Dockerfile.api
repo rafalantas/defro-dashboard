@@ -2,5 +2,6 @@ FROM python:3.12-alpine
 WORKDIR /app
 COPY api.py /app/api.py
 COPY fuel.py /app/fuel.py
+COPY fuel_ai.py /app/fuel_ai.py
 EXPOSE 8000
 CMD ["python", "-u", "/app/api.py"]
