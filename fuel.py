@@ -682,6 +682,17 @@ def _daily_rows(days: int = 120):
     out = []
     if not ts_start:
         return out, counter
+
+    # Telemetria jest dołączana do tych samych dób co skalibrowany licznik paliwa.
+    # Audyt ma limit 14 dni; starsze dni pozostają bez cech instalacji i nie są imputowane.
+    telemetry_by_day = {}
+    try:
+        audit_days = min(14, max(1, days))
+        audit = _telemetry_audit({"days": [str(audit_days)]})
+        telemetry_by_day = {row.get("day"): row for row in audit.get("daily", [])}
+    except FuelError:
+        telemetry_by_day = {}
+
     d = max(ts_start + timedelta(days=1), today - timedelta(days=days))
     try:
         prev_t = _get_daily(d - timedelta(days=1)).get("t_mean")
@@ -694,10 +705,31 @@ def _daily_rows(days: int = 120):
         kg = _counter_day_kg(d, counter)
         t_lag = _lagged_temperature(rec.get("t_mean"), prev_t)
         prev_t = rec.get("t_mean")
+        telemetry = telemetry_by_day.get(d.isoformat(), {})
+        # Do modelu trafiają wyłącznie dobowe agregaty o wystarczającym pokryciu.
+        # Analogowe serie wymagają >= 1000 próbek; czasy pomp >= 20 h znanego stanu.
+        def analog(name):
+            value = telemetry.get(name + "_mean")
+            return value if telemetry.get(name + "_samples", 0) >= 1000 else None
+
+        def pump_runtime(name):
+            known = telemetry.get(name + "_known_h")
+            return telemetry.get(name + "_runtime_h") if known is not None and known >= 20 else None
+
         out.append({"day": d.isoformat(), "t_mean": rec.get("t_mean"), "hdd": rec.get("hdd"),
                     "t_lag": round(t_lag, 2) if t_lag is not None else None,
                     "hdd_lag": round(max(0.0, base - t_lag), 2) if t_lag is not None else None,
                     "solar_mj": weather.get("solar_mj"), "wind_max_kmh": weather.get("wind_max_kmh"),
+                    "telemetry_co_c": analog("co_c"),
+                    "telemetry_dhw_c": analog("dhw_c"),
+                    "telemetry_floor_c": analog("floor_c"),
+                    "telemetry_return_c": analog("return_c"),
+                    "telemetry_boiler_power_kw": analog("boiler_power_kw"),
+                    "telemetry_valve_opening_pct": analog("valve_opening_pct"),
+                    "telemetry_pump_floor_h": pump_runtime("pump_floor"),
+                    "telemetry_pump_dhw_h": pump_runtime("pump_dhw"),
+                    "telemetry_pump_circulation_h": pump_runtime("pump_circulation"),
+                    "telemetry_samples": telemetry.get("co_c_samples", 0),
                     "kg_counter": kg, "counter_regime": _counter_regime(d),
                     "estimate": kg is not None and counter["collecting"] and _counter_regime(d) == "new"})
         d += timedelta(days=1)
