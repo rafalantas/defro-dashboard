@@ -58,6 +58,9 @@ for series_id in (
 for threshold in ("v<64", "v>=70", "v<55", "v<=5"):
     assert threshold in DIAGNOSTICS, f"Missing diagnostics threshold: {threshold}"
 assert "pumpImpact" in DIAGNOSTICS and "średnia zmiana powrotu" in DIAGNOSTICS
+assert "function quality(data)" in DIAGNOSTICS and "MAX_GAP=300" in DIAGNOSTICS
+assert "interrupted:true" in DIAGNOSTICS and "ANALIZA CZĘŚCIOWA" in DIAGNOSTICS
+assert "tylko kompletne cykle bez luk >5 min" in DIAGNOSTICS
 assert "55°C ±1°C" in HTML
 assert "setInterval(load,60000)" in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
