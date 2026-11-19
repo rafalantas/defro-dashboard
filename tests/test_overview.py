@@ -55,10 +55,15 @@ for series_id in (
     "thermoflow-pump-dhw", "thermoflow-pump-valve4d",
 ):
     assert series_id in DIAGNOSTICS, f"Missing diagnostics series: {series_id}"
-for threshold in ("v<64", "v>=70", "v<55", "v<=5"):
+for threshold in ("v<64", "v>=70", "v<55"):
     assert threshold in DIAGNOSTICS, f"Missing diagnostics threshold: {threshold}"
 assert "pumpImpact" in DIAGNOSTICS and "średnia zmiana powrotu" in DIAGNOSTICS
 assert "function quality(data)" in DIAGNOSTICS and "MAX_GAP=300" in DIAGNOSTICS
+assert "function configuredMinimumOpening(payload)" in DIAGNOSTICS
+assert "ThermoFlowApi.get('/api/diagnostics')" in DIAGNOSTICS
+assert "v<=minimumOpening" in DIAGNOSTICS
+assert "próg z konfiguracji pieca" in DIAGNOSTICS
+assert "v<=5" not in DIAGNOSTICS and "otwarciu ≤5%" not in DIAGNOSTICS
 assert "interrupted:true" in DIAGNOSTICS and "ANALIZA CZĘŚCIOWA" in DIAGNOSTICS
 assert "tylko kompletne cykle bez luk >5 min" in DIAGNOSTICS
 assert "55°C ±1°C" in HTML
