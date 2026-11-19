@@ -28,7 +28,7 @@ jobs:
       - name: Fuel Intelligence regression
         run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py tests/test_fuel_calibration_windows.py
       - name: Fuel telemetry regression
-        run: python -m unittest tests/test_fuel_telemetry.py
+        run: python -m unittest tests/test_fuel_telemetry.py tests/test_fuel_telemetry_resilience.py
       - name: Canonical schema and API isolation regression
         run: python -m unittest tests/test_fuel_schema.py
       - name: Counter epoch regression
