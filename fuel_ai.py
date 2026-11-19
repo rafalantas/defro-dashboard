@@ -105,13 +105,17 @@ def evaluate(rows: list[dict]) -> dict:
 
     The final chronological holdout is never used to fit the scored models.
     """
-    clean = [row for row in rows
-             if row.get("kg_counter") is not None
-             and not row.get("estimate")
-             and row.get("counter_regime") != "epoch"
-             and row.get("hdd_lag") is not None
-             and row.get("solar_mj") is not None
-             and row.get("wind_max_kmh") is not None]
+    clean = []
+    for source in rows:
+        if (source.get("kg_counter") is None or source.get("estimate")
+                or source.get("counter_regime") == "epoch"
+                or source.get("hdd_lag") is None
+                or source.get("solar_mj") is None
+                or source.get("wind_max_kmh") is None):
+            continue
+        row = dict(source)
+        row["wind_hdd_lag"] = float(row["wind_max_kmh"]) * float(row["hdd_lag"]) / 100.0
+        clean.append(row)
     clean.sort(key=lambda row: row.get("day", ""))
     total = len(clean)
     test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, total // 5))
