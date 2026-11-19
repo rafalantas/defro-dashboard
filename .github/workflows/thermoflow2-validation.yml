@@ -1,4 +1,4 @@
-name: ThermoFlow Sprint 1 validation
+name: ThermoFlow validation
 
 on:
   pull_request:
