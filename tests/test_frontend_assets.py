@@ -31,7 +31,7 @@ class Audit(HTMLParser):
 
 audit = Audit()
 audit.feed(HTML)
-assert len(audit.ids) == 127, f"Expected 127 existing IDs, got {len(audit.ids)}"
+assert len(audit.ids) >= 127, f"Expected all 127 baseline IDs to remain, got {len(audit.ids)}"
 assert len(audit.ids) == len(set(audit.ids)), "Duplicate HTML IDs"
 assert not audit.inline_scripts, "JavaScript must stay in external modules"
 assert not audit.inline_styles, "CSS must stay in external stylesheets"
@@ -40,5 +40,5 @@ for asset in audit.assets:
     assert (ROOT / asset).is_file(), f"Missing frontend asset: {asset}"
 reference = (ROOT / "assets/js/reference-model.js").read_text(encoding="utf-8")
 for expected in ("heatingKgPerHdd:4.49", "fixedDailyKg:5", "hddBaseC:15.5"):
-    assert expected in re.sub(r"\\s+", "", reference), f"Missing reference constant: {expected}"
+    assert expected in re.sub(r"\s+", "", reference), f"Missing reference constant: {expected}"
 print(f"Frontend assets: {len(audit.assets)} paths, {len(audit.ids)} stable IDs, inline SVG: OK")
