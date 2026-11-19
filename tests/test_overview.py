@@ -38,10 +38,27 @@ MOTION = (ROOT / "assets/css/motion.css").read_text(encoding="utf-8")
 assert 'id="diagnosticsHistoryState"' in HTML
 assert 'id="diagnosticsSummary"' in HTML and 'id="diagnosticsEvents"' in HTML
 assert '/assets/js/diagnostics.js' in HTML
-assert "'/api/history?hours=24'" in DIAGNOSTICS or '"/api/history?hours=24"' in DIAGNOSTICS
-assert "analysis" in DIAGNOSTICS and "burner_runs" in DIAGNOSTICS and "protection_cycles" in DIAGNOSTICS
+assert '/api/history?hours=24&format=full' in DIAGNOSTICS
+assert "coCycles" in DIAGNOSTICS and "burner" in DIAGNOSTICS and "cold" in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
 assert "age<=90" in LIVE and "classList.toggle('live',fresh)" in LIVE
 assert ".badge.live::before" in MOTION and "emodul-live-pulse" in MOTION
 assert "good live" in OVERVIEW
 print("Sprint 3 diagnostics: history analysis, read-only event list, truthful eModul live indicator: OK")
+
+# Sprint 4 deep diagnostics: full-resolution, read-only history analysis.
+assert 'format=full' in DIAGNOSTICS
+for series_id in (
+    "thermoflow-co", "thermoflow-flue", "thermoflow-boiler-power",
+    "thermoflow-valve4d-return", "thermoflow-valve4d-opening",
+    "thermoflow-valve4d-effective-setpoint", "thermoflow-pump-floor",
+    "thermoflow-pump-dhw", "thermoflow-pump-valve4d",
+):
+    assert series_id in DIAGNOSTICS, f"Missing diagnostics series: {series_id}"
+for threshold in ("v<64", "v>=70", "v<55", "v<=5"):
+    assert threshold in DIAGNOSTICS, f"Missing diagnostics threshold: {threshold}"
+assert "pumpImpact" in DIAGNOSTICS and "średnia zmiana powrotu" in DIAGNOSTICS
+assert "55°C ±1°C" in HTML
+assert "setInterval(load,60000)" in DIAGNOSTICS
+assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
+print("Sprint 4 diagnostics: boiler cycles, return protection, valve and pump correlation, read-only: OK")

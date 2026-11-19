@@ -174,7 +174,10 @@
   </div></section>
   <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="diagnosticsHistoryTitle">
     <div class="cardhead"><div><h2 id="diagnosticsHistoryTitle">Diagnostyka pracy kotła</h2><div class="subhead">Analiza ostatnich 24 godzin z zapisanych próbek ThingSpeak · tylko odczyt</div></div><span class="badge warn" id="diagnosticsHistoryState">OCZEKIWANIE NA HISTORIĘ</span></div>
+    <div class="diagnostics-intro">Analiza 24 h z ThingSpeak. Cykl odbudowy CO: spadek poniżej 64°C → osiągnięcie 70°C. Ochrona powrotu oceniana względem progu 55°C ±1°C. Wyniki opisują zapisane próbki, nie sterują kotłem.</div>
+    <h3 class="diagnostics-section-title">Wydajność i cykle kotła</h3>
     <div class="diagnostics-summary" id="diagnosticsSummary"><div class="overview-muted">Oczekiwanie na dane historyczne…</div></div>
+    <h3 class="diagnostics-section-title">Zdarzenia, pompy i jakość danych</h3>
     <div class="diagnostics-events" id="diagnosticsEvents" aria-live="polite"><div class="overview-muted">Zdarzenia pojawią się po pobraniu historii.</div></div>
     <div class="stats-meta" id="diagnosticsHistoryMeta">Źródło: /api/history · analiza wyliczana z dostępnych próbek, bez ingerencji w sterownik.</div>
   </section>
