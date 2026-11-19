@@ -36,7 +36,12 @@
   function renderModel(){
     const s=summaryData||{}, m=s.model||{}, dm=s.daily_model||{}, cc=s.counter_calibration||{}, cal=s.calibration||{}, off=s.om_offset||{};
     const el=$('fuelModelDetails');if(!el)return;
+    const ai=s.ai_shadow||{}, base=ai.baseline||{}, candidate=ai.candidate||{};
+    const aiLabel=ai.status==='shadow_ready'?'test gotowy · '+(ai.selected==='weather_aware'?'pogoda + temperatura':'sama temperatura'):(ai.message||'zbieranie danych');
     const rows=[
+      ['Fuel Intelligence',aiLabel],
+      ['AI MAE / bazowy',ai.status==='shadow_ready'?n(candidate.mae_kg_day,2)+' / '+n(base.mae_kg_day,2)+' kg/d':'—'],
+      ['AI test chronologiczny',ai.status==='shadow_ready'?(ai.holdout_from+' – '+ai.holdout_to+' · '+ai.holdout_days+' dni'):'wymaga więcej danych'],
       ['Model domu',m.periods_used!=null?m.periods_used+' okresów · R² '+n(m.r2,2):'za mało okresów'],
       ['Model dobowy',dm.status==='aktywny'?'aktywny · '+(dm.days||0)+' dób':(dm.days!=null?'zbiera dane · '+dm.days+'/'+(dm.days_needed||30):'brak danych')],
       ['Licznik podajnika',cc.calibrated?n(cc.kg_per_percent,2)+' kg/%':(cc.message||'w trakcie kalibracji')],
@@ -45,6 +50,13 @@
       ['Korekta Open-Meteo',off.applied?n(off.offset,1)+' °C · '+(off.days||0)+' dób':'nieaktywna']
     ];
     el.innerHTML=rows.map(([k,v])=>'<div class="fuel-model-row"><span>'+esc(k)+'</span><b>'+esc(v)+'</b></div>').join('');
+  }
+  function renderPlanning(){
+    const el=$('fuelPlanning');if(!el)return;
+    const p=summaryData?.planning||{};
+    if(p.status!=='ready'){el.innerHTML='<div class="fuel-empty">'+esc(p.message||'Oczekiwanie na dane pogodowe i model domu')+'</div>';return;}
+    const periods=[['Dziś',p.today],['7 dni',p.week],['30 dni',p.month],['Sezon grzewczy',p.season]];
+    el.innerHTML='<div class="fuel-planning-grid">'+periods.map(([label,v])=>'<div class="fuel-planning-card"><span>'+label+'</span><strong>'+n(v.kg,0)+' kg</strong><small>≈ '+v.bags_15kg+' worków po 15 kg</small><small>'+n(v.average_kg_day,1)+' kg/dobę</small></div>').join('')+'</div><p class="fuel-detail-footnote">'+esc(p.location)+' · '+esc(p.weather)+' · '+esc(p.note)+'</p>';
   }
   function renderForecast(){
     const el=$('fuelForecast');if(!el)return;
@@ -55,7 +67,7 @@
     try { const [daily,stats,refills]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/stats?days=30'),get('/api/fuel/refills')]); const burnerByDay=new Map((stats.daily||[]).map(r=>[r.day,r.est_kg])); dailyData=(daily.days||[]).map(r=>({...r,est_kg:burnerByDay.get(r.day)??null}));refillData=refills.refills||[];renderChart();renderRefills(); }
     catch(e){ const el=$('fuelDetailStatus');if(el)el.textContent='Nie udało się pobrać historii: '+e.message; }
   }
-  function updateSummary(s){summaryData=s;renderModel();renderForecast();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
+  function updateSummary(s){summaryData=s;renderModel();renderForecast();renderPlanning();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
   window.addEventListener('thermoflow:fuel',e=>updateSummary(e.detail||{}));
   window.addEventListener('resize',renderChart);
   if(window.ThermoFlowFuelSummary)updateSummary(window.ThermoFlowFuelSummary);

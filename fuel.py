@@ -21,6 +21,7 @@ więc ilość dosypana = zużycie od poprzedniej dosypki. Pierwsza dosypka to pu
 from __future__ import annotations
 
 import hmac
+import fuel_ai
 import json
 import os
 import threading
@@ -57,8 +58,9 @@ TS_CHANNEL_FUEL = os.getenv("THINGSPEAK_FUEL_CHANNEL_ID", "").strip()
 TS_READ_KEY_FUEL = os.getenv("THINGSPEAK_FUEL_READ_KEY", "").strip()
 TS_WRITE_KEY_FUEL = os.getenv("THINGSPEAK_FUEL_WRITE_KEY", "").strip()
 
-FUEL_LAT = os.getenv("FUEL_LAT", "")
-FUEL_LON = os.getenv("FUEL_LON", "")
+# Domyślna lokalizacja: Hajnówka, Podlaskie; env może ją nadpisać.
+FUEL_LAT = os.getenv("FUEL_LAT", "").strip() or "52.74"
+FUEL_LON = os.getenv("FUEL_LON", "").strip() or "23.58"
 OM_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OM_FORECAST = "https://api.open-meteo.com/v1/forecast"
 
@@ -117,6 +119,9 @@ _summary_state: dict = {"thread": None, "error": None}
 _summary_guard = threading.Lock()
 _offset_cache: dict = {"at": 0.0, "data": None}
 _forecast_cache: dict = {"at": 0.0, "data": None}
+_climate_cache: dict = {"at": 0.0, "data": None}
+CLIMATE_CACHE_SECONDS = 30 * 24 * 3600
+CLIMATE_YEARS = 5
 _model_cache: dict = {"key": None, "data": None}
 _counter_cache: dict[str, list] = {}   # zakończone doby: punkty zmian licznika zapasu
 _weather_cache: dict[str, dict] = {}   # słońce i wiatr z Open-Meteo dla dób
@@ -1288,6 +1293,110 @@ def _summary() -> dict:
     return {"configured": True, "warming": True}
 
 
+
+def _climate_monthly(today: date) -> dict:
+    """Pięcioletnie średnie miesięczne dla lokalizacji kotła (Open-Meteo Archive)."""
+    cached = _climate_cache["data"]
+    if cached and time.monotonic() - _climate_cache["at"] < CLIMATE_CACHE_SECONDS:
+        return cached
+    end = today - timedelta(days=1)
+    start = end.replace(year=end.year - CLIMATE_YEARS)
+    params = {
+        "latitude": FUEL_LAT, "longitude": FUEL_LON,
+        "daily": "temperature_2m_mean,shortwave_radiation_sum,wind_speed_10m_max",
+        "timezone": str(TZ), "start_date": start.isoformat(), "end_date": end.isoformat(),
+    }
+    daily = _request_json(OM_ARCHIVE, params).get("daily", {})
+    fields = ("temperature_2m_mean", "shortwave_radiation_sum", "wind_speed_10m_max")
+    buckets = {}
+    for i, day_text in enumerate(daily.get("time", [])):
+        bucket = buckets.setdefault(int(day_text[5:7]), {name: [] for name in fields})
+        for name in fields:
+            values = daily.get(name, [])
+            value = values[i] if i < len(values) else None
+            if value is not None:
+                bucket[name].append(float(value))
+    result = {}
+    for month, values in buckets.items():
+        result[month] = {
+            "t_mean": sum(values[fields[0]]) / len(values[fields[0]]) if values[fields[0]] else None,
+            "solar_mj": sum(values[fields[1]]) / len(values[fields[1]]) if values[fields[1]] else None,
+            "wind_max_kmh": sum(values[fields[2]]) / len(values[fields[2]]) if values[fields[2]] else None,
+            "samples": len(values[fields[0]]),
+        }
+    if not result:
+        raise FuelError(502, "Brak danych klimatycznych Open-Meteo dla lokalizacji")
+    _climate_cache.update(at=time.monotonic(), data=result)
+    return result
+
+
+def _planning_forecast(model: dict | None, daily_model: dict | None,
+                       forecast: list, now: datetime, known_temps: dict) -> dict:
+    """Prognoza pelletu: pogoda na 7 dni, dalej pięcioletnie średnie klimatyczne."""
+    if not model:
+        return {"status": "unavailable", "message": "Za mało danych z dosypek do prognozy"}
+    try:
+        climate = _climate_monthly(now.date())
+    except FuelError as exc:
+        return {"status": "unavailable", "message": f"Brak norm pogodowych: {exc.message}"}
+    forecast_map = dict(forecast)
+    today = now.date()
+    month_end = today + timedelta(days=29)
+    if 5 <= now.month < 10:
+        season_start, season_end = date(now.year, 10, 1), date(now.year + 1, 4, 30)
+    else:
+        season_start = today
+        season_end = date(now.year, 4, 30) if now.month <= 4 else date(now.year + 1, 4, 30)
+    horizon = max(month_end, season_end)
+    temperatures = {}
+    for offset in range((horizon - today).days + 1):
+        day = today + timedelta(days=offset)
+        if day in forecast_map:
+            temp = forecast_map[day]
+            weather = _weather(day)
+            solar, wind, source = weather.get("solar_mj"), weather.get("wind_max_kmh"), "prognoza Open-Meteo"
+        else:
+            normal = climate.get(day.month, {})
+            temp = normal.get("t_mean")
+            solar, wind, source = normal.get("solar_mj"), normal.get("wind_max_kmh"), "średnia klimatyczna 5 lat"
+            if temp is not None:
+                temp += _om_offset()["offset"]
+        if temp is None:
+            return {"status": "unavailable", "message": "Niekompletne dane pogodowe do prognozy"}
+        temperatures[day] = (temp, solar, wind, source)
+    rows, previous = [], known_temps.get(today - timedelta(days=1))
+    for offset in range((horizon - today).days + 1):
+        day = today + timedelta(days=offset)
+        temp, solar, wind, source = temperatures[day]
+        if daily_model and daily_model.get("status") == "aktywny":
+            effective = temp
+            if "hdd_lag" in daily_model.get("terms", []):
+                effective = _lagged_temperature(temp, previous if previous is not None else temp)
+            kg = _predict_daily(daily_model, max(0.0, daily_model["balance_temp"] - effective), solar, wind)
+        else:
+            kg = _predict_kg_per_day(model, temp)
+        rows.append({"day": day.isoformat(), "kg": max(0.0, kg), "t_mean": temp, "source": source})
+        previous = temp
+
+    def total(start: date, end: date):
+        selected = [r for r in rows if start <= date.fromisoformat(r["day"]) <= end]
+        kg = sum(r["kg"] for r in selected)
+        return {"from": start.isoformat(), "to": end.isoformat(), "days": len(selected),
+                "kg": round(kg, 1), "bags_15kg": int((kg + 14.999) // 15),
+                "average_kg_day": round(kg / len(selected), 2) if selected else None}
+
+    return {
+        "status": "ready", "location": "Hajnówka, Podlaskie",
+        "coordinates": {"latitude": float(FUEL_LAT), "longitude": float(FUEL_LON)},
+        "weather": "prognoza 7 dni + średnie miesięczne z 5 lat",
+        "climate_years": CLIMATE_YEARS, "generated_at": now.isoformat(),
+        "today": total(today, today), "week": total(today, today + timedelta(days=6)),
+        "month": total(today, month_end), "season": total(season_start, season_end),
+        "daily": rows[:7],
+        "note": "Orientacyjnie; po 7 dniach używane są średnie klimatyczne. Worki zaokrąglone w górę do 15 kg.",
+    }
+
+
 def _summary_build() -> dict:
     now = datetime.now(TZ)
     today = now.date()
@@ -1307,7 +1416,14 @@ def _summary_build() -> dict:
             daily_rows, _counter_info = _daily_rows()
             daily_model = _fit_daily_model(daily_rows)
     except FuelError:
-        daily_model = None
+        daily_rows, daily_model = [], None
+        ai_shadow = {"status": "unavailable", "message": "Brak danych do analizy"}
+    else:
+        try:
+            ai_shadow = fuel_ai.evaluate(daily_rows)
+        except Exception:
+            # Eksperyment AI nigdy nie może przerwać ani zmienić obliczeń produkcyjnych.
+            ai_shadow = {"status": "unavailable", "message": "Model eksperymentalny chwilowo niedostępny"}
 
     def est_kg(kwh: float, moment: datetime) -> float:
         return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, moment)
@@ -1424,6 +1540,8 @@ def _summary_build() -> dict:
                 "method": method,
             }
 
+    planning = _planning_forecast(model, daily_model, forecast, now, known_temps)
+
     result = {
         "configured": True,
         "model": model,
@@ -1431,6 +1549,8 @@ def _summary_build() -> dict:
         "hdd_base_fixed": HDD_BASE_FIXED is not None,
         "om_offset": offset,
         "daily_model": daily_model,
+        "ai_shadow": ai_shadow,
+        "planning": planning,
         "forecast": [{"day": d.isoformat(), "t_mean": t,
                       "solar_mj": _weather(d).get("solar_mj"),
                       "wind_max_kmh": _weather(d).get("wind_max_kmh"),
