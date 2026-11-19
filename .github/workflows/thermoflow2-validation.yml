@@ -1,4 +1,4 @@
-name: ThermoFlow Sprint 1 validation
+name: ThermoFlow validation
 
 on:
   pull_request:
@@ -43,6 +43,8 @@ jobs:
         run: for file in assets/js/*.js; do node --check "$file"; done
       - name: HTML and asset regression
         run: python tests/test_frontend_assets.py
+      - name: Overview regression
+        run: python tests/test_overview.py
 
   docker-build:
     runs-on: ubuntu-latest
