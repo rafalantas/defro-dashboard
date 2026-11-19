@@ -70,7 +70,7 @@ class Estimate:
 def select_usage_estimate(*, counter_kg: float | None, counter_collecting: bool,
                           counter_method: str, burner_kg: float | None,
                           burner_calibration_days: int, model_kg: float | None,
-                          recent_periods: list[dict]) -> tuple[float | None, str | None]:
+                          fallback_kg: float | None) -> tuple[float | None, str | None]:
     """Preserve the legacy hopper-consumption precedence exactly.
 
     Order: valid counter; calibrated burner (>=7 calibration days); house model;
@@ -85,7 +85,6 @@ def select_usage_estimate(*, counter_kg: float | None, counter_collecting: bool,
         return model_kg, "model domu z dosypek i temperatur"
     if burner_kg is not None:
         return burner_kg, "moc palnika skalibrowana do dosypek"
-    if recent_periods:
-        period = recent_periods[-1]
-        return period["kg_per_day"], "średnia z ostatniego okresu"
+    if fallback_kg is not None:
+        return fallback_kg, "średnia z ostatniego okresu"
     return None, None
