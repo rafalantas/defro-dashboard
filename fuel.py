@@ -240,15 +240,6 @@ def _fetch_day(day: date) -> dict:
     }
 
 
-def _om_fill(url: str, params: dict):
-    try:
-        daily = _request_json(url, params).get("daily", {})
-    except FuelError:
-        return   # Open-Meteo jest tylko uzupełnieniem: doba bez temperatury, nie błąd całości
-    for t, v in zip(daily.get("time", []), daily.get("temperature_2m_mean", [])):
-        if v is not None:
-            _om_cache[t] = float(v)
-
 
 def _openmeteo_mean(day: date):
     return _openmeteo_mean_impl(
@@ -258,19 +249,6 @@ def _openmeteo_mean(day: date):
         now=lambda: datetime.now(TZ),
     )
 
-
-def _weather_fill(url: str, params: dict):
-    daily = _request_json(url, params).get("daily", {})
-    today = datetime.now(TZ).date().isoformat()
-    solar = daily.get("shortwave_radiation_sum", [])
-    wind = daily.get("wind_speed_10m_max", [])
-    for i, t in enumerate(daily.get("time", [])):
-        rec = {"solar_mj": solar[i] if i < len(solar) else None,
-               "wind_max_kmh": wind[i] if i < len(wind) else None}
-        if rec["solar_mj"] is not None or rec["wind_max_kmh"] is not None:
-            _weather_cache[t] = rec
-            if t >= today:
-                _weather_fetched[t] = time.monotonic()
 
 
 def _weather(day: date) -> dict:
