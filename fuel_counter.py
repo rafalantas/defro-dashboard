@@ -144,11 +144,16 @@ def counter_regime(day: date, day_bounds, counter_epoch: datetime) -> str:
 
 
 def counter_method(counter: dict, format_pl) -> str:
-    """Describe the provisional or epoch-spanning coefficient and its uncertainty."""
+    """Describe the active coefficient without inventing uncertainty for a calibrated value."""
     effective = counter["new_effective"]
-    value = format_pl(counter["kg_per_percent"])
-    uncertainty = effective["uncertainty_percent"]
-    if effective["source"] == "okres obejmujący epokę":
+    value = format_pl(effective["kg_per_percent"])
+    source = effective["source"]
+    if source == "okres obejmujący epokę":
+        uncertainty = effective["uncertainty_percent"]
         return (f"licznik podajnika, współczynnik z okresu obejmującego zmianę podajnika "
                 f"{value} kg/% (szacunek, ±{uncertainty}%)")
-    return f"licznik podajnika, współczynnik tymczasowy {value} kg/% (szacunek, ±{uncertainty}%)"
+    if source == "wartość tymczasowa":
+        uncertainty = effective["uncertainty_percent"]
+        return (f"licznik podajnika, współczynnik tymczasowy {value} kg/% "
+                f"(szacunek, ±{uncertainty}%)")
+    return "licznik podajnika skalibrowany do dosypek"
