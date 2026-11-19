@@ -2,3 +2,22 @@
 
   .build-version-inline{display:inline-block;margin-left:8px;color:var(--muted);font:9px var(--mono);letter-spacing:.4px;vertical-align:1px}
   .view-nav{display:flex;gap:7px;flex-wrap:wrap;padding:16px 0 0;border-bottom:1px solid var(--line)}.view-tab{background:transparent;border:1px solid transparent;border-radius:9px 9px 0 0;padding:10px 16px;color:var(--muted);font:600 12px var(--sans);cursor:pointer}.view-tab:hover{color:var(--text);background:var(--panel)}.view-tab.active{color:var(--teal);border-color:var(--line);border-bottom-color:var(--bg);background:var(--panel)}.view-hidden{display:none!important}.overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:14px}.overview-metric{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}.overview-metric span{font-size:10px;color:var(--muted)}.overview-metric strong{font:500 21px var(--mono);color:var(--text)}@media(max-width:600px){.view-nav{gap:2px;overflow-x:auto;flex-wrap:nowrap}.view-tab{padding:10px 11px;white-space:nowrap}.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:10px}.overview-metric{padding:10px}.overview-metric strong{font-size:18px}}
+
+/* ThermoFlow 2.0 Sprint 2 — operational Overview */
+.overview-updated{padding:0 16px 12px;color:var(--muted);font:10px var(--mono)}
+.overview-section{padding:14px 16px;border-top:1px solid var(--line);min-width:0}
+.overview-section h3{margin:0 0 12px;font-size:12px;font-weight:800;color:var(--text)}
+.overview-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:0}
+.overview-columns>.overview-section+ .overview-section{border-left:1px solid var(--line)}
+.overview-alerts,.overview-rows,.overview-models{display:grid;gap:7px;min-width:0}
+.overview-alert{padding:10px 12px;border:1px solid var(--line);border-left:3px solid #d5a94f;border-radius:8px;background:var(--panel2);font-size:11px;line-height:1.5;color:var(--text)}
+.overview-alert.danger{border-left-color:#e16e62}
+.overview-alert.good{border-left-color:#49b98e}
+.overview-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);font-size:10px;line-height:1.4}
+.overview-row-label{color:var(--muted);min-width:0}
+.overview-row-value{color:var(--text);text-align:right;font:500 10px var(--mono);overflow-wrap:anywhere}
+.overview-row-value.active{color:#49b98e}.overview-row-value.inactive{color:var(--muted)}.overview-row-value.unknown{color:#d5a94f}
+.overview-model{padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);display:grid;gap:6px;min-width:0}
+.overview-model h4{margin:0 0 3px;font-size:11px;color:var(--text)}
+.overview-muted{margin:0;color:var(--muted);font-size:10px;line-height:1.5}
+@media(max-width:760px){.overview-columns{grid-template-columns:1fr}.overview-columns>.overview-section+ .overview-section{border-left:0}.overview-section{padding:12px}}
