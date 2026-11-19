@@ -598,7 +598,8 @@ def _fit_model(refills: list[dict]):
     Domyślnie temperatura bazowa jest dopasowywana do danych. FUEL_HDD_BASE_FIXED
     pozwala opcjonalnie wymusić wartość ręcznie.
     """
-    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)    if _model_cache["key"] == key:
+    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)
+    if _model_cache["key"] == key:
         return _model_cache["data"]
     rows = []
     for prev, cur in zip(refills, refills[1:]):
