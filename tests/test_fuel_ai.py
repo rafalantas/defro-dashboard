@@ -12,7 +12,7 @@ def synthetic_rows(count=90):
         wind_hdd = wind * hdd / 100
         kg = max(0.0, 1.8 + 0.62 * hdd - 0.035 * solar + 0.42 * wind_hdd)
         rows.append({
-            "day": f"2026-01-{(index % 28) + 1:02d}" if index < 28 else f"2026-{(index // 28) + 1:02d}-{(index % 28) + 1:02d}",
+            "day": f"2026-{(index // 28) + 1:02d}-{(index % 28) + 1:02d}",
             "kg_counter": kg,
             "hdd_lag": hdd,
             "solar_mj": solar,
@@ -21,9 +21,6 @@ def synthetic_rows(count=90):
             "counter_regime": "new",
             "estimate": False,
         })
-    # Ensure chronological order is unambiguous for the holdout split.
-    for index, row in enumerate(rows):
-        row["day"] = f"2026-01-{index + 1:03d}"
     return rows
 
 
@@ -38,8 +35,8 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["status"], "shadow_ready")
         self.assertEqual(result["mode"], "shadow_only")
         self.assertEqual(result["holdout_days"], 14)
-        self.assertEqual(result["holdout_from"], "2026-01-077")
-        self.assertEqual(result["holdout_to"], "2026-01-090")
+        self.assertEqual(result["holdout_from"], "2026-03-21")
+        self.assertEqual(result["holdout_to"], "2026-04-06")
         self.assertIn("mae_kg_day", result["candidate"])
         self.assertIn("production estimates are unchanged", result["safety"])
 
