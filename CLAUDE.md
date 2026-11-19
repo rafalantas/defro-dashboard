@@ -67,6 +67,7 @@ for p in status diagnostics "fuel/summary" "fuel/refills" "fuel/daily" "fuel/sta
 ```
 Przy zmianach w `fuel.py` albo analizie historii dopisz test z podmienionym `_request_json`
 (atrapa ThingSpeak i Open-Meteo), zamiast polegać na prawdziwych usługach.
+Test modelu dobowego z bezwładnością (t_lag, próg 3 % LOO): `python3 tests/test_daily_lag.py` (ok. 10 s).
 Test stałej bazy stopniodni i zamrożonej korekty Open-Meteo: `python3 tests/test_hdd_base.py` (ok. 10 s).
 Test kalibracji licznika przed i po zmianie podajnika: `python3 tests/test_counter_epoch.py` (ok. 70 s; licznik zaokrąglany do 1 %, scalanie wpisów dosypek, oszacowanie z okresu obejmującego epokę).
 
