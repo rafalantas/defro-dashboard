@@ -100,10 +100,22 @@ def _metrics(actual: list[float], predicted: list[float]):
     }
 
 
-def evaluate(rows: list[dict]) -> dict:
-    """Fit a robust weather-aware model and compare it to temperature-only baseline.
+def _fixed_holdout_metrics(train: list[dict], test: list[dict], names: list[str]):
+    """Score one untouched chronological test window using a model fitted only on train."""
+    model = _fit(train, names)
+    if model is None or not test:
+        return None
+    actual = [float(row["kg_counter"]) for row in test]
+    predicted = [_predict(model, row) for row in test]
+    return _metrics(actual, predicted)
 
-    The final chronological holdout is never used to fit the scored models.
+
+def evaluate(rows: list[dict]) -> dict:
+    """Compare robust models with walk-forward and fixed chronological validation.
+
+    Walk-forward refits on an expanding history as each new actual day arrives.
+    Fixed holdout fits once on the initial training window and never trains on
+    any scored day. Both protocols are reported; production remains unchanged.
     """
     clean = []
     for source in rows:
@@ -176,6 +188,11 @@ def evaluate(rows: list[dict]) -> dict:
 
     baseline_score = _metrics(actual, baseline_predictions)
     candidate_score = _metrics(actual, candidate_predictions)
+    fixed_baseline_score = _fixed_holdout_metrics(train, test, baseline_names)
+    fixed_candidate_score = _fixed_holdout_metrics(train, test, candidate_names)
+    if fixed_baseline_score is None or fixed_candidate_score is None:
+        return {"status": "unstable", "days": total,
+                "message": "Model nie przeszedł kontroli stałego holdoutu"}
     gain = ((baseline_score["mae_kg_day"] - candidate_score["mae_kg_day"])
             / baseline_score["mae_kg_day"] if baseline_score["mae_kg_day"] else 0.0)
     accepted = gain >= MIN_RELATIVE_GAIN
@@ -207,20 +224,36 @@ def evaluate(rows: list[dict]) -> dict:
         else:
             base_score = _metrics(telemetry_actual, base_predictions)
             extended_score = _metrics(telemetry_actual, extended_predictions)
+            telemetry_fixed_base = _fixed_holdout_metrics(
+                telemetry_clean[:telemetry_train_count], telemetry_test, telemetry_baseline_names)
+            telemetry_fixed_extended = _fixed_holdout_metrics(
+                telemetry_clean[:telemetry_train_count], telemetry_test, telemetry_candidate_names)
+            if telemetry_fixed_base is None or telemetry_fixed_extended is None:
+                telemetry_result = {"status": "unstable", "complete_days": telemetry_days,
+                                    "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
+                continue_telemetry_result = True
+            else:
+                continue_telemetry_result = False
             telemetry_gain = ((base_score["mae_kg_day"] - extended_score["mae_kg_day"])
                               / base_score["mae_kg_day"] if base_score["mae_kg_day"] else 0.0)
-            telemetry_result = {
-                "status": "shadow_ready", "mode": "shadow_only",
-                "complete_days": telemetry_days, "training_days": telemetry_train_count,
-                "holdout_days": telemetry_test_count,
-                "holdout_from": telemetry_test[0].get("day"),
-                "holdout_to": telemetry_test[-1].get("day"),
-                "baseline": base_score, "candidate": extended_score,
-                "mae_gain_percent": round(telemetry_gain * 100, 1),
-                "accepted": telemetry_gain >= MIN_RELATIVE_GAIN,
-                "features": telemetry_candidate_names if telemetry_gain >= MIN_RELATIVE_GAIN else telemetry_baseline_names,
-                "safety": "shadow_only; production estimates are unchanged",
-            }
+            if not continue_telemetry_result:
+                telemetry_result = {
+                    "status": "shadow_ready", "mode": "shadow_only",
+                    "complete_days": telemetry_days, "training_days": telemetry_train_count,
+                    "holdout_days": telemetry_test_count,
+                    "holdout_from": telemetry_test[0].get("day"),
+                    "holdout_to": telemetry_test[-1].get("day"),
+                    "baseline": base_score, "candidate": extended_score,
+                    "validation": {
+                        "walk_forward": {"baseline": base_score, "candidate": extended_score},
+                        "fixed_holdout": {"baseline": telemetry_fixed_base,
+                                          "candidate": telemetry_fixed_extended},
+                    },
+                    "mae_gain_percent": round(telemetry_gain * 100, 1),
+                    "accepted": telemetry_gain >= MIN_RELATIVE_GAIN,
+                    "features": telemetry_candidate_names if telemetry_gain >= MIN_RELATIVE_GAIN else telemetry_baseline_names,
+                    "safety": "shadow_only; production estimates are unchanged",
+                }
 
     return {
         "status": "shadow_ready",
@@ -235,6 +268,18 @@ def evaluate(rows: list[dict]) -> dict:
         "mae_gain_percent": round(gain * 100, 1),
         "baseline": baseline_score,
         "candidate": candidate_score,
+        "validation": {
+            "protocol": "walk_forward_expanding_window",
+            "walk_forward": {"baseline": baseline_score, "candidate": candidate_score},
+            "fixed_holdout": {
+                "training_from": train[0].get("day"),
+                "training_to": train[-1].get("day"),
+                "scored_from": test[0].get("day"),
+                "scored_to": test[-1].get("day"),
+                "baseline": fixed_baseline_score,
+                "candidate": fixed_candidate_score,
+            },
+        },
         "holdout_from": test[0].get("day"),
         "holdout_to": test[-1].get("day"),
         "model": {
