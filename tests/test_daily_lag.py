@@ -17,7 +17,7 @@ import sys
 sys.dont_write_bytecode = True
 R = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 os.environ.update(THINGSPEAK_CHANNEL_IDS="1,2", THINGSPEAK_FUEL_CHANNEL_ID="3", FUEL_LAT="52.2",
-                  FUEL_LON="21.0", FUEL_API_TOKEN="t")
+                  FUEL_LON="21.0", FUEL_API_TOKEN="t", HDD_BASE="15.5")
 os.environ.pop("FUEL_HDD_BASE_FIXED", None)
 sys.path.insert(0, R)
 import fuel
