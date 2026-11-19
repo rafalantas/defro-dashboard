@@ -39,6 +39,7 @@ from fuel_thingspeak_daily_provider import fetch_day as fetch_thingspeak_day, de
 from fuel_daily_provider import get_daily_raw as get_daily_raw_impl
 from fuel_counter_provider import fetch_counter_points
 from fuel_estimates import select_usage_estimate
+from fuel_period_analysis import build_periods as build_refill_periods
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
     calibrate_pairs as _calibrate_pairs_impl,
@@ -597,8 +598,7 @@ def _fit_model(refills: list[dict]):
     Domyślnie temperatura bazowa jest dopasowywana do danych. FUEL_HDD_BASE_FIXED
     pozwala opcjonalnie wymusić wartość ręcznie.
     """
-    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)
-    if _model_cache["key"] == key:
+    key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)    if _model_cache["key"] == key:
         return _model_cache["data"]
     rows = []
     for prev, cur in zip(refills, refills[1:]):
@@ -718,43 +718,19 @@ def _ts_write(fields: dict, created_at: datetime | None = None) -> int:
 
 
 def _periods(refills: list[dict]) -> list[dict]:
-    refills = refills[-(MAX_PERIODS + 1):]
-    out = []
-    for prev, cur in zip(refills, refills[1:]):
-        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
-        days = (end - start).total_seconds() / 86400
-        if days <= 0 or days > MAX_DAYS:
-            continue
-        hdd, kwh, hdd_missing, kwh_missing = _period_sums(start, end)
-        est_raw = kwh / (PELLET_KWH_PER_KG * BOILER_EFF) if not kwh_missing else None
-        counter_drop, counter_ok, counter_floor = _counter_drop(start, end)
-        model = _model_cache["data"]
-        heating = None
-        if model and hdd >= 5:
-            heating_kg = cur["kg"] - model["base_kg_per_day"] * days
-            heating = {"kg": round(heating_kg, 1), "kg_per_hdd": round(heating_kg / hdd, 2),
-                       "model_kg": round(model["base_kg_per_day"] * days + model["kg_per_hdd"] * hdd, 1)}
-        out.append({
-            "start": prev["ts"],
-            "end": cur["ts"],
-            "days": round(days, 2),
-            "kg": cur["kg"],
-            "kg_per_day": round(cur["kg"] / days, 2),
-            "hdd": round(hdd, 1),
-            "kg_per_hdd": round(cur["kg"] / hdd, 3) if hdd > 0 else None,
-            "useful_kwh_per_hdd": round(cur["kg"] * PELLET_KWH_PER_KG * BOILER_EFF / hdd, 1) if hdd > 0 else None,
-            "burner_kwh": round(kwh, 1) if not kwh_missing else None,
-            "est_kg_raw": round(est_raw, 1) if est_raw is not None else None,
-            "days_missing_temp": hdd_missing,
-            "days_missing_burner": kwh_missing,
-            "hdd_base": _active_base(),
-            "heating": heating,
-            "counter_drop_percent": round(counter_drop, 1) if counter_ok else None,
-            "kg_per_counter_percent": round(cur["kg"] / counter_drop, 2) if counter_ok and counter_drop and not counter_floor else None,
-            "counter_regime": "old" if end <= COUNTER_EPOCH else "new" if start >= COUNTER_EPOCH else "epoch",
-        })
-    return out
-
+    """Compatibility wrapper for the extracted refill-period analysis."""
+    return build_refill_periods(
+        refills,
+        period_sums=_period_sums,
+        counter_drop=_counter_drop,
+        model=_model_cache["data"],
+        active_base=_active_base,
+        max_periods=MAX_PERIODS,
+        max_days=MAX_DAYS,
+        pellet_kwh_per_kg=PELLET_KWH_PER_KG,
+        boiler_efficiency=BOILER_EFF,
+        counter_epoch=COUNTER_EPOCH,
+    )
 
 def _calibration(periods: list[dict]) -> dict:
     return _calibration_impl(periods, COUNTER_EPOCH, datetime.now(TZ),
@@ -1197,8 +1173,7 @@ def _add_refill(data: dict) -> dict:
 
 
 def _void_refill(raw_id: str) -> dict:
-    try:
-        refill_id = int(raw_id)
+    try:        refill_id = int(raw_id)
     except ValueError:
         raise FuelError(400, "Nieprawidłowe id") from None
     if refill_id not in {r["id"] for r in _refills_raw()}:   # anulujemy pojedynczy wpis, scalenie liczy się od nowa
