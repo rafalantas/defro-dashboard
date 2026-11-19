@@ -36,6 +36,7 @@ from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
 from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weather_for_day as _weather_impl
 from fuel_refill_provider import fetch_refills as fetch_refill_records, write_refill as write_refill_record
 from fuel_thingspeak_daily_provider import fetch_day as fetch_thingspeak_day, detect_data_start as detect_thingspeak_data_start
+from fuel_daily_provider import get_daily_raw as get_daily_raw_impl
 from fuel_estimates import select_usage_estimate
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -257,39 +258,14 @@ def _temps_data_start():
 
 
 def _get_daily_raw(day: date) -> dict:
-    """Doba z jednego źródła, bez korekty Open-Meteo."""
-    key = day.isoformat()
-    today = datetime.now(TZ).date()
-    if day < today and key in _daily_cache:
-        return dict(_daily_cache[key])
-
-    rec = None
-    ts_failed = False
-    ts_start = _temps_data_start()
-    if TS_CHANNEL_TEMPS and (ts_start is None or day >= ts_start):
-        try:
-            rec = _fetch_day(day)
-        except FuelError:
-            ts_failed = True   # awaryjnie temperatura z Open-Meteo, bez zapamiętywania
-
-    if rec is None or not rec["samples"] or rec.get("t_mean") is None:
-        t = _openmeteo_mean(day)
-        rec = {
-            "day": key,
-            "t_mean": round(t, 2) if t is not None else None,
-            "hdd": round(max(0.0, HDD_BASE - t), 2) if t is not None else None,
-            "burner_kwh": rec["burner_kwh"] if rec and rec["samples"] else None,
-            "samples": rec["samples"] if rec else 0,
-            "source": "open-meteo",
-        }
-    else:
-        rec["source"] = "thingspeak"
-
-    if day < today and rec.get("hdd") is not None and not ts_failed:
-        _daily_cache[key] = rec
-    if ts_failed:
-        rec["warning"] = "ThingSpeak niedostępny, temperatura z Open-Meteo"
-    return dict(rec)
+    """Doba z preferowanego źródła, z fallbackiem Open-Meteo dla temperatury."""
+    return get_daily_raw_impl(
+        day=day, today=datetime.now(TZ).date(), cache=_daily_cache,
+        channel_configured=bool(TS_CHANNEL_TEMPS),
+        data_start=_temps_data_start, fetch_thingspeak=_fetch_day,
+        openmeteo_mean=_openmeteo_mean, hdd_base=HDD_BASE,
+        fuel_error=FuelError,
+    )
 
 
 def _om_offset() -> dict:
