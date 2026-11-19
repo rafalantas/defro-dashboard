@@ -24,9 +24,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python syntax
-        run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py
+        run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py fuel_refills.py
       - name: Fuel Intelligence regression
         run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py tests/test_fuel_calibration_windows.py
+      - name: Fuel refill regression
+        run: python -m unittest tests/test_fuel_refills.py
       - name: Fuel pure model regression
         run: python -m unittest tests/test_fuel_models.py
       - name: Fuel telemetry regression
@@ -38,7 +40,7 @@ jobs:
       - name: HDD base regression
         run: python tests/test_hdd_base.py
       - name: API module import smoke test
-        run: python -c "import api; import fuel; import fuel_ai; import fuel_telemetry; import fuel_schema; import fuel_models"
+        run: python -c "import api; import fuel; import fuel_ai; import fuel_telemetry; import fuel_schema; import fuel_models; import fuel_refills"
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
       - name: History analysis regression
