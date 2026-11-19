@@ -195,6 +195,21 @@ Keep this read-only analysis capability separate from the fuel estimator.
 - Existing `/api/fuel/*` paths, JSON keys, units, null behavior, HTTP statuses and authentication behavior.
 - Background summary warmup and cache behavior until a separately validated replacement is ready.
 
+### Current extraction progress — telemetry provider
+
+The ThingSpeak telemetry-history retrieval path has been moved behind
+`fuel_telemetry_provider.fetch_history()`. The provider receives channel
+configuration, timezone, cache storage/TTLs, bounded-window planner, transport
+and analyzer as dependencies. The `fuel.py` facade still supplies the same
+production globals and retains the existing cache object, 6-hour complete /
+10-minute partial TTLs, 3-day request windows, 8-worker concurrency, 12-second
+request timeout and partial-coverage payload. This is an infrastructure
+extraction, not a change to telemetry features or estimate selection.
+
+Dedicated tests cover complete fetch + cache reuse, partial upstream failure,
+and the existing HTTP 503 contract for missing channels. The CI syntax/import
+smoke test now includes the provider module.
+
 ## Recommended ThermoFlow 2.0 sequence
 
 1. **Canonical contract:** shared schema and timezone are in place; the provenance-aware estimate contract is now defined and tested, without changing production selection or calculations.
