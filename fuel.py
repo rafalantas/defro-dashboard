@@ -32,9 +32,9 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from fuel_schema import field_number, timezone
+from fuel_schema import field_number, timezone as thermoflow_timezone
 
-TZ = timezone()
+TZ = thermoflow_timezone()
 API_TOKEN = os.getenv("FUEL_API_TOKEN", "")
 TS_API = "https://api.thingspeak.com"
 
