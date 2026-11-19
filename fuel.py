@@ -33,6 +33,7 @@ from fuel_schema import field_number, timezone as thermoflow_timezone
 from fuel_errors import FuelError
 from fuel_http import request_json as _request_json
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
+from fuel_estimates import select_usage_estimate
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
     calibrate_pairs as _calibrate_pairs_impl,
@@ -1198,20 +1199,16 @@ def _summary_build() -> dict:
         used_counter = kg_since if drop_ok and not drop_floor else None
         used_burner = burner_since
         used_model = (model["base_kg_per_day"] * hours / 24 + model["kg_per_hdd"] * hdd_since) if model else None
-        if used_counter is not None:
-            used, method = used_counter, "licznik podajnika skalibrowany do dosypek"
-            if counter["collecting"]:
-                method = _counter_method(counter)
-        elif used_burner is not None and calib["days"] >= 7:
-            used, method = used_burner, "moc palnika skalibrowana do dosypek"
-        elif used_model is not None:
-            used, method = used_model, "model domu z dosypek i temperatur"
-        elif used_burner is not None:
-            used, method = used_burner, "moc palnika skalibrowana do dosypek"
-        elif periods:
-            used, method = periods[-1]["kg_per_day"] * hours / 24, "średnia z ostatniego okresu"
-        else:
-            used, method = None, None
+        fallback_kg = recent_periods[-1]["kg_per_day"] * hours / 24 if recent_periods else None
+        used, method = select_usage_estimate(
+            counter_kg=used_counter,
+            counter_collecting=counter["collecting"],
+            counter_method=_counter_method(counter),
+            burner_kg=used_burner,
+            burner_calibration_days=calib["days"],
+            model_kg=used_model,
+            fallback_kg=fallback_kg,
+        )
 
         capacity = HOPPER_KG
         reserve = capacity * HOPPER_RESERVE_PERCENT / 100
