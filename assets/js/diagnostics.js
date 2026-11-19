@@ -33,7 +33,7 @@
     if(!payload?.configured||!payload?.connected||!Array.isArray(payload.series)){state.textContent='BRAK HISTORII';state.className='badge warn';events.append(row('Historia niedostępna','—',payload?.error||'ThingSpeak nie zwrócił serii historycznych.'));return;}
     const get=key=>points(payload,key),co=get('co'),flue=get('flue'),power=get('power'),ret=get('ret'),valve=get('valve'),opening=get('opening'),setpoint=get('setpoint'),floor=get('floor'),dhw=get('dhw'),rad=get('rad');
     const coQuality=quality(co),returnQuality=quality(ret),minimumOpening=configuredMinimumOpening(config);
-    const coCycles=cycles(co),cold=spans(ret,v=>v<55),below64=spans(co,v=>v<64),below70=spans(co,v=>v<70),burner=spans(power,v=>v>0),lowOpening=spans(opening,v=>v<=5);
+    const coCycles=cycles(co),cold=spans(ret,v=>v<55),below64=spans(co,v=>v<64),below70=spans(co,v=>v<70),burner=spans(power,v=>v>0),lowOpening=minimumOpening==null?{seconds:0,episodes:[]}:spans(opening,v=>v<=minimumOpening);
     const changes=opening.slice(1).filter((p,i)=>Math.abs(p[1]-opening[i][1])>=3).length;
     const range=opening.length?Math.max(...opening.map(p=>p[1]))-Math.min(...opening.map(p=>p[1])):null;
     const floorImpact=pumpImpact(ret,floor),dhwImpact=pumpImpact(ret,dhw),radImpact=pumpImpact(ret,rad);
