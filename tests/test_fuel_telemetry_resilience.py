@@ -28,6 +28,21 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
             if index:
                 self.assertEqual(windows[index - 1][1], start)
 
+    def test_partial_telemetry_keeps_successful_days_and_exposes_failed_windows(self):
+        audit = {
+            "daily": [{"day": "2026-11-18", "co_c_mean": 65.0}],
+            "fetch_status": "partial",
+            "fetch_windows": {"requested": 82, "completed": 81, "failed": 1},
+            "fetch_errors": ["FuelError: HTTP 429"],
+        }
+        with patch.object(fuel, "_telemetry_history", return_value=audit):
+            daily, state = fuel._telemetry_daily_features(120)
+
+        self.assertEqual(daily["2026-11-18"]["co_c_mean"], 65.0)
+        self.assertEqual(state["status"], "partial")
+        self.assertEqual(state["fetch_windows"]["failed"], 1)
+        self.assertIn("HTTP 429", state["error"])
+
     def test_successful_telemetry_preserves_daily_aggregates_and_fetch_time(self):
         audit = {
             "daily": [{"day": "2026-11-18", "co_c_mean": 65.0}],
