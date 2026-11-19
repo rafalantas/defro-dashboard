@@ -29,7 +29,9 @@ The first refactor stage has now addressed several audit findings without replac
 - **F4 — AI validation:** AI output now reports both expanding-window walk-forward scores and a fixed holdout score whose scored rows are never used for fitting. Existing top-level score fields and shadow-only behavior remain for compatibility; the acceptance flag still follows the existing walk-forward gain threshold.
 - **F6 — ThingSpeak schema:** `fuel_schema.py` is now the canonical definition of both eight-field channels. API writes/history, fuel field indexes and telemetry parsing derive from it. Contract tests cover field order and semantic IDs.
 - **F7 — timezone:** API, fuel and telemetry now obtain their timezone from the shared schema configuration, retaining Europe/Warsaw as the default.
-- Docker packaging and CI include the shared schema and its regression tests.
+- **F8 — telemetry fault isolation:** daily feature construction now converts unexpected telemetry exceptions into an explicit `unavailable` state; counter/refill estimates continue and summary/daily payloads expose the telemetry status.
+- **Pure model extraction:** the solver, OLS/LOO scoring, lagged-temperature transform, HDD regression and prediction functions now live in `fuel_models.py`. `fuel.py` re-exports them as a compatibility façade, so existing callers and tests keep their names.
+- Docker packaging and CI include both shared schema and extracted model modules, plus dedicated regression tests.
 
 These are branch changes only. They do not constitute a production cutover; `fuel.py` remains the production calculation path, and AI remains shadow-only. CI must pass on the latest branch head before this stage is considered validated.
 
