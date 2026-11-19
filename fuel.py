@@ -34,6 +34,7 @@ from fuel_errors import FuelError
 from fuel_http import request_json as _request_json
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
 from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weather_for_day as _weather_impl
+from fuel_refill_provider import fetch_refills as fetch_refill_records, write_refill as write_refill_record
 from fuel_estimates import select_usage_estimate
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -765,14 +766,12 @@ def _refills() -> list[dict]:
 
 
 def _refills_raw() -> list[dict]:
-    if not TS_CHANNEL_FUEL:
-        return []
-    cached = _refills_cache["data"]
-    if cached is not None and time.monotonic() - _refills_cache["at"] < SUMMARY_CACHE_SECONDS:
-        return [dict(r) for r in cached]
-    out = _refills_uncached()
-    _refills_cache.update(at=time.monotonic(), data=out)
-    return [dict(r) for r in out]
+    return fetch_refill_records(
+        channel_id=TS_CHANNEL_FUEL, read_key=TS_READ_KEY_FUEL,
+        endpoint=TS_API, request_json=_request_json, cache=_refills_cache,
+        ttl_seconds=SUMMARY_CACHE_SECONDS, monotonic=time.monotonic,
+        normalize=normalize_refill_feeds, tz=TZ, parse_timestamp=_parse_ts,
+    )
 
 
 def _invalidate_caches():
@@ -781,26 +780,14 @@ def _invalidate_caches():
     _summary_cache.update(at=0.0, data=None)
 
 
-def _refills_uncached() -> list[dict]:
-    params = {"results": 8000}
-    if TS_READ_KEY_FUEL:
-        params["api_key"] = TS_READ_KEY_FUEL
-    feeds = _request_json(f"{TS_API}/channels/{TS_CHANNEL_FUEL}/feeds.json", params).get("feeds", [])
-    return normalize_refill_feeds(feeds, TZ, _parse_ts)
-
 
 def _ts_write(fields: dict, created_at: datetime | None = None) -> int:
-    if not (TS_CHANNEL_FUEL and TS_WRITE_KEY_FUEL):
-        raise FuelError(503, "Kanał ThingSpeak na dosypki nie jest skonfigurowany")
-    form = {"api_key": TS_WRITE_KEY_FUEL, **fields}
-    if created_at:
-        form["created_at"] = created_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = _request_json(f"{TS_API}/update.json", form=form)
-    entry_id = body.get("entry_id", 0) if isinstance(body, dict) else int(body or 0)
-    if not entry_id:
-        raise FuelError(429, "ThingSpeak odrzucił zapis (limit 15 s), spróbuj ponownie za chwilę")
-    _invalidate_caches()
-    return entry_id
+    return write_refill_record(
+        channel_id=TS_CHANNEL_FUEL, write_key=TS_WRITE_KEY_FUEL,
+        endpoint=TS_API, request_json=_request_json, fields=fields,
+        created_at=created_at, fuel_error=FuelError,
+        invalidate=_invalidate_caches, timezone_module=timezone,
+    )
 
 
 def _periods(refills: list[dict]) -> list[dict]:
