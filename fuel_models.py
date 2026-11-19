@@ -5,6 +5,10 @@ The legacy fuel.py facade re-exports these names during the compatibility period
 """
 from __future__ import annotations
 
+LAG_WEIGHT_TODAY = 0.6
+LAG_WEIGHT_PREVIOUS = 0.4
+
+
 def _solve(a: list, b: list):
     """Rozwiązanie układu a·x = b (eliminacja Gaussa z wyborem elementu)."""
     n = len(b)
@@ -47,6 +51,9 @@ def _lagged_temperature(t, prev_t):
     if t is None or prev_t is None:
         return None
     return LAG_WEIGHT_TODAY * t + LAG_WEIGHT_PREVIOUS * prev_t
+
+def _hdd_from(temps, base: float) -> float:
+    return sum(fraction * max(0.0, base - t) for fraction, t in temps)
 
 def _fit_at(rows: list, base: float):
     """Regresja kg/dobę = stała + kg_na_stopień × stopniodni/dobę przy zadanej temperaturze bazowej."""
