@@ -486,8 +486,16 @@ def _local_iso(timestamp: int) -> str:
     return datetime.fromtimestamp(timestamp, ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
 
 
-def _history_analysis(raw: dict) -> dict:
+def _history_analysis(raw: dict, minimum_opening: float | None = None) -> dict:
     """Cykle palnika i ochrony powrotu wyliczone z próbek (to, co wcześniej liczone było ręcznie)."""
+    # Zachowaj dotychczasowy próg dla klientów API, które nie przekazują konfiguracji.
+    # Dashboard podaje aktualną nastawę 2203 odczytaną z eModul.
+    try:
+        protection_minimum = float(minimum_opening)
+        if not 0 <= protection_minimum <= 100:
+            raise ValueError
+    except (TypeError, ValueError):
+        protection_minimum = float(HISTORY_PROTECTION_MIN_OPENING)
     power = raw.get("thermoflow-boiler-power", [])
     burner = []
     run_start = peak = None
@@ -520,14 +528,14 @@ def _history_analysis(raw: dict) -> dict:
         start = opening[index][0]
         # dojście do minimum
         low = index
-        while low < len(opening) and opening[low][1] > HISTORY_PROTECTION_MIN_OPENING:
+        while low < len(opening) and opening[low][1] > protection_minimum:
             low += 1
         if low >= len(opening):
             break
         floor_level = opening[low][1]
         # nie ochrona powrotu: pompa zaworu stała albo zawór zjechał wyraźnie poniżej minimum (np. przerwa w pracy sterownika)
         pump_on = _value_at(valve_pump, opening[low][0]) if valve_pump else 1
-        if not pump_on or floor_level < HISTORY_PROTECTION_MIN_OPENING - 15:
+        if not pump_on or floor_level < protection_minimum - 15:
             index = low + 1
             continue
         rise = low
@@ -591,7 +599,7 @@ def _history_query_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw")) if parsed.tzinfo is None else parsed
 
 
-def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True) -> dict:
+def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True, minimum_opening: float | None = None) -> dict:
     """Return recent ThingSpeak samples as compact [unix_seconds, value] pairs."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
@@ -613,7 +621,7 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         step, auto_step = 120, True
     range_key = f"last-{hours}h" if requested_start is None else f"{start.isoformat()}_{end.isoformat()}"
     filter_key = ",".join(sorted(requested_series or []))
-    cache_key = (",".join(channel_ids), f"{range_key}|step={step}|fmt={output_format}|an={int(with_analysis)}", filter_key)
+    cache_key = (",".join(channel_ids), f"{range_key}|step={step}|fmt={output_format}|an={int(with_analysis)}|min_opening={minimum_opening}", filter_key)
     now_monotonic = time.monotonic()
     with _history_cache_lock:
         cached = _history_cache.get(cache_key)
@@ -741,7 +749,7 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         result["analysis"] = {"error": "Analiza wymaga pełnego zestawu serii; pomiń parametr series albo ustaw analysis=0"}
     elif with_analysis:
         try:
-            result["analysis"] = _history_analysis(raw_by_id)
+            result["analysis"] = _history_analysis(raw_by_id, minimum_opening)
         except Exception as error:   # analiza nie może zablokować samych danych
             result["analysis"] = {"error": str(error)[:180]}
     with _history_cache_lock:
@@ -1366,8 +1374,16 @@ class Handler(BaseHTTPRequestHandler):
                 if output_format not in ("compact", "full"):
                     raise ValueError("Parametr format przyjmuje wartości compact albo full")
                 with_analysis = query.get("analysis", ["1"])[0] not in ("0", "false", "no")
+                minimum_opening = None
+                if "minimum_opening" in query:
+                    try:
+                        minimum_opening = float(query["minimum_opening"][0])
+                    except (TypeError, ValueError):
+                        raise ValueError("Parametr minimum_opening musi być liczbą od 0 do 100")
+                    if not 0 <= minimum_opening <= 100:
+                        raise ValueError("Parametr minimum_opening musi być liczbą od 0 do 100")
                 payload = _read_history(hours, requested_series, requested_start, requested_end, step,
-                                        output_format, with_analysis)
+                                        output_format, with_analysis, minimum_opening)
             except (HTTPError, URLError, TimeoutError, OSError) as error:
                 status = error.code if isinstance(error, HTTPError) else None
                 message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
