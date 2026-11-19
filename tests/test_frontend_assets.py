@@ -1,6 +1,7 @@
 """Static checks for the split ThermoFlow frontend."""
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -22,7 +23,9 @@ class Audit(HTMLParser):
         if tag in ("script", "link"):
             path = attrs.get("src") or attrs.get("href", "")
             if path.startswith("/assets/"):
-                self.assets.append(path.lstrip("/"))
+                parsed = urlsplit(path)
+                self.assets.append(parsed.path.lstrip("/"))
+                assert parsed.query == "v=__APP_COMMIT__", f"Asset URL must be commit-versioned: {path}"
             if tag == "script" and "src" not in attrs:
                 self.inline_scripts += 1
         if tag == "style":
