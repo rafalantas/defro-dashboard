@@ -34,6 +34,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from fuel_schema import field_number
+
 TZ = ZoneInfo(os.getenv("FUEL_TZ", "Europe/Warsaw"))
 API_TOKEN = os.getenv("FUEL_API_TOKEN", "")
 TS_API = "https://api.thingspeak.com"
@@ -48,9 +50,9 @@ TS_CHANNEL_TEMPS = (_csv_env("THINGSPEAK_CHANNEL_IDS") or [""])[0]
 TS_READ_KEY_TEMPS = (_csv_env("THINGSPEAK_READ_KEYS") or [""])[0]
 TS_CHANNEL_VALVE = (_csv_env("THINGSPEAK_CHANNEL_IDS") + ["", ""])[1]
 TS_READ_KEY_VALVE = (_csv_env("THINGSPEAK_READ_KEYS") + ["", ""])[1]
-FIELD_COUNTER = 8   # thermoflow-fuel-percent: licznik zapasu sterownika (czas pracy podajnika)
-FIELD_OUTDOOR = 4   # thermoflow-outdoor w THINGSPEAK_COMPACT_CHANNEL_FIELDS
-FIELD_POWER = 8     # thermoflow-boiler-power
+FIELD_COUNTER = field_number("fuel_percent", "valve_pumps_fuel")
+FIELD_OUTDOOR = field_number("outdoor_c", "temperatures_power")
+FIELD_POWER = field_number("boiler_power_kw", "temperatures_power")
 # Pusty = wykrywany automatycznie z daty utworzenia kanału.
 TS_DATA_START = os.getenv("FUEL_TEMPS_DATA_START", "").strip()
 
