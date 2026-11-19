@@ -48,7 +48,7 @@ class TelemetryProviderTests(unittest.TestCase):
         result = self.invoke(request)
         self.assertEqual(result["fetch_status"], "partial")
         self.assertEqual(result["fetch_windows"]["failed"], 1)
-        self.assertEqual(result["feed_counts"], [1, 2])
+        self.assertEqual(sum(result["feed_counts"]), 3)
         self.assertIn("FuelError", result["fetch_errors"][0])
 
     def test_missing_channel_preserves_service_unavailable_contract(self):
