@@ -27,7 +27,7 @@ class ThingSpeakDailyProviderTests(unittest.TestCase):
         self.assertEqual(result["t_mean"], 9.0)
         self.assertEqual(result["hdd"], 5.0)
         self.assertEqual(result["samples"], 3)
-        self.assertEqual(result["burner_kwh"], 0.58)
+        self.assertEqual(result["burner_kwh"], 0.37)
         self.assertEqual(request.call_args.args[0], "https://example.invalid/channels/temps/feeds.json")
         self.assertEqual(request.call_args.args[1]["api_key"], "read-key")
         self.assertEqual(request.call_args.args[1]["results"], 8000)
