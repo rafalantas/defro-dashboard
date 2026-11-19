@@ -15,6 +15,9 @@
     refreshOverview();
   }
   tabs.forEach(tab=>tab.addEventListener('click',()=>activate(tab.dataset.viewTarget)));
+  const reference=window.ThermoFlowReferenceModel;
+  const referenceNote=document.getElementById('overviewReferenceModel');
+  if(reference&&referenceNote) referenceNote.textContent=`Model referencyjny: ${reference.heatingKgPerHdd.toLocaleString('pl-PL',{minimumFractionDigits:2,maximumFractionDigits:2})} kg/HDD + ${reference.fixedDailyKg} kg/dobę · baza ${reference.hddBaseC.toLocaleString('pl-PL',{minimumFractionDigits:1,maximumFractionDigits:1})}°C. Model eksperymentalny z danych pozostaje osobny.`;
   activate('overview');
   window.setInterval(refreshOverview,3000);
 })();
