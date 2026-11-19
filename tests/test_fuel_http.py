@@ -27,7 +27,8 @@ class FuelHttpTests(unittest.TestCase):
             result = request_json("https://api.thingspeak.com/channels/1/feeds.json",
                                   params={"results": 8000}, timeout=12)
         self.assertEqual(result, {"feeds": []})
-        request, timeout = open_url.call_args.args
+        request = open_url.call_args.args[0]
+        timeout = open_url.call_args.kwargs["timeout"]
         self.assertIn("results=8000", request.full_url)
         self.assertEqual(request.get_method(), "GET")
         self.assertEqual(timeout, 12)
@@ -37,7 +38,7 @@ class FuelHttpTests(unittest.TestCase):
             result = request_json("https://api.thingspeak.com/update.json",
                                   form={"field1": 15}, timeout=4)
         self.assertEqual(result["entry_id"], 42)
-        request, _timeout = open_url.call_args.args
+        request = open_url.call_args.args[0]
         self.assertEqual(request.get_method(), "POST")
         self.assertIn("application/x-www-form-urlencoded", request.get_header("Content-type"))
 
