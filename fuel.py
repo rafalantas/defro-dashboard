@@ -34,7 +34,10 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from fuel_schema import field_number, timezone as thermoflow_timezone
 from fuel_models import (
+    LAG_WEIGHT_PREVIOUS,
+    LAG_WEIGHT_TODAY,
     _fit_at,
+    _hdd_from,
     _lagged_temperature,
     _ols_loo,
     _predict_daily,
@@ -140,8 +143,6 @@ TELEMETRY_HISTORY_CACHE_SECONDS = 6 * 3600
 WEATHER_VARS = "shortwave_radiation_sum,wind_speed_10m_max"
 MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby dopasować model dobowy
 DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
-LAG_WEIGHT_TODAY = 0.6                 # bezwładność budynku: temperatura efektywna = 0,6 * dziś + 0,4 * wczoraj
-LAG_WEIGHT_PREVIOUS = 0.4
 MIN_COUNTER_DROP = 20                  # minimalny spadek licznika (pp) do kalibracji
 COUNTER_COLLECTING_MESSAGE = "kalibracja licznika po zmianie podajnika: zbieranie danych"
 COUNTER_PROVISIONAL_KG_PER_PERCENT = 3.4   # tymczasowo po epoce, do pierwszego oszacowania/kalibracji (szacunek)
@@ -825,10 +826,6 @@ def _period_temps(start: datetime, end: datetime):
                 temps.append((overlap / 86400, rec["t_mean"]))
         d += timedelta(days=1)
     return temps, missing
-
-
-def _hdd_from(temps, base: float) -> float:
-    return sum(fraction * max(0.0, base - t) for fraction, t in temps)
 
 
 def _fit_model(refills: list[dict]):
