@@ -215,6 +215,16 @@ variable: the fallback now uses the explicitly prepared recent refill periods.
 Keep the selection tests as a migration gate before introducing any new
 selection policy.
 
+### Hopper counter provider extraction
+
+The ThingSpeak hopper-percent counter read path is now in
+`fuel_counter_provider.py`. It preserves the field-specific 8000-feed query,
+same-value suppression, extension of the final known value to the last feed
+timestamp, and historical-day cache behavior. The facade still owns the cache
+and passes the existing channel, field, timezone and transport settings.
+Dedicated tests cover transitions, repeated values, blank final feeds and
+today's uncached data.
+
 ### Daily source arbitration extraction
 
 `fuel_daily_provider.py` now owns the existing daily-source arbitration and
