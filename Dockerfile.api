@@ -16,5 +16,6 @@ COPY fuel_ai.py /app/fuel_ai.py
 COPY fuel_telemetry.py /app/fuel_telemetry.py
 COPY fuel_telemetry_provider.py /app/fuel_telemetry_provider.py
 COPY fuel_weather_provider.py /app/fuel_weather_provider.py
+COPY fuel_thingspeak_daily_provider.py /app/fuel_thingspeak_daily_provider.py
 EXPOSE 8000
 CMD ["python", "-u", "/app/api.py"]
