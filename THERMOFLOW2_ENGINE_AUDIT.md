@@ -215,6 +215,16 @@ variable: the fallback now uses the explicitly prepared recent refill periods.
 Keep the selection tests as a migration gate before introducing any new
 selection policy.
 
+### ThingSpeak daily telemetry provider extraction
+
+Daily ThingSpeak feed retrieval and channel-creation-date discovery now live in
+`fuel_thingspeak_daily_provider.py`. The provider owns the UTC query-window
+format, field parsing, sorted burner-power integration, maximum-gap cap and
+daily temperature/HDD aggregation. The facade continues to own the historical
+daily cache and the fallback decision between ThingSpeak and Open-Meteo.
+Tests cover energy integration with capped gaps, empty feeds, configured start
+dates and timezone conversion of channel creation timestamps.
+
 ### Open-Meteo and refill provider extraction
 
 Open-Meteo temperature and weather retrieval now lives in
