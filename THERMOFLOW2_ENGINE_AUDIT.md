@@ -335,3 +335,17 @@ all production calculations to the existing legacy implementation.
 ## Non-negotiable safety boundary
 
 This is a fuel-estimation and dashboard-data migration only. Do not add commands or write paths for boiler, burner, feeder, 4D valve or pump control. Do not change controller configuration. The return-protection target remains **55 °C** and must not be modified by this project.
+
+
+### Daily model selection extraction
+
+The daily-model candidate selection has been moved from `fuel.py` into
+`fuel_daily_model.py`. The module receives its cache, active HDD base,
+minimum training-day threshold, lag weights, candidate-improvement threshold
+and OLS/LOO fitter as explicit dependencies. This keeps the current candidate
+set, physical coefficient-sign checks, 3% LOO improvement rule, output fields
+and cache key unchanged while making model selection deterministic and
+independently testable. The legacy facade delegates through a compatibility
+wrapper; the new module is included in the API image and CI. Dedicated tests
+cover insufficient history, eligible history, cache reuse and exclusion of
+temporary-counter days.
