@@ -7,8 +7,11 @@ on:
     branches:
       - "work/thermoflow2/**"
       - "chore/thermoflow2-**"
-      - "audit/thermoflow2-**"
   workflow_dispatch:
+
+concurrency:
+  group: thermoflow2-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
