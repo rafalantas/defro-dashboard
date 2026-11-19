@@ -25,7 +25,7 @@ assert "/api/fuel/summary" in FUEL
 assert "daily_model" in OVERVIEW and "days_needed" in OVERVIEW
 assert "periods_used" in OVERVIEW and "kg_per_hdd" in OVERVIEW
 assert "v.return" in OVERVIEW
-assert "55 °C ±1 °C" in HTML
+assert 'id="diagnosticsIntro"' in HTML
 assert "STB pozostaje bez odczytu" in HTML
 assert "POST" not in OVERVIEW and "DELETE" not in OVERVIEW
 assert "setInterval" not in NAV, "Navigation must not overwrite live Overview values"
@@ -72,6 +72,7 @@ assert "settings?.return_protection_tolerance" in DIAGNOSTICS
 assert "settings?.boiler_power_active_min_kw" in DIAGNOSTICS
 assert "settings?.valve_change_min_delta" in DIAGNOSTICS
 assert '"analysis_config": analysis_config' in API
+assert '"return_protection_min": 55.0' in API and '"return_protection_tolerance": 1.0' in API
 assert 'configured_menu_value(2203)' in API
 assert 'configured_menu_value(2060)' in API and 'configured_menu_value(2062)' in API
 assert "v<64" not in DIAGNOSTICS and "v>=70" not in DIAGNOSTICS and "v<55" not in DIAGNOSTICS
