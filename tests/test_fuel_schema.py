@@ -2,10 +2,12 @@
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 import api
 import fuel_schema
 import fuel_telemetry
+import fuel
 
 
 class FuelSchemaTests(unittest.TestCase):
@@ -32,6 +34,13 @@ class FuelSchemaTests(unittest.TestCase):
         self.assertEqual(fuel_schema.field_number("pump_floor", "valve_pumps_fuel"), 5)
         with self.assertRaises(KeyError):
             fuel_schema.field_number("fuel_percent", "temperatures_power")
+
+    def test_api_fuel_and_telemetry_share_timezone_configuration(self):
+        with patch.dict("os.environ", {"FUEL_TZ": "Europe/Warsaw"}):
+            expected = fuel_schema.timezone().key
+            self.assertEqual(fuel.TZ.key, expected)
+            self.assertEqual(api.thermoflow_timezone().key, expected)
+            self.assertEqual(fuel_telemetry.TZ.key, expected)
 
     def test_core_api_import_does_not_import_optional_fuel_engine(self):
         script = r"""
