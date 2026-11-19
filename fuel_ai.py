@@ -231,12 +231,9 @@ def evaluate(rows: list[dict]) -> dict:
             if telemetry_fixed_base is None or telemetry_fixed_extended is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days,
                                     "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
-                continue_telemetry_result = True
             else:
-                continue_telemetry_result = False
-            telemetry_gain = ((base_score["mae_kg_day"] - extended_score["mae_kg_day"])
-                              / base_score["mae_kg_day"] if base_score["mae_kg_day"] else 0.0)
-            if not continue_telemetry_result:
+                telemetry_gain = ((base_score["mae_kg_day"] - extended_score["mae_kg_day"])
+                                  / base_score["mae_kg_day"] if base_score["mae_kg_day"] else 0.0)
                 telemetry_result = {
                     "status": "shadow_ready", "mode": "shadow_only",
                     "complete_days": telemetry_days, "training_days": telemetry_train_count,
