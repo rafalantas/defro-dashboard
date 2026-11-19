@@ -8,6 +8,7 @@ LIVE = (ROOT / "assets/js/live.js").read_text(encoding="utf-8")
 API = (ROOT / "api.py").read_text(encoding="utf-8")
 FUEL = (ROOT / "assets/js/fuel.js").read_text(encoding="utf-8")
 NAV = (ROOT / "assets/js/navigation.js").read_text(encoding="utf-8")
+STATISTICS = (ROOT / "assets/js/statistics.js").read_text(encoding="utf-8")
 
 required_ids = {
     "overviewConnection", "overviewCo", "overviewReturn", "overviewOutdoor",
@@ -29,6 +30,8 @@ assert 'id="diagnosticsIntro"' in HTML
 assert "STB pozostaje bez odczytu" in HTML
 assert "POST" not in OVERVIEW and "DELETE" not in OVERVIEW
 assert "setInterval" not in NAV, "Navigation must not overwrite live Overview values"
+assert "querySelectorAll('[data-period]')" in STATISTICS
+assert "querySelectorAll('.stats-period')" not in STATISTICS, "Statistics handlers must not capture diagnostics range controls"
 assert "reference-model" not in OVERVIEW
 print(f"Overview regression: {len(required_ids)} required elements, API event wiring, read-only behavior: OK")
 
