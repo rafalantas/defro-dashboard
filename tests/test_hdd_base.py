@@ -3,7 +3,7 @@
 Uruchomienie z katalogu repo: python3 tests/test_hdd_base.py
 
 Sprawdza:
-- parsowanie FUEL_HDD_BASE_FIXED (domyślnie 15,5, „off”/„auto” wyłącza),
+- parsowanie FUEL_HDD_BASE_FIXED (test jawnie ustawia 15,5; puste/„off”/„auto” wyłącza),
 - przy stałej bazie wszystkie wskaźniki (model, okresy, doby, podsumowanie, statystyki) liczą się przy 15,5 °C,
   a dopasowanie bazy zostaje informacyjne (best_fit_balance_temp),
 - zmiana korekty Open-Meteo o 0,5 K nie zmienia bazy,
