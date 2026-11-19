@@ -544,9 +544,14 @@ def _telemetry_daily_features(days: int) -> tuple[dict, dict]:
     try:
         audit = _telemetry_history(min(MAX_DAYS, max(1, days)))
         daily = {row.get("day"): row for row in audit.get("daily", [])}
+        fetch_status = audit.get("fetch_status", "complete")
+        state = "partial" if fetch_status == "partial" else "available"
+        errors = audit.get("fetch_errors") or []
         return daily, {
-            "status": "available",
+            "status": state,
             "days": len(daily),
+            "fetch_windows": audit.get("fetch_windows"),
+            "error": "; ".join(errors)[:180] if errors else None,
             "fetched_at": audit.get("fetched_at"),
         }
     except Exception as error:
@@ -1352,7 +1357,7 @@ def _summary_build() -> dict:
 
     telemetry_state = next(
         ({"status": row["telemetry_status"], "error": row.get("telemetry_error")}
-         for row in daily_rows if row.get("telemetry_status") == "unavailable"),
+         for row in daily_rows if row.get("telemetry_status") in ("unavailable", "partial")),
         {"status": "available", "days": sum(1 for row in daily_rows if row.get("telemetry_samples", 0))},
     )
     result = {
@@ -1401,7 +1406,7 @@ def _daily(query: dict) -> dict:
                 r["residual_kg"] = round(r["kg_counter"] - r["model_kg"], 1)
     telemetry_state = next(
         ({"status": row["telemetry_status"], "error": row.get("telemetry_error")}
-         for row in rows if row.get("telemetry_status") == "unavailable"),
+         for row in rows if row.get("telemetry_status") in ("unavailable", "partial")),
         {"status": "available", "days": sum(1 for row in rows if row.get("telemetry_samples", 0))},
     )
     return {"model": model, "daily_model": daily_model, "counter_calibration": counter,
@@ -1499,18 +1504,33 @@ def _telemetry_history(days: int) -> dict:
         }
         if read_keys[channel_index]:
             params["api_key"] = read_keys[channel_index]
-        payload = _request_json(
-            f"{TS_API}/channels/{channel_ids[channel_index]}/feeds.json",
-            params=params, timeout=12
-        )
-        return channel_index, offset, payload.get("feeds", [])
+        try:
+            payload = _request_json(
+                f"{TS_API}/channels/{channel_ids[channel_index]}/feeds.json",
+                params=params, timeout=12
+            )
+            return channel_index, offset, payload.get("feeds", []), None
+        except Exception as error:
+            # Keep successful windows; missing telemetry stays visible as partial coverage.
+            return channel_index, offset, [], f"{type(error).__name__}: {error}"[:160]
 
     feeds_by_channel = [[], []]
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(fetch, jobs))
-    for channel_index, _offset, feeds in sorted(results, key=lambda item: (item[0], -item[1])):
+    errors = []
+    for channel_index, _offset, feeds, error in sorted(results, key=lambda item: (item[0], -item[1])):
         feeds_by_channel[channel_index].extend(feeds)
+        if error:
+            errors.append(error)
     result = fuel_telemetry.analyze(feeds_by_channel, channel_ids, days)
+    result["fetch_status"] = "partial" if errors else "complete"
+    result["fetch_windows"] = {
+        "requested": len(jobs),
+        "completed": len(jobs) - len(errors),
+        "failed": len(errors),
+    }
+    if errors:
+        result["fetch_errors"] = errors[:5]
     result["fetched_at"] = datetime.now(timezone.utc).isoformat()
     _telemetry_history_cache.update(key=cache_key, at=time.monotonic(), data=result)
     return result
