@@ -1430,15 +1430,22 @@ def _planning_forecast(model: dict | None, daily_model: dict | None,
     }
 
 
+def _summary_calibration_inputs(refills: list[dict]):
+    """Use the same full-history calibration evidence as stats, with a separate recent display window."""
+    all_periods = _periods(refills)
+    recent_periods = _periods(refills[-7:])
+    calibration = _calibration(all_periods)
+    counter = _counter_calibration(refills)
+    return recent_periods, calibration, counter
+
+
 def _summary_build() -> dict:
     now = datetime.now(TZ)
     today = now.date()
     with _lock:
         refills = _refills()
         model = _fit_model(refills)                 # model ze wszystkich okresów
-        periods = _periods(refills[-7:])            # okresy z ostatnich tygodni do wskaźników
-        calib = _calibration(periods)
-        counter = _counter_calibration(refills[-7:])
+        recent_periods, calib, counter = _summary_calibration_inputs(refills)
         last7 = [_get_daily(today - timedelta(days=i)) for i in range(7, 0, -1)]
         offset = _om_offset()
     forecast = _forecast() if model else []
@@ -1493,7 +1500,7 @@ def _summary_build() -> dict:
             week["heating_kg_per_hdd"] = round(heat / hdd, 2) if hdd >= 5 else None
 
     # 2) kg na stopniodzień z rzeczywistych dosypek (ostatnie 4 okresy grzewcze)
-    recent = [p for p in periods if p["hdd"] >= 5][-4:]
+    recent = [p for p in recent_periods if p["hdd"] >= 5][-4:]
     refills_based = None
     if recent:
         kg = sum(p["kg"] for p in recent)
@@ -1551,7 +1558,7 @@ def _summary_build() -> dict:
                 days_to_reserve = _days_until(to_reserve, model, forecast, now, daily_model, known_temps)
                 rate_source = "prognoza pogody i model domu"
             if days_to_reserve is None:
-                rate = (week or {}).get("kg_per_day") or (periods[-1]["kg_per_day"] if periods else None)
+                rate = (week or {}).get("kg_per_day") or (recent_periods[-1]["kg_per_day"] if recent_periods else None)
                 days_to_reserve = round(to_reserve / rate, 1) if rate else None
                 rate_source = "średnie zużycie z ostatnich dni"
             hopper = {
