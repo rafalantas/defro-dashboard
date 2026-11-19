@@ -118,7 +118,8 @@ def analyze(feeds_by_channel, channel_ids, days):
             for ts, value in values:
                 day = ts.date().isoformat()
                 if ts.date() >= start:
-                    if kind == "state":
+                    if kind == "state" and key != "pump_valve4d":
+                        # Pompa 4D pracuje stale; nie raportujemy jej czasu pracy.
                         daily_states[day][key].append((ts, value >= 0.5))
                     elif key == "room_c" and value <= 0:
                         # Zachowujemy surową próbkę w audycie serii, ale nie
@@ -128,7 +129,7 @@ def analyze(feeds_by_channel, channel_ids, days):
                         daily_values[day][key].append(value)
 
     daily = []
-    all_keys = [item[0] for channel in CHANNELS for item in channel["series"]]
+    all_keys = [item[0] for channel in CHANNELS for item in channel["series"] if item[0] != "pump_valve4d"]
     for offset in range(days, -1, -1):
         day = (now.date() - timedelta(days=offset)).isoformat()
         row = {"day": day}
