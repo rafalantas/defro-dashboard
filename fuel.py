@@ -32,6 +32,7 @@ from datetime import date, datetime, timedelta, timezone
 from fuel_schema import field_number, timezone as thermoflow_timezone
 from fuel_errors import FuelError
 from fuel_http import request_json as _request_json
+from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
     calibrate_pairs as _calibrate_pairs_impl,
@@ -1366,68 +1367,23 @@ def _telemetry_fetch_windows(days: int, today: date) -> list[tuple[date, date, i
 
 
 def _telemetry_history(days: int) -> dict:
-    """Wewnętrzna historia cech do modelu; pobiera każdą dobę osobno i buforuje wynik."""
-    days = max(1, min(int(days), MAX_DAYS))
-    cache_key = days
-    cached = _telemetry_history_cache["data"]
-    if cached is not None and _telemetry_history_cache["key"] == cache_key:
-        cache_ttl = (TELEMETRY_PARTIAL_CACHE_SECONDS
-                     if cached.get("fetch_status") == "partial"
-                     else TELEMETRY_HISTORY_CACHE_SECONDS)
-        if time.monotonic() - _telemetry_history_cache["at"] < cache_ttl:
-            return cached
-    channel_ids = [TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE]
-    read_keys = [TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE]
-    if not all(channel_ids):
-        raise FuelError(503, "Historia telemetrii wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
-    today = datetime.now(TZ).date()
-    windows = _telemetry_fetch_windows(days, today)
-    jobs = [(channel_index, start_day, end_day, offset)
-            for channel_index in range(2)
-            for start_day, end_day, offset in windows]
-
-    def fetch(job):
-        channel_index, start_day, end_day, offset = job
-        start = datetime.combine(start_day, datetime.min.time(), tzinfo=TZ)
-        end = datetime.combine(end_day, datetime.min.time(), tzinfo=TZ)
-        params = {
-            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
-            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
-            "timezone": "Europe/Warsaw",
-            "results": 8000,
-        }
-        if read_keys[channel_index]:
-            params["api_key"] = read_keys[channel_index]
-        try:
-            payload = _request_json(
-                f"{TS_API}/channels/{channel_ids[channel_index]}/feeds.json",
-                params=params, timeout=12
-            )
-            return channel_index, offset, payload.get("feeds", []), None
-        except Exception as error:
-            # Keep successful windows; missing telemetry stays visible as partial coverage.
-            return channel_index, offset, [], f"{type(error).__name__}: {error}"[:160]
-
-    feeds_by_channel = [[], []]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(fetch, jobs))
-    errors = []
-    for channel_index, _offset, feeds, error in sorted(results, key=lambda item: (item[0], -item[1])):
-        feeds_by_channel[channel_index].extend(feeds)
-        if error:
-            errors.append(error)
-    result = fuel_telemetry.analyze(feeds_by_channel, channel_ids, days)
-    result["fetch_status"] = "partial" if errors else "complete"
-    result["fetch_windows"] = {
-        "requested": len(jobs),
-        "completed": len(jobs) - len(errors),
-        "failed": len(errors),
-    }
-    if errors:
-        result["fetch_errors"] = errors[:5]
-    result["fetched_at"] = datetime.now(timezone.utc).isoformat()
-    _telemetry_history_cache.update(key=cache_key, at=time.monotonic(), data=result)
-    return result
+    """Legacy facade: delegate history retrieval to the injectable provider."""
+    return fetch_telemetry_history(
+        days=days,
+        max_days=MAX_DAYS,
+        channel_ids=[TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE],
+        read_keys=[TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE],
+        today=datetime.now(TZ).date(),
+        tz=TZ,
+        cache=_telemetry_history_cache,
+        cache_ttl=TELEMETRY_HISTORY_CACHE_SECONDS,
+        partial_cache_ttl=TELEMETRY_PARTIAL_CACHE_SECONDS,
+        fetch_windows=_telemetry_fetch_windows,
+        request_json=_request_json,
+        analyze=fuel_telemetry.analyze,
+        endpoint=TS_API,
+        monotonic=time.monotonic,
+    )
 
 
 def _telemetry_audit(query: dict) -> dict:
