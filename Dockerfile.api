@@ -3,5 +3,6 @@ WORKDIR /app
 COPY api.py /app/api.py
 COPY fuel.py /app/fuel.py
 COPY fuel_ai.py /app/fuel_ai.py
+COPY fuel_telemetry.py /app/fuel_telemetry.py
 EXPOSE 8000
 CMD ["python", "-u", "/app/api.py"]
