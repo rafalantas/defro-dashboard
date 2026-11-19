@@ -8,7 +8,7 @@
   function points(payload,key){const item=(payload.series||[]).find(s=>s.id===ids[key]);return (item?.points||[]).filter(p=>Array.isArray(p)&&Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1]))).map(p=>[Number(p[0]),Number(p[1])]).sort((a,b)=>a[0]-b[0]);}
   function configuredMinimumOpening(payload){
     const items=Array.isArray(payload?.menus)?payload.menus:[];
-    const normalize=value=>String(value||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLocaleLowerCase('pl-PL').replace(/[.\\s]+/g,' ').trim();
+    const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pl-PL').replace(/[.\s]+/g,' ').trim();
     const item=items.find(entry=>{
       const label=normalize(entry.label);
       return /min(imalne)? otwarcie/.test(label)&&/zawor/.test(label);
