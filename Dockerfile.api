@@ -8,6 +8,7 @@ COPY fuel_http.py /app/fuel_http.py
 COPY fuel_estimates.py /app/fuel_estimates.py
 COPY fuel_period_analysis.py /app/fuel_period_analysis.py
 COPY fuel_models.py /app/fuel_models.py
+COPY fuel_daily_model.py /app/fuel_daily_model.py
 COPY fuel_refills.py /app/fuel_refills.py
 COPY fuel_refill_provider.py /app/fuel_refill_provider.py
 COPY fuel_counter.py /app/fuel_counter.py
