@@ -45,6 +45,9 @@ assert '/assets/js/diagnostics.js' in HTML
 assert "ThermoFlowApi.get('/api/history?'" in DIAGNOSTICS
 assert 'data-diagnostics-range="24"' in HTML and 'data-diagnostics-range="168"' in HTML and 'data-diagnostics-range="720"' in HTML
 assert "selectedHours=24" in DIAGNOSTICS and "maxGapSeconds" in DIAGNOSTICS
+assert 'id="diagnosticsProgress"' in HTML and 'id="diagnosticsLoadStatus"' in HTML
+assert "Pobrano '+completed+' z '+total" in DIAGNOSTICS
+assert "refreshButton.addEventListener('click',load)" in DIAGNOSTICS
 assert "coCycles" in DIAGNOSTICS and "burner" in DIAGNOSTICS and "cold" in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
 assert "age<=90" in LIVE and "classList.toggle('live',fresh)" in LIVE
@@ -86,6 +89,6 @@ assert "próg z konfiguracji eModul" in DIAGNOSTICS
 assert "v<=5" not in DIAGNOSTICS and "otwarciu ≤5%" not in DIAGNOSTICS
 assert "interrupted:true" in DIAGNOSTICS and "ANALIZA CZĘŚCIOWA" in DIAGNOSTICS
 assert "tylko kompletne cykle bez luk" in DIAGNOSTICS
-assert "setInterval(load,60000)" in DIAGNOSTICS
+assert "setInterval(load,60000)" not in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
 print("Sprint 4 diagnostics: boiler cycles, return protection, valve and pump correlation, read-only: OK")
