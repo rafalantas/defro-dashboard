@@ -43,6 +43,12 @@ from fuel_counter import (
     counter_regime as _counter_regime_impl,
     span_estimate as _span_estimate_impl,
 )
+from fuel_energy import (
+    burner_factor as _burner_factor_impl,
+    burner_kg as _burner_kg_impl,
+    calibration as _calibration_impl,
+    calibrate_burner as _calibrate_burner_impl,
+)
 from fuel_models import (
     LAG_WEIGHT_PREVIOUS,
     LAG_WEIGHT_TODAY,
@@ -931,59 +937,22 @@ def _periods(refills: list[dict]) -> list[dict]:
 
 
 def _calibration(periods: list[dict]) -> dict:
-    """Współczynnik mocy palnika z całego przedziału dosypek z danymi palnika.
-
-    Liczony z sumy wszystkich okresów (także krótkich): różnice w poziomie „do pełna”
-    znoszą się między kolejnymi dosypkami, zostaje tylko niepewność pierwszej i ostatniej.
-    """
-    def usable(group):
-        return [p for p in group if p["est_kg_raw"] and p["days_missing_burner"] == 0]
-
-    old = _calibrate_burner(usable([p for p in periods if datetime.fromisoformat(p["end"]) <= COUNTER_EPOCH]))
-    new = _calibrate_burner(usable([p for p in periods if datetime.fromisoformat(p["start"]) >= COUNTER_EPOCH]))
-    if not new["calibrated"]:
-        new = {**new, "factor": BURNER_FACTOR_AFTER_EPOCH, "provisional": True}
-    after = datetime.now(TZ) >= COUNTER_EPOCH
-    current = new if after else old
-    return {"old": old, "new": new, "after_epoch": after,
-            "factor": current["factor"], "calibrated": current["calibrated"],
-            "provisional": bool(current.get("provisional")),
-            "periods_used": current["periods_used"], "days": current["days"]}
+    return _calibration_impl(periods, COUNTER_EPOCH, datetime.now(TZ),
+                             BURNER_FACTOR_AFTER_EPOCH, MIN_PERIOD_DAYS)
 
 
 def _calibrate_burner(usable: list) -> dict:
-    actual = sum(p["kg"] for p in usable)
-    est = sum(p["est_kg_raw"] for p in usable)
-    days = sum(p["days"] for p in usable)
-    if not usable or est <= 0 or days < MIN_PERIOD_DAYS:
-        return {"factor": 1.0, "calibrated": False, "periods_used": len(usable), "days": round(days, 1)}
-    return {"factor": round(actual / est, 3), "calibrated": True, "periods_used": len(usable), "days": round(days, 1)}
+    return _calibrate_burner_impl(usable, MIN_PERIOD_DAYS)
 
 
 def _burner_factor(calib: dict, moment: datetime) -> float:
-    """Współczynnik mocy palnika właściwy dla chwili (przed epoką stary, od epoki nowy lub oczekiwany)."""
-    return (calib["old"] if moment < COUNTER_EPOCH else calib["new"])["factor"]
+    return _burner_factor_impl(calib, moment, COUNTER_EPOCH)
 
 
 def _burner_kg(start: datetime, end: datetime, calib: dict):
-    """kg z mocy palnika w przedziale; część przed epoką liczona starym, po epoce nowym współczynnikiem."""
-    parts = []
-    if start < COUNTER_EPOCH:
-        parts.append((start, min(end, COUNTER_EPOCH)))
-    if end > COUNTER_EPOCH:
-        parts.append((max(start, COUNTER_EPOCH), end))
-    if not parts:
-        return None
-    total = 0.0
-    for a, b in parts:
-        _hdd, kwh, _hdd_missing, kwh_missing = _period_sums(a, b)
-        if kwh_missing:
-            return None
-        total += kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, a)
-    return total
+    return _burner_kg_impl(start, end, calib, COUNTER_EPOCH, _period_sums,
+                           PELLET_KWH_PER_KG, BOILER_EFF)
 
-
-# ---------------------------------------------------------------- akcje
 
 def _stats(query: dict) -> dict:
     try:
