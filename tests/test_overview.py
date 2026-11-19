@@ -30,3 +30,18 @@ assert "POST" not in OVERVIEW and "DELETE" not in OVERVIEW
 assert "setInterval" not in NAV, "Navigation must not overwrite live Overview values"
 assert "reference-model" not in OVERVIEW
 print(f"Overview regression: {len(required_ids)} required elements, API event wiring, read-only behavior: OK")
+
+
+# Sprint 3 read-only diagnostics and truthful live indicator.
+DIAGNOSTICS = (ROOT / "assets/js/diagnostics.js").read_text(encoding="utf-8")
+MOTION = (ROOT / "assets/css/motion.css").read_text(encoding="utf-8")
+assert 'id="diagnosticsHistoryState"' in HTML
+assert 'id="diagnosticsSummary"' in HTML and 'id="diagnosticsEvents"' in HTML
+assert '/assets/js/diagnostics.js' in HTML
+assert "'/api/history?hours=24'" in DIAGNOSTICS or '"/api/history?hours=24"' in DIAGNOSTICS
+assert "analysis" in DIAGNOSTICS and "burner_runs" in DIAGNOSTICS and "protection_cycles" in DIAGNOSTICS
+assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
+assert "age<=90" in LIVE and "classList.toggle('live',fresh)" in LIVE
+assert ".badge.live::before" in MOTION and "emodul-live-pulse" in MOTION
+assert "good live" in OVERVIEW
+print("Sprint 3 diagnostics: history analysis, read-only event list, truthful eModul live indicator: OK")
