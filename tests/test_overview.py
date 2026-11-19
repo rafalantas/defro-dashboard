@@ -68,12 +68,15 @@ assert "settings?.co_recovery_target" in DIAGNOSTICS
 assert "settings?.return_protection_min" in DIAGNOSTICS
 assert "settings?.max_sample_gap_seconds" in DIAGNOSTICS
 assert "settings?.pump_correlation_window_seconds" in DIAGNOSTICS
+assert "settings?.return_protection_tolerance" in DIAGNOSTICS
+assert "settings?.boiler_power_active_min_kw" in DIAGNOSTICS
+assert "settings?.valve_change_min_delta" in DIAGNOSTICS
 assert '"analysis_config": analysis_config' in API
 assert 'configured_menu_value(2203)' in API
 assert 'configured_menu_value(2060)' in API and 'configured_menu_value(2062)' in API
 assert "v<64" not in DIAGNOSTICS and "v>=70" not in DIAGNOSTICS and "v<55" not in DIAGNOSTICS
 assert "MAX_GAP=300" not in DIAGNOSTICS
-assert "próg z konfiguracji pieca" in DIAGNOSTICS
+assert "próg z konfiguracji eModul" in DIAGNOSTICS
 assert "v<=5" not in DIAGNOSTICS and "otwarciu ≤5%" not in DIAGNOSTICS
 assert "interrupted:true" in DIAGNOSTICS and "ANALIZA CZĘŚCIOWA" in DIAGNOSTICS
 assert "tylko kompletne cykle bez luk" in DIAGNOSTICS
