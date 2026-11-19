@@ -27,13 +27,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python syntax
-        run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py fuel_refills.py fuel_counter.py fuel_energy.py fuel_planning.py fuel_errors.py fuel_http.py fuel_telemetry_provider.py fuel_estimates.py
+        run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py fuel_refills.py fuel_counter.py fuel_energy.py fuel_planning.py fuel_errors.py fuel_http.py fuel_telemetry_provider.py fuel_weather_provider.py fuel_estimates.py
       - name: Fuel Intelligence regression
         run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py tests/test_fuel_calibration_windows.py
       - name: Fuel HTTP transport regression
         run: python -m unittest tests/test_fuel_http.py
       - name: Fuel estimate contract regression
-        run: python -m unittest tests/test_fuel_estimates.py tests/test_fuel_estimate_selection.py
+        run: python -m unittest tests/test_fuel_estimates.py tests/test_fuel_estimate_selection.py tests/test_fuel_weather_provider.py
       - name: Fuel refill regression
         run: python -m unittest tests/test_fuel_refills.py
       - name: Fuel pure model regression
@@ -51,7 +51,7 @@ jobs:
       - name: HDD base regression
         run: python tests/test_hdd_base.py
       - name: API module import smoke test
-        run: python -c "import api; import fuel; import fuel_ai; import fuel_telemetry; import fuel_schema; import fuel_models; import fuel_refills; import fuel_counter; import fuel_energy; import fuel_planning; import fuel_errors; import fuel_http; import fuel_telemetry_provider; import fuel_estimates"
+        run: python -c "import api; import fuel; import fuel_ai; import fuel_telemetry; import fuel_schema; import fuel_models; import fuel_refills; import fuel_counter; import fuel_energy; import fuel_planning; import fuel_errors; import fuel_http; import fuel_telemetry_provider; import fuel_weather_provider; import fuel_estimates"
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
       - name: History analysis regression
