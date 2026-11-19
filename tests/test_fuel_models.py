@@ -25,7 +25,7 @@ class FuelModelsTests(unittest.TestCase):
             "kg_per_wind_hdd": 0.1,
         }
         self.assertEqual(fuel_models._predict_kg_per_day(model, 10.0), 6.0)
-        self.assertEqual(fuel_models._predict_daily(model, 10.0, 5.0, 20.0), 6.1)
+        self.assertAlmostEqual(fuel_models._predict_daily(model, 10.0, 5.0, 20.0), 6.1)
 
     def test_hdd_regression_preserves_legacy_coefficients(self):
         rows = [
