@@ -232,14 +232,15 @@ smoke test now includes the provider module.
 
 ## Recommended ThermoFlow 2.0 sequence
 
-1. **Canonical contract:** shared schema and timezone are in place; the provenance-aware estimate contract is now defined and tested, without changing production selection or calculations.
+1. **Canonical contract:** shared schema/timezone, provenance-aware estimate contract and explicit legacy source-precedence function are in place and tested.
 2. **API isolation:** make core API independent of fuel-engine import and warmup failures; preserve all route contracts.
-3. **Legacy adapter:** wrap current `fuel.py` behind a stable engine interface without changing its calculations.
-4. **New engine implementation:** move domain logic into cohesive modules (refills, counter, energy, weather/HDD, telemetry features, forecasts/planning, estimates). Do not copy the 1,779-line module as one new file.
-5. **Shadow parity:** feed identical normalized snapshots to legacy and new engines. Compare source-by-source outputs, calibration state, coverage and uncertainty; do not write shadow results into production dashboard fields.
-6. **Operational validation:** test cold start, missing ThingSpeak channel, partial telemetry, stale cache, epoch-crossing refill periods, daylight-saving transitions and Docker images.
-7. **Controlled cutover:** only after documented parity and explicit approval; keep a tested rollback to the legacy adapter.
-8. **Cleanup:** remove legacy implementation only after stable operation has been demonstrated.
+3. **Provider and cache extraction:** continue with ThingSpeak/Open-Meteo daily/weather/refill providers and explicit cache ownership, retaining TTLs and failure semantics.
+4. **Legacy adapter:** wrap current `fuel.py` behind a stable engine interface without changing its calculations.
+5. **New engine implementation:** move domain logic into cohesive modules (refills, counter, energy, weather/HDD, telemetry features, forecasts/planning, estimates). Do not copy the monolith as one new file.
+6. **Shadow parity:** feed identical normalized snapshots to legacy and new engines. Compare source-by-source outputs, calibration state, coverage and uncertainty; do not write shadow results into production dashboard fields.
+7. **Operational validation:** test cold start, missing ThingSpeak channel, partial telemetry, stale cache, epoch-crossing refill periods, daylight-saving transitions and Docker images.
+8. **Controlled cutover:** only after documented parity and explicit approval; keep a tested rollback to the legacy adapter.
+9. **Cleanup:** remove legacy implementation only after stable operation has been demonstrated.
 
 ## Non-negotiable safety boundary
 
