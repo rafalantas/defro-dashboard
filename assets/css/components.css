@@ -21,3 +21,15 @@
 .overview-model h4{margin:0 0 3px;font-size:11px;color:var(--text)}
 .overview-muted{margin:0;color:var(--muted);font-size:10px;line-height:1.5}
 @media(max-width:760px){.overview-columns{grid-template-columns:1fr}.overview-columns>.overview-section+ .overview-section{border-left:0}.overview-section{padding:12px}}
+
+/* Sprint 3 diagnostics history */
+.diagnostics-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;padding:14px 18px}
+.diagnostics-kpi{padding:12px;border:1px solid var(--line,#263944);border-radius:9px;background:var(--panel,#14232d);min-width:0}
+.diagnostics-kpi span{display:block;color:var(--muted,#91a3aa);font-size:10px;margin-bottom:6px}
+.diagnostics-kpi strong{font:600 17px var(--mono,monospace);color:var(--text,#e4edef)}
+.diagnostics-events{display:grid;gap:7px;padding:0 18px 16px}
+.diagnostics-event{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 12px;border:1px solid var(--line,#263944);border-radius:8px;background:var(--panel,#14232d);font-size:11px}
+.diagnostics-event time{color:var(--muted,#91a3aa);font:10px var(--mono,monospace);white-space:nowrap}
+.diagnostics-event strong{display:block;margin-bottom:3px}
+.diagnostics-event small{color:var(--muted,#91a3aa);font-size:10px}
+@media(max-width:760px){.diagnostics-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}.diagnostics-events{padding:0 12px 12px}.diagnostics-event{flex-direction:column;gap:5px}}
