@@ -17,16 +17,19 @@ class FuelTelemetryTests(unittest.TestCase):
         self.assertEqual(row["co_c_mean"], 61.0)
         self.assertEqual(row["outdoor_c_mean"], 4.75)
 
-    def test_pump_runtime_ignores_long_gaps(self):
+    def test_valve4d_pump_is_audited_but_has_no_runtime_total(self):
         feeds = [
-            {"created_at": "2026-11-18T10:00:00Z", "field4": "1"},
-            {"created_at": "2026-11-18T10:00:40Z", "field4": "1"},
-            {"created_at": "2026-11-18T10:20:00Z", "field4": "0"},
+            {"created_at": "2026-11-18T10:00:00Z", "field4": "1", "field5": "1"},
+            {"created_at": "2026-11-18T10:00:40Z", "field4": "1", "field5": "1"},
+            {"created_at": "2026-11-18T10:20:00Z", "field4": "1", "field5": "0"},
         ]
         result = fuel_telemetry.analyze([[], feeds], ["123", "456"], 2)
         row = next(item for item in result["daily"] if item["day"] == "2026-11-18")
-        self.assertAlmostEqual(row["pump_valve4d_runtime_h"], 40 / 3600, places=4)
-        self.assertAlmostEqual(row["pump_valve4d_known_h"], 40 / 3600, places=4)
+        self.assertNotIn("pump_valve4d_runtime_h", row)
+        self.assertNotIn("pump_valve4d_known_h", row)
+        self.assertAlmostEqual(row["pump_floor_runtime_h"], 40 / 3600, places=4)
+        valve_series = next(item for item in result["series"] if item["id"] == "thermoflow-pump-valve4d")
+        self.assertEqual(valve_series["samples"], 3)  # surowy audyt nadal jest dostępny
 
     def test_zero_room_temperature_is_excluded_from_daily_calculations(self):
         feeds = [
