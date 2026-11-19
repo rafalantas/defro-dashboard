@@ -1215,9 +1215,12 @@ def _read_diagnostics() -> dict:
             if co_target is not None and boiler_hysteresis is not None else None
         ),
         "return_protection_min": 55.0,
+        "return_protection_tolerance": 1.0,
         "valve_minimum_opening": valve_minimum_opening,
         "max_sample_gap_seconds": 300,
         "pump_correlation_window_seconds": 600,
+        "boiler_power_active_min_kw": 0.0,
+        "valve_change_min_delta": 3.0,
     }
 
     return {
