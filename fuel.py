@@ -156,6 +156,7 @@ _weather_fetched: dict[str, float] = {}  # kiedy pobrano prognozę dla dziś i k
 _daily_model_cache: dict = {"key": None, "data": None}
 _telemetry_history_cache: dict = {"key": None, "at": 0.0, "data": None}
 TELEMETRY_HISTORY_CACHE_SECONDS = 6 * 3600
+TELEMETRY_PARTIAL_CACHE_SECONDS = 10 * 60
 TELEMETRY_FETCH_CHUNK_DAYS = 3
 WEATHER_VARS = "shortwave_radiation_sum,wind_speed_10m_max"
 MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby dopasować model dobowy
@@ -1480,7 +1481,10 @@ def _telemetry_history(days: int) -> dict:
     cache_key = days
     cached = _telemetry_history_cache["data"]
     if cached is not None and _telemetry_history_cache["key"] == cache_key:
-        if time.monotonic() - _telemetry_history_cache["at"] < TELEMETRY_HISTORY_CACHE_SECONDS:
+        cache_ttl = (TELEMETRY_PARTIAL_CACHE_SECONDS
+                     if cached.get("fetch_status") == "partial"
+                     else TELEMETRY_HISTORY_CACHE_SECONDS)
+        if time.monotonic() - _telemetry_history_cache["at"] < cache_ttl:
             return cached
     channel_ids = [TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE]
     read_keys = [TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE]
