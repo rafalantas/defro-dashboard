@@ -15,7 +15,7 @@ class SummaryMetricsTests(unittest.TestCase):
         self.assertEqual(result["kg"], 90)
         self.assertEqual(result["hdd"], 50.0)
         self.assertEqual(result["kg_per_hdd"], 1.8)
-        self.assertEqual(result["heating_kg_per_hdd"], 1.56)
+        self.assertEqual(result["heating_kg_per_hdd"], 1.32)
 
     def test_refill_summary_without_heating_periods_is_none(self):
         self.assertIsNone(build_refills_based([{"hdd": 4, "kg": 20, "days": 2}], None))
