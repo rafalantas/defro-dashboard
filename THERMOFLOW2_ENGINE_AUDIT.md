@@ -195,6 +195,26 @@ Keep this read-only analysis capability separate from the fuel estimator.
 - Existing `/api/fuel/*` paths, JSON keys, units, null behavior, HTTP statuses and authentication behavior.
 - Background summary warmup and cache behavior until a separately validated replacement is ready.
 
+### Current estimate-selection contract
+
+The hopper's current-consumption selection is now represented by the pure
+`fuel_estimates.select_usage_estimate()` function and covered by dedicated
+precedence tests. The preserved order is:
+
+1. valid counter-derived consumption (including its provisional/collecting label);
+2. burner-energy estimate when calibration has at least 7 days;
+3. refill/HDD house model;
+4. burner-energy estimate when calibration is shorter than 7 days;
+5. recent refill-period average;
+6. unavailable when no source can produce a value.
+
+The helper is now called by the legacy `fuel.py` path; it does not switch the
+dashboard to the new typed `Estimate` object or change estimate units. This
+also removes a latent fallback reference to an undefined local `periods`
+variable: the fallback now uses the explicitly prepared recent refill periods.
+Keep the selection tests as a migration gate before introducing any new
+selection policy.
+
 ### Current extraction progress — telemetry provider
 
 The ThingSpeak telemetry-history retrieval path has been moved behind
