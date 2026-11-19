@@ -7,7 +7,9 @@ extraction does not change endpoint contracts or cache policy.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+
+from fuel_errors import FuelError
 
 
 def fetch_history(*, days, max_days, channel_ids, read_keys, today, tz,
@@ -24,7 +26,7 @@ def fetch_history(*, days, max_days, channel_ids, read_keys, today, tz,
             return cached
 
     if not all(channel_ids):
-        raise ValueError("Historia telemetrii wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
+        raise FuelError(503, "Historia telemetrii wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
 
     windows = fetch_windows(days, today)
     jobs = [(channel_index, start_day, end_day, offset)
