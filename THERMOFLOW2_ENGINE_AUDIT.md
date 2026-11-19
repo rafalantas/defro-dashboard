@@ -296,6 +296,20 @@ new module and tests.
 This is a responsibility extraction only; it does not change estimate
 selection or make any shadow output production-visible.
 
+### Stable engine interface
+
+`fuel_engine.py` now defines the runtime contract consumed by `api.py`
+(`handle()` and `warmup()`) and a `LegacyFuelEngine` adapter around the
+current `fuel.py` implementation. API route dispatch now depends on this
+interface rather than importing the legacy implementation directly. Loading
+remains lazy: importing the core API or the interface does not import
+`fuel.py`; a legacy import failure is still translated into the existing
+fuel-subsystem-unavailable response. The adapter contract is covered by
+dedicated tests, and the module is included in the API image and CI.
+
+This is the stable replacement seam, not a cutover: the adapter still delegates
+all production calculations to the existing legacy implementation.
+
 ## Recommended ThermoFlow 2.0 sequence
 
 1. **Canonical contract:** shared schema/timezone, provenance-aware estimate contract and explicit legacy source-precedence function are in place and tested.
