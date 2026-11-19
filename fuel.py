@@ -156,6 +156,7 @@ _weather_fetched: dict[str, float] = {}  # kiedy pobrano prognozę dla dziś i k
 _daily_model_cache: dict = {"key": None, "data": None}
 _telemetry_history_cache: dict = {"key": None, "at": 0.0, "data": None}
 TELEMETRY_HISTORY_CACHE_SECONDS = 6 * 3600
+TELEMETRY_FETCH_CHUNK_DAYS = 3
 WEATHER_VARS = "shortwave_radiation_sum,wind_speed_10m_max"
 MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby dopasować model dobowy
 DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
@@ -566,7 +567,7 @@ def _daily_rows(days: int = 120):
         return out, counter
 
     # Telemetria jest dołączana do tych samych dób co skalibrowany licznik paliwa.
-    # Audyt ma limit 14 dni; starsze dni pozostają bez cech instalacji i nie są imputowane.
+    # Wewnętrzna historia modelu może sięgać MAX_DAYS; publiczny audyt ma osobny limit 14 dni.
     telemetry_by_day, telemetry_state = _telemetry_daily_features(days)
 
     d = max(ts_start + timedelta(days=1), today - timedelta(days=days))
@@ -1451,6 +1452,23 @@ def _check_token(headers):
 
 
 
+def _telemetry_fetch_windows(days: int, today: date) -> list[tuple[date, date, int]]:
+    """Split inclusive local-day history into bounded, non-overlapping 3-day windows.
+
+    At the configured minimum 35-second ThingSpeak write interval, even a 73-hour
+    daylight-saving window remains below the 8,000-feed response limit.
+    """
+    windows = []
+    start_offset = days
+    while start_offset >= 0:
+        end_offset = max(-1, start_offset - TELEMETRY_FETCH_CHUNK_DAYS)
+        start_day = today - timedelta(days=start_offset)
+        end_day = today - timedelta(days=end_offset)
+        windows.append((start_day, end_day, start_offset))
+        start_offset = end_offset
+    return windows
+
+
 def _telemetry_history(days: int) -> dict:
     """Wewnętrzna historia cech do modelu; pobiera każdą dobę osobno i buforuje wynik."""
     days = max(1, min(int(days), MAX_DAYS))
@@ -1464,13 +1482,15 @@ def _telemetry_history(days: int) -> dict:
     if not all(channel_ids):
         raise FuelError(503, "Historia telemetrii wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
     today = datetime.now(TZ).date()
-    jobs = [(channel_index, offset) for channel_index in range(2) for offset in range(days, -1, -1)]
+    windows = _telemetry_fetch_windows(days, today)
+    jobs = [(channel_index, start_day, end_day, offset)
+            for channel_index in range(2)
+            for start_day, end_day, offset in windows]
 
     def fetch(job):
-        channel_index, offset = job
-        day = today - timedelta(days=offset)
-        start = datetime.combine(day, datetime.min.time(), tzinfo=TZ)
-        end = start + timedelta(days=1)
+        channel_index, start_day, end_day, offset = job
+        start = datetime.combine(start_day, datetime.min.time(), tzinfo=TZ)
+        end = datetime.combine(end_day, datetime.min.time(), tzinfo=TZ)
         params = {
             "start": start.strftime("%Y-%m-%d %H:%M:%S"),
             "end": end.strftime("%Y-%m-%d %H:%M:%S"),
