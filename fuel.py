@@ -21,6 +21,7 @@ więc ilość dosypana = zużycie od poprzedniej dosypki. Pierwsza dosypka to pu
 from __future__ import annotations
 
 import hmac
+import fuel_ai
 import json
 import os
 import threading
@@ -1306,8 +1307,10 @@ def _summary_build() -> dict:
         with _lock:
             daily_rows, _counter_info = _daily_rows()
             daily_model = _fit_daily_model(daily_rows)
+            ai_shadow = fuel_ai.evaluate(daily_rows)
     except FuelError:
         daily_model = None
+        ai_shadow = {"status": "unavailable", "message": "Brak danych do analizy"}
 
     def est_kg(kwh: float, moment: datetime) -> float:
         return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, moment)
@@ -1431,6 +1434,7 @@ def _summary_build() -> dict:
         "hdd_base_fixed": HDD_BASE_FIXED is not None,
         "om_offset": offset,
         "daily_model": daily_model,
+        "ai_shadow": ai_shadow,
         "forecast": [{"day": d.isoformat(), "t_mean": t,
                       "solar_mj": _weather(d).get("solar_mj"),
                       "wind_max_kmh": _weather(d).get("wind_max_kmh"),
