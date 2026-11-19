@@ -277,6 +277,25 @@ Dedicated tests cover complete fetch + cache reuse, partial upstream failure,
 and the existing HTTP 503 contract for missing channels. The CI syntax/import
 smoke test now includes the provider module.
 
+### Refill-period analysis extraction
+
+The refill-period calculation previously embedded in `fuel.py` now lives in
+`fuel_period_analysis.py`. The module receives period aggregates, counter
+observations, the current HDD model, calibration epoch and physical constants
+through explicit dependencies. It does not own HTTP access, environment
+configuration or caches.
+
+The compatibility wrapper in `fuel.py` delegates to this module and preserves
+the legacy period payload, including raw burner-energy estimate, missing-day
+counts, HDD/energy ratios, optional heating breakdown, counter-floor behavior
+and old/new/epoch classification. Dedicated tests cover the output arithmetic,
+missing observations, invalid/overlong intervals, bounded recent history and
+the feeder-epoch boundary. The API Docker image and ThermoFlow CI include the
+new module and tests.
+
+This is a responsibility extraction only; it does not change estimate
+selection or make any shadow output production-visible.
+
 ## Recommended ThermoFlow 2.0 sequence
 
 1. **Canonical contract:** shared schema/timezone, provenance-aware estimate contract and explicit legacy source-precedence function are in place and tested.
