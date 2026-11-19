@@ -20,6 +20,19 @@ ThermoFlow 2.0 must preserve these as distinguishable sources. It must never sil
 
 **No production changes are recommended as part of this audit.** The dashboard must not gain boiler-control behavior. The 4D valve, pumps, controller settings and especially the 55 °C return-protection target remain outside the migration scope.
 
+## Implementation progress on this branch
+
+The first refactor stage has now addressed several audit findings without replacing production calculations:
+
+- **F1 — API isolation:** `api.py` no longer imports `fuel` at module load. Fuel routes load the optional engine lazily; warmup runs in a daemon thread after the HTTP server is created. A fuel import/warmup failure no longer prevents the core server from starting.
+- **F3 — calibration windows:** summary calibration now uses the same full refill history as statistics; the recent seven-refill window remains separate for recent-period display metrics. A focused regression test protects this distinction.
+- **F4 — AI validation:** AI output now reports both expanding-window walk-forward scores and a fixed holdout score whose scored rows are never used for fitting. Existing top-level score fields and shadow-only behavior remain for compatibility; the acceptance flag still follows the existing walk-forward gain threshold.
+- **F6 — ThingSpeak schema:** `fuel_schema.py` is now the canonical definition of both eight-field channels. API writes/history, fuel field indexes and telemetry parsing derive from it. Contract tests cover field order and semantic IDs.
+- **F7 — timezone:** API, fuel and telemetry now obtain their timezone from the shared schema configuration, retaining Europe/Warsaw as the default.
+- Docker packaging and CI include the shared schema and its regression tests.
+
+These are branch changes only. They do not constitute a production cutover; `fuel.py` remains the production calculation path, and AI remains shadow-only. CI must pass on the latest branch head before this stage is considered validated.
+
 ## Module inventory
 
 ### `fuel.py` — legacy production engine
