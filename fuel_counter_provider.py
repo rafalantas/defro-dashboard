@@ -1,7 +1,7 @@
 """ThingSpeak hopper-counter history provider."""
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, time, timedelta, timezone
 
 
 def fetch_counter_points(*, day, today, cache, channel_id, field_number,
@@ -12,10 +12,8 @@ def fetch_counter_points(*, day, today, cache, channel_id, field_number,
     if not channel_id:
         return []
 
-    start = __import__("datetime").datetime.combine(
-        day, __import__("datetime").time.min, tzinfo=tz
-    )
-    end = start + __import__("datetime").timedelta(days=1)
+    start = datetime.combine(day, time.min, tzinfo=tz)
+    end = start + timedelta(days=1)
     params = {
         "start": start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         "end": end.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
