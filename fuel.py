@@ -33,6 +33,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from fuel_schema import field_number, timezone as thermoflow_timezone
+from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_models import (
     LAG_WEIGHT_PREVIOUS,
     LAG_WEIGHT_TODAY,
@@ -950,19 +951,8 @@ def _period_sums(start: datetime, end: datetime, base: float | None = None):
 # ---------------------------------------------------------------- dosypki
 
 def _merge_close_refills(refills: list[dict]) -> list[dict]:
-    """Wpisy oddalone o mniej niż 30 minut to jedna dosypka: suma kg, czas i id ostatniego wpisu."""
-    merged: list[dict] = []
-    for r in refills:
-        if merged and (_parse_ts(r["ts"]) - _parse_ts(merged[-1]["ts"])).total_seconds() < REFILL_MERGE_SECONDS:
-            m = merged[-1]
-            m["kg"] = round(m["kg"] + r["kg"], 3)
-            m["ts"], m["id"] = r["ts"], r["id"]
-            m["ids"].append(r["id"])
-            notes = [x for x in (m.get("note"), r.get("note")) if x]
-            m["note"] = " + ".join(notes) if notes else None
-        else:
-            merged.append({**r, "ids": [r["id"]]})
-    return merged
+    """Compatibility wrapper for the pure refill event merger."""
+    return _merge_close_refills_impl(refills, REFILL_MERGE_SECONDS, _parse_ts)
 
 
 def _refills() -> list[dict]:
@@ -992,19 +982,7 @@ def _refills_uncached() -> list[dict]:
     if TS_READ_KEY_FUEL:
         params["api_key"] = TS_READ_KEY_FUEL
     feeds = _request_json(f"{TS_API}/channels/{TS_CHANNEL_FUEL}/feeds.json", params).get("feeds", [])
-    voided = {int(f["field3"]) for f in feeds if f.get("field3") not in (None, "")}
-    out = []
-    for f in feeds:
-        if f.get("field1") in (None, "") or f["entry_id"] in voided:
-            continue
-        out.append({
-            "id": f["entry_id"],
-            "ts": _parse_ts(f["created_at"]).astimezone(TZ).isoformat(),
-            "kg": float(f["field1"]),
-            "note": f.get("field2") or None,
-        })
-    out.sort(key=lambda r: _parse_ts(r["ts"]))
-    return out
+    return normalize_refill_feeds(feeds, TZ, _parse_ts)
 
 
 def _ts_write(fields: dict, created_at: datetime | None = None) -> int:
