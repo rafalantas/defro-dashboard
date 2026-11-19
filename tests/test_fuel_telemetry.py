@@ -27,7 +27,7 @@ class FuelTelemetryTests(unittest.TestCase):
         row = next(item for item in result["daily"] if item["day"] == "2026-11-18")
         self.assertNotIn("pump_valve4d_runtime_h", row)
         self.assertNotIn("pump_valve4d_known_h", row)
-        self.assertAlmostEqual(row["pump_floor_runtime_h"], 40 / 3600, places=4)
+        self.assertEqual(row["pump_floor_runtime_h"], 0.01)  # API exposes runtime rounded to 2 decimal places
         valve_series = next(item for item in result["series"] if item["id"] == "thermoflow-pump-valve4d")
         self.assertEqual(valve_series["samples"], 3)  # surowy audyt nadal jest dostępny
 

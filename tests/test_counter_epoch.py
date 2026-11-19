@@ -128,6 +128,8 @@ def fake(url, params=None, form=None, payload=None, timeout=10):
 
 
 fuel._request_json = fake
+# This test isolates counter calibration; telemetry features are covered by test_fuel_telemetry.py.
+fuel._telemetry_history = lambda days: {"daily": []}
 
 
 def reset(entries):
