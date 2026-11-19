@@ -36,7 +36,7 @@ The first refactor stage has now addressed several audit findings without replac
 - **Counter domain extraction:** old/new feeder calibration, epoch-spanning estimates, provisional coefficients and interval splitting now live in `fuel_counter.py`.
 - **Burner-energy extraction:** energy calibration and kWh-to-kg conversion, including epoch splitting, now live in `fuel_energy.py`.
 - **Planning extraction:** weather-aware kg/day, days-to-reserve and today/week/month/season pellet planning now live in `fuel_planning.py`; weather/network providers remain injected by the compatibility adapter.
-- **Transport/error extraction:** upstream JSON transport and the shared `FuelError` contract now live in `fuel_http.py` and `fuel_errors.py`; `fuel.py` retains the legacy names as imports.
+- **Transport/error extraction:** upstream JSON transport and the shared `FuelError` contract now live in `fuel_http.py` and `fuel_errors.py`; `fuel.py` retains the legacy names as imports.\n- **Estimate contract:** `fuel_estimates.py` defines a provenance-preserving estimate record with explicit source, unit, measured/calibrated/provisional/predicted/unavailable status, uncertainty, coverage, calibration regime, model version and time window. It is deliberately not wired into production selection yet; the current precedence must be characterized first. Dedicated contract tests run in CI and the module is packaged in the API image.
 - `fuel.py` re-exports these operations through compatibility wrappers, so existing callers and tests keep their names and payload behavior.
 - Docker packaging and CI include all extracted modules, plus focused regression tests.
 
@@ -197,7 +197,7 @@ Keep this read-only analysis capability separate from the fuel estimator.
 
 ## Recommended ThermoFlow 2.0 sequence
 
-1. **Canonical contract:** introduce shared schema/config/data types and tests; no calculation changes.
+1. **Canonical contract:** shared schema and timezone are in place; the provenance-aware estimate contract is now defined and tested, without changing production selection or calculations.
 2. **API isolation:** make core API independent of fuel-engine import and warmup failures; preserve all route contracts.
 3. **Legacy adapter:** wrap current `fuel.py` behind a stable engine interface without changing its calculations.
 4. **New engine implementation:** move domain logic into cohesive modules (refills, counter, energy, weather/HDD, telemetry features, forecasts/planning, estimates). Do not copy the 1,779-line module as one new file.
