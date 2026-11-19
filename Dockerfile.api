@@ -6,6 +6,7 @@ COPY fuel_models.py /app/fuel_models.py
 COPY fuel_refills.py /app/fuel_refills.py
 COPY fuel_counter.py /app/fuel_counter.py
 COPY fuel_energy.py /app/fuel_energy.py
+COPY fuel_planning.py /app/fuel_planning.py
 COPY fuel_schema.py /app/fuel_schema.py
 COPY fuel_ai.py /app/fuel_ai.py
 COPY fuel_telemetry.py /app/fuel_telemetry.py
