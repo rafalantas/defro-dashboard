@@ -23,7 +23,7 @@ assert "/api/status" in LIVE
 assert "/api/fuel/summary" in FUEL
 assert "daily_model" in OVERVIEW and "days_needed" in OVERVIEW
 assert "periods_used" in OVERVIEW and "kg_per_hdd" in OVERVIEW
-assert "valve.return" in OVERVIEW
+assert "v.return" in OVERVIEW
 assert "55 °C ±1 °C" in HTML
 assert "STB pozostaje bez odczytu" in HTML
 assert "POST" not in OVERVIEW and "DELETE" not in OVERVIEW
