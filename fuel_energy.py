@@ -16,7 +16,7 @@ def calibrate_burner(usable: list, min_period_days: float) -> dict:
             "periods_used": len(usable), "days": round(days, 1)}
 
 
-def calibration(periods: list[dict], counter_epoch: datetime,
+def calibration(periods: list[dict], counter_epoch: datetime, now: datetime,
                 provisional_factor: float, min_period_days: float) -> dict:
     """Build old/new burner calibration while retaining the post-epoch provisional factor."""
     def usable(group):
@@ -32,7 +32,7 @@ def calibration(periods: list[dict], counter_epoch: datetime,
     )
     if not new["calibrated"]:
         new = {**new, "factor": provisional_factor, "provisional": True}
-    after = datetime.now(counter_epoch.tzinfo) >= counter_epoch
+    after = now >= counter_epoch
     current = new if after else old
     return {
         "old": old, "new": new, "after_epoch": after,
