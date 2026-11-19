@@ -127,6 +127,8 @@ _counter_cache: dict[str, list] = {}   # zakończone doby: punkty zmian licznika
 _weather_cache: dict[str, dict] = {}   # słońce i wiatr z Open-Meteo dla dób
 _weather_fetched: dict[str, float] = {}  # kiedy pobrano prognozę dla dziś i kolejnych dób
 _daily_model_cache: dict = {"key": None, "data": None}
+_telemetry_history_cache: dict = {"key": None, "at": 0.0, "data": None}
+TELEMETRY_HISTORY_CACHE_SECONDS = 6 * 3600
 WEATHER_VARS = "shortwave_radiation_sum,wind_speed_10m_max"
 MIN_DAILY_DAYS = 30                    # tyle pełnych dób z licznikiem, żeby dopasować model dobowy
 DAILY_MODEL_MIN_GAIN = 0.03            # dodatkowy czynnik musi poprawić błąd prognozy o co najmniej 3 %
@@ -682,6 +684,16 @@ def _daily_rows(days: int = 120):
     out = []
     if not ts_start:
         return out, counter
+
+    # Telemetria jest dołączana do tych samych dób co skalibrowany licznik paliwa.
+    # Audyt ma limit 14 dni; starsze dni pozostają bez cech instalacji i nie są imputowane.
+    telemetry_by_day = {}
+    try:
+        audit = _telemetry_history(min(MAX_DAYS, max(1, days)))
+        telemetry_by_day = {row.get("day"): row for row in audit.get("daily", [])}
+    except FuelError:
+        telemetry_by_day = {}
+
     d = max(ts_start + timedelta(days=1), today - timedelta(days=days))
     try:
         prev_t = _get_daily(d - timedelta(days=1)).get("t_mean")
@@ -694,10 +706,31 @@ def _daily_rows(days: int = 120):
         kg = _counter_day_kg(d, counter)
         t_lag = _lagged_temperature(rec.get("t_mean"), prev_t)
         prev_t = rec.get("t_mean")
+        telemetry = telemetry_by_day.get(d.isoformat(), {})
+        # Do modelu trafiają wyłącznie dobowe agregaty o wystarczającym pokryciu.
+        # Analogowe serie wymagają >= 1000 próbek; czasy pomp >= 20 h znanego stanu.
+        def analog(name):
+            value = telemetry.get(name + "_mean")
+            return value if telemetry.get(name + "_samples", 0) >= 1000 else None
+
+        def pump_runtime(name):
+            known = telemetry.get(name + "_known_h")
+            return telemetry.get(name + "_runtime_h") if known is not None and known >= 20 else None
+
         out.append({"day": d.isoformat(), "t_mean": rec.get("t_mean"), "hdd": rec.get("hdd"),
                     "t_lag": round(t_lag, 2) if t_lag is not None else None,
                     "hdd_lag": round(max(0.0, base - t_lag), 2) if t_lag is not None else None,
                     "solar_mj": weather.get("solar_mj"), "wind_max_kmh": weather.get("wind_max_kmh"),
+                    "telemetry_co_c": analog("co_c"),
+                    "telemetry_dhw_c": analog("dhw_c"),
+                    "telemetry_floor_c": analog("floor_c"),
+                    "telemetry_return_c": analog("return_c"),
+                    "telemetry_boiler_power_kw": analog("boiler_power_kw"),
+                    "telemetry_valve_opening_pct": analog("valve_opening_pct"),
+                    "telemetry_pump_floor_h": pump_runtime("pump_floor"),
+                    "telemetry_pump_dhw_h": pump_runtime("pump_dhw"),
+                    "telemetry_pump_circulation_h": pump_runtime("pump_circulation"),
+                    "telemetry_samples": telemetry.get("co_c_samples", 0),
                     "kg_counter": kg, "counter_regime": _counter_regime(d),
                     "estimate": kg is not None and counter["collecting"] and _counter_regime(d) == "new"})
         d += timedelta(days=1)
@@ -1628,6 +1661,51 @@ def _check_token(headers):
     if not hmac.compare_digest(given, API_TOKEN.encode("utf-8")):
         raise FuelError(401, "Brak lub zły token")
 
+
+
+def _telemetry_history(days: int) -> dict:
+    """Wewnętrzna historia cech do modelu; pobiera każdą dobę osobno i buforuje wynik."""
+    days = max(1, min(int(days), MAX_DAYS))
+    cache_key = days
+    cached = _telemetry_history_cache["data"]
+    if cached is not None and _telemetry_history_cache["key"] == cache_key:
+        if time.monotonic() - _telemetry_history_cache["at"] < TELEMETRY_HISTORY_CACHE_SECONDS:
+            return cached
+    channel_ids = [TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE]
+    read_keys = [TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE]
+    if not all(channel_ids):
+        raise FuelError(503, "Historia telemetrii wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
+    today = datetime.now(TZ).date()
+    jobs = [(channel_index, offset) for channel_index in range(2) for offset in range(days, -1, -1)]
+
+    def fetch(job):
+        channel_index, offset = job
+        day = today - timedelta(days=offset)
+        start = datetime.combine(day, datetime.min.time(), tzinfo=TZ)
+        end = start + timedelta(days=1)
+        params = {
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+            "timezone": "Europe/Warsaw",
+            "results": 8000,
+        }
+        if read_keys[channel_index]:
+            params["api_key"] = read_keys[channel_index]
+        payload = _request_json(
+            f"{TS_API}/channels/{channel_ids[channel_index]}/feeds.json",
+            params=params, timeout=12
+        )
+        return channel_index, offset, payload.get("feeds", [])
+
+    feeds_by_channel = [[], []]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(fetch, jobs))
+    for channel_index, _offset, feeds in sorted(results, key=lambda item: (item[0], -item[1])):
+        feeds_by_channel[channel_index].extend(feeds)
+    result = fuel_telemetry.analyze(feeds_by_channel, channel_ids, days)
+    result["fetched_at"] = datetime.now(timezone.utc).isoformat()
+    _telemetry_history_cache.update(key=cache_key, at=time.monotonic(), data=result)
+    return result
 
 
 def _telemetry_audit(query: dict) -> dict:
