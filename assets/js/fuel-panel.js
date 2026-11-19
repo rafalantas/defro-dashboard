@@ -55,7 +55,7 @@
     try { const [daily,refills]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/refills')]); dailyData=daily.days||[];refillData=refills.refills||[];renderChart();renderRefills(); }
     catch(e){ const el=$('fuelDetailStatus');if(el)el.textContent='Nie udało się pobrać historii: '+e.message; }
   }
-  function updateSummary(s){summaryData=s;renderModel();renderForecast();const h=$('fuelHopperMeta');const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';}
+  function updateSummary(s){summaryData=s;renderModel();renderForecast();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
   window.addEventListener('thermoflow:fuel',e=>updateSummary(e.detail||{}));
   window.addEventListener('resize',renderChart);
   if(window.ThermoFlowFuelSummary)updateSummary(window.ThermoFlowFuelSummary);
