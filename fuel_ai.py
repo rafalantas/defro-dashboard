@@ -142,12 +142,15 @@ def evaluate(rows: list[dict]) -> dict:
         if all(row.get(name) is not None for name in telemetry_names)
     ]
     telemetry_days = len(telemetry_clean)
+    telemetry_test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, telemetry_days // 5))
+    telemetry_train_count = telemetry_days - telemetry_test_count
+    telemetry_required_days = telemetry_train_count + telemetry_test_count
     test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, total // 5))
     train_count = total - test_count
     if train_count < MIN_TRAIN_DAYS or test_count < MIN_TEST_DAYS:
         return {"status": "collecting", "days": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days,
-                              "days_needed": MIN_TRAIN_DAYS + MIN_TEST_DAYS,
+                              "days_needed": telemetry_required_days,
                               "message": "Za mało kompletnych dób z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS,
                 "test_days_needed": MIN_TEST_DAYS,
@@ -179,9 +182,6 @@ def evaluate(rows: list[dict]) -> dict:
         return {"status": "unstable", "days": total,
                 "message": "Nie udało się dopasować modelu końcowego"}
 
-    telemetry_test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, telemetry_days // 5))
-    telemetry_train_count = telemetry_days - telemetry_test_count
-    telemetry_required_days = telemetry_train_count + telemetry_test_count
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days,
                         "days_needed": telemetry_required_days,
                         "message": "Model telemetrii czeka na co najmniej 45 dób treningowych i 7 testowych"}
