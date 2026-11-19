@@ -39,4 +39,5 @@
 .diagnostics-section-title{margin:4px 18px 0;padding-top:12px;border-top:1px solid var(--line);font-size:11px;font-weight:800;color:var(--text)}
 .diagnostics-kpi small{display:block;margin-top:6px;color:var(--muted);font-size:9px;line-height:1.4}
 .diagnostics-event small{display:block;max-width:68ch;line-height:1.45}
+.diagnostics-periods{padding:0 18px 8px;display:flex;gap:6px}
 @media(max-width:760px){.diagnostics-intro{padding:0 12px 10px}.diagnostics-section-title{margin-left:12px;margin-right:12px}}
