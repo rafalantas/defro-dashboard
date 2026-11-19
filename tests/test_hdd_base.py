@@ -17,7 +17,7 @@ sys.dont_write_bytecode = True
 R = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 os.environ.update(THINGSPEAK_CHANNEL_IDS="1,2", THINGSPEAK_FUEL_CHANNEL_ID="3", FUEL_LAT="52.2",
                   FUEL_LON="21.0", FUEL_API_TOKEN="t")
-os.environ.pop("FUEL_HDD_BASE_FIXED", None)
+os.environ["FUEL_HDD_BASE_FIXED"] = "15.5"
 sys.path.insert(0, R)
 import fuel
 from datetime import date, datetime, timedelta, timezone
@@ -130,11 +130,11 @@ def snapshot():
 
 
 # ---------------------------------------------------------------- parsowanie
-parse_cases = {"": 15.5, "16": 16.0, "15,5": 15.5, "14.25": 14.25, "off": None, "AUTO": None, "0": None, "none": None, "bzdura": 15.5}
+parse_cases = {"": None, "16": 16.0, "15,5": 15.5, "14.25": 14.25, "off": None, "AUTO": None, "0": None, "none": None, "bzdura": None}
 for raw, want in parse_cases.items():
     assert fuel._parse_hdd_base_fixed(raw) == want, (raw, fuel._parse_hdd_base_fixed(raw), want)
 assert fuel.HDD_BASE_FIXED == 15.5
-print("parsowanie FUEL_HDD_BASE_FIXED (domyślnie 15,5; off/auto wyłącza): OK")
+print("parsowanie FUEL_HDD_BASE_FIXED (pusta/nieprawidłowa wartość i off/auto wyłączają): OK")
 
 # ---------------------------------------------------------------- stała baza, korekta Open-Meteo zmieniona o 0,5 K
 reset()
