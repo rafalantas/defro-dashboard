@@ -18,7 +18,13 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import fuel
+from fuel_schema import (
+    VALVE_OPENING_SERIES_ID,
+    VALVE_OPENING_SERIES_LABEL,
+    VALVE_SETPOINT_SERIES_ID,
+    VALVE_SETPOINT_SERIES_LABEL,
+    api_channel_fields,
+)
 
 
 API_BASE = "https://emodul.eu/api/v1/"
@@ -66,35 +72,7 @@ _history_cache_lock = threading.Lock()
 _chart_cache: dict[tuple[str, str, int, int], tuple[float, dict]] = {}
 _chart_cache_lock = threading.Lock()
 _i18n_cache: dict[str, str] | None = None
-VALVE_OPENING_SERIES_ID = "thermoflow-valve4d-opening"
-VALVE_OPENING_SERIES_LABEL = "Otwarcie zaworu 4D"
-VALVE_SETPOINT_SERIES_ID = "thermoflow-valve4d-setpoint"
-VALVE_SETPOINT_SERIES_LABEL = "Temperatura zadana zaworu 4D"
-THINGSPEAK_WRITE_INTERVAL_SECONDS = max(35, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
-THINGSPEAK_WRITE_LOCK = threading.Lock()
-THINGSPEAK_COMPACT_CHANNEL_FIELDS = (
-    (
-        ("thermoflow-co", "Temperatura CO", "temperatures.co"),
-        ("thermoflow-dhw", "Temperatura CWU", "temperatures.dhw"),
-        ("thermoflow-flue", "Temperatura spalin", "temperatures.flue"),
-        ("thermoflow-outdoor", "Temperatura zewnętrzna", "temperatures.outdoor"),
-        ("thermoflow-room", "Temperatura pokoju", "temperatures.room"),
-        ("thermoflow-floor", "Temperatura podłogówki (C1)", "temperatures.buffer_upper"),
-        ("thermoflow-valve4d-current", "Temperatura zaworu 4D", "valve.current"),
-        ("thermoflow-boiler-power", "Moc chwilowa pieca", "boiler_power_kw"),
-    ),
-    (
-        ("thermoflow-valve4d-effective-setpoint", "Temperatura zadana zaworu 4D po korekcie", "valve.set_after_correction"),
-        (VALVE_OPENING_SERIES_ID, VALVE_OPENING_SERIES_LABEL, "valve.opening"),
-        ("thermoflow-valve4d-return", "Temperatura powrotu", "valve.return"),
-        ("thermoflow-pump-valve4d", "Pompa zaworu 4D", "pumps.valve4d"),
-        ("thermoflow-pump-floor", "Pompa podłogowa", "pumps.floor"),
-        ("thermoflow-pump-dhw", "Pompa CWU", "pumps.dhw"),
-        ("thermoflow-pump-circulation", "Pompa cyrkulacyjna", "pumps.circulation"),
-        ("thermoflow-fuel-percent", "Zapas paliwa", "fuel.percent"),
-    ),
-)
-
+THINGSPEAK_COMPACT_CHANNEL_FIELDS = api_channel_fields()
 
 THINGSPEAK_LAST_WRITES = [0.0] * len(THINGSPEAK_COMPACT_CHANNEL_FIELDS)
 
@@ -1281,6 +1259,37 @@ def snapshot() -> dict:
         return payload
 
 
+_fuel_engine = None
+_fuel_import_error = None
+
+
+def _load_fuel_engine():
+    """Load the optional fuel subsystem lazily; core eModul routes must stay independent."""
+    global _fuel_engine, _fuel_import_error
+    if _fuel_engine is not None:
+        return _fuel_engine
+    if _fuel_import_error is not None:
+        return None
+    try:
+        import importlib
+        _fuel_engine = importlib.import_module("fuel")
+    except Exception as error:
+        _fuel_import_error = f"{type(error).__name__}: {error}"[:180]
+        return None
+    return _fuel_engine
+
+
+def _warmup_fuel():
+    """Warm the optional fuel subsystem after the HTTP server has started."""
+    engine = _load_fuel_engine()
+    if engine is not None:
+        try:
+            engine.warmup()
+        except Exception:
+            # Fuel warmup must never prevent the core API from serving requests.
+            return
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1301,8 +1310,12 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         body = self.rfile.read(length) if length > 0 else b""
+        engine = _load_fuel_engine()
+        if engine is None:
+            self._send_json(503, {"error": "Silnik paliwa jest chwilowo niedostępny"})
+            return True
         try:
-            result = fuel.handle(method, parsed.path, parse_qs(parsed.query), self.headers, body)
+            result = engine.handle(method, parsed.path, parse_qs(parsed.query), self.headers, body)
         except Exception as error:
             result = (500, {"error": str(error)[:180]})
         if result is None:
@@ -1419,6 +1432,6 @@ def _poll_forever() -> None:
 
 if __name__ == "__main__":
     threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
-    fuel.warmup()   # karta zużycia peletu: cache liczony w tle od startu kontenera
     server = ThreadingHTTPServer(("0.0.0.0", 8000), Handler)
+    threading.Thread(target=_warmup_fuel, name="fuel-warmup", daemon=True).start()
     server.serve_forever()
