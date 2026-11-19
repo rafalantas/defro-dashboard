@@ -1272,7 +1272,8 @@ def _load_fuel_engine():
         return None
     try:
         import importlib
-        _fuel_engine = importlib.import_module("fuel")
+        interface = importlib.import_module("fuel_engine")
+        _fuel_engine = interface.load()
     except Exception as error:
         _fuel_import_error = f"{type(error).__name__}: {error}"[:180]
         return None
