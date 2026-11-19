@@ -23,17 +23,19 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python syntax
-        run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py
+        run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py fuel_schema.py
       - name: Fuel Intelligence regression
         run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py
       - name: Fuel telemetry regression
         run: python -m unittest tests/test_fuel_telemetry.py
+      - name: Canonical schema and API isolation regression
+        run: python -m unittest tests/test_fuel_schema.py
       - name: Counter epoch regression
         run: python tests/test_counter_epoch.py
       - name: HDD base regression
         run: python tests/test_hdd_base.py
       - name: API module import smoke test
-        run: python -c "import fuel; import fuel_ai; import fuel_telemetry"
+        run: python -c "import api; import fuel; import fuel_ai; import fuel_telemetry; import fuel_schema"
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
       - name: History analysis regression
