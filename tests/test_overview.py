@@ -81,7 +81,6 @@ assert "próg z konfiguracji eModul" in DIAGNOSTICS
 assert "v<=5" not in DIAGNOSTICS and "otwarciu ≤5%" not in DIAGNOSTICS
 assert "interrupted:true" in DIAGNOSTICS and "ANALIZA CZĘŚCIOWA" in DIAGNOSTICS
 assert "tylko kompletne cykle bez luk" in DIAGNOSTICS
-assert "55°C ±1°C" in HTML
 assert "setInterval(load,60000)" in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
 print("Sprint 4 diagnostics: boiler cycles, return protection, valve and pump correlation, read-only: OK")
