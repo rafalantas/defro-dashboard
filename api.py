@@ -599,7 +599,7 @@ def _history_query_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw")) if parsed.tzinfo is None else parsed
 
 
-def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True) -> dict:
+def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True, minimum_opening: float | None = None) -> dict:
     """Return recent ThingSpeak samples as compact [unix_seconds, value] pairs."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
     read_keys = _thingspeak_settings("THINGSPEAK_READ_KEYS")
@@ -621,7 +621,7 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         step, auto_step = 120, True
     range_key = f"last-{hours}h" if requested_start is None else f"{start.isoformat()}_{end.isoformat()}"
     filter_key = ",".join(sorted(requested_series or []))
-    cache_key = (",".join(channel_ids), f"{range_key}|step={step}|fmt={output_format}|an={int(with_analysis)}", filter_key)
+    cache_key = (",".join(channel_ids), f"{range_key}|step={step}|fmt={output_format}|an={int(with_analysis)}|min_opening={minimum_opening}", filter_key)
     now_monotonic = time.monotonic()
     with _history_cache_lock:
         cached = _history_cache.get(cache_key)
