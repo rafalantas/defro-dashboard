@@ -2,7 +2,7 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from fuel_counter import calibrate_pairs, counter_kg, counter_regime, span_estimate
+import fuel_counter\nfrom fuel_counter import calibrate_pairs, counter_kg, counter_regime, span_estimate
 
 
 EPOCH = datetime(2026, 11, 13, 18, 27, tzinfo=timezone.utc)
@@ -47,6 +47,43 @@ class FuelCounterTests(unittest.TestCase):
             lambda _a, _b: (10.0, True, False),
         )
         self.assertEqual(result, (35.0, True, False))
+
+    def test_counter_method_reports_fully_calibrated_state_without_uncertainty(self):
+        counter = {
+            "kg_per_percent": 2.439,
+            "new_effective": {
+                "kg_per_percent": 2.439,
+                "source": "okresy po epoce",
+                "measured": True,
+            },
+        }
+        self.assertEqual(
+            fuel_counter.counter_method(counter, lambda value: f"{value:.2f}".replace(".", ",")),
+            "licznik podajnika skalibrowany do dosypek",
+        )
+
+    def test_counter_method_reports_span_and_provisional_uncertainty(self):
+        formatter = lambda value: f"{value:.2f}".replace(".", ",")
+        span = {
+            "kg_per_percent": 2.318,
+            "new_effective": {
+                "kg_per_percent": 2.318,
+                "source": "okres obejmujący epokę",
+                "uncertainty_percent": 10,
+            },
+        }
+        provisional = {
+            "kg_per_percent": 3.4,
+            "new_effective": {
+                "kg_per_percent": 3.4,
+                "source": "wartość tymczasowa",
+                "uncertainty_percent": 10,
+            },
+        }
+        self.assertIn("okresu obejmującego zmianę podajnika", fuel_counter.counter_method(span, formatter))
+        self.assertIn("±10%", fuel_counter.counter_method(span, formatter))
+        self.assertIn("współczynnik tymczasowy", fuel_counter.counter_method(provisional, formatter))
+        self.assertIn("±10%", fuel_counter.counter_method(provisional, formatter))
 
     def test_day_regime_marks_the_epoch_day(self):
         def bounds(day):
