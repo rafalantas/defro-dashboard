@@ -157,7 +157,7 @@ def fake(url, params=None, form=None, payload=None, timeout=10):
         return {"daily": {"time": [d.isoformat() for d in days], "temperature_2m_mean": [round(t_of(d), 3) for d in days],
                           "shortwave_radiation_sum": [round(solar_of(d), 3) for d in days],
                           "wind_speed_10m_max": [round(wind_of(d), 2) for d in days]}}
-    if "/channels/3/feeds.json" in url or "/channels/2/fields/8.json" in url:
+    if "/channels/3/feeds.json" in url or "/channels/2/fields/8.json" in url or "/channels/2/feeds.json" in url:
         return {"feeds": []}
     if "/channels/1/feeds.json" in url:
         if params.get("results") == 1:
