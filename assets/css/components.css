@@ -33,3 +33,10 @@
 .diagnostics-event strong{display:block;margin-bottom:3px}
 .diagnostics-event small{color:var(--muted,#91a3aa);font-size:10px}
 @media(max-width:760px){.diagnostics-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}.diagnostics-events{padding:0 12px 12px}.diagnostics-event{flex-direction:column;gap:5px}}
+
+/* Sprint 4 deep diagnostics */
+.diagnostics-intro{padding:0 18px 12px;color:var(--muted);font-size:10px;line-height:1.55}
+.diagnostics-section-title{margin:4px 18px 0;padding-top:12px;border-top:1px solid var(--line);font-size:11px;font-weight:800;color:var(--text)}
+.diagnostics-kpi small{display:block;margin-top:6px;color:var(--muted);font-size:9px;line-height:1.4}
+.diagnostics-event small{display:block;max-width:68ch;line-height:1.45}
+@media(max-width:760px){.diagnostics-intro{padding:0 12px 10px}.diagnostics-section-title{margin-left:12px;margin-right:12px}}
