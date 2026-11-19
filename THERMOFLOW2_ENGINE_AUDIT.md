@@ -215,6 +215,17 @@ variable: the fallback now uses the explicitly prepared recent refill periods.
 Keep the selection tests as a migration gate before introducing any new
 selection policy.
 
+### Daily source arbitration extraction
+
+`fuel_daily_provider.py` now owns the existing daily-source arbitration and
+historical daily cache policy. ThingSpeak remains primary; Open-Meteo fills
+missing temperature/HDD only, while valid burner-energy samples are retained.
+A ThingSpeak transport failure still marks a warning and deliberately avoids
+caching the fallback result so the primary source can recover on the next
+request. Today's record remains uncached. The facade injects the existing
+daily cache and source functions; tests cover primary, fallback, partial data,
+failure recovery and cache behavior.
+
 ### ThingSpeak daily telemetry provider extraction
 
 Daily ThingSpeak feed retrieval and channel-creation-date discovery now live in
