@@ -41,11 +41,11 @@ def _percentile(values, fraction):
     return round(ordered[min(len(ordered) - 1, int((len(ordered) - 1) * fraction))], 1)
 
 
-def analyze(feeds_by_channel, channel_ids, days):
-    """Return coverage audit and day aggregates from already-fetched feeds."""
+def analyze(feeds_by_channel, channel_ids, days, now=None):
+    """Return coverage audit and day aggregates; optional now makes date windows deterministic."""
     points = defaultdict(list)
     channel_audit = []
-    now = datetime.now(TZ)
+    now = (now or datetime.now(TZ)).astimezone(TZ)
     start = (now - timedelta(days=days)).date()
 
     for channel_index, schema in enumerate(CHANNELS):
