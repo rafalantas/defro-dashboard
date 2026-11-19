@@ -37,6 +37,7 @@ from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weathe
 from fuel_refill_provider import fetch_refills as fetch_refill_records, write_refill as write_refill_record
 from fuel_thingspeak_daily_provider import fetch_day as fetch_thingspeak_day, detect_data_start as detect_thingspeak_data_start
 from fuel_daily_provider import get_daily_raw as get_daily_raw_impl
+from fuel_counter_provider import fetch_counter_points
 from fuel_estimates import select_usage_estimate
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -299,34 +300,12 @@ def _om_offset() -> dict:
 
 def _counter_points(day: date) -> list:
     """Zmiany licznika zapasu sterownika w dobie: [(unix, %), ...]."""
-    key = day.isoformat()
-    today = datetime.now(TZ).date()
-    if day < today and key in _counter_cache:
-        return _counter_cache[key]
-    if not TS_CHANNEL_VALVE:
-        return []
-    start, end = _day_bounds(day)
-    params = {
-        "start": start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "end": end.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "results": 8000,
-    }
-    if TS_READ_KEY_VALVE:
-        params["api_key"] = TS_READ_KEY_VALVE
-    feeds = _request_json(f"{TS_API}/channels/{TS_CHANNEL_VALVE}/fields/{FIELD_COUNTER}.json", params).get("feeds", [])
-    points = []
-    for f in feeds:
-        raw = f.get(f"field{FIELD_COUNTER}")
-        if raw in (None, ""):
-            continue
-        ts, value = _parse_ts(f["created_at"]).timestamp(), float(raw)
-        if not points or points[-1][1] != value:
-            points.append((ts, value))
-    if feeds and points and points[-1][0] != _parse_ts(feeds[-1]["created_at"]).timestamp():
-        points.append((_parse_ts(feeds[-1]["created_at"]).timestamp(), points[-1][1]))
-    if day < today and feeds:
-        _counter_cache[key] = points
-    return points
+    return fetch_counter_points(
+        day=day, today=datetime.now(TZ).date(), cache=_counter_cache,
+        channel_id=TS_CHANNEL_VALVE, field_number=FIELD_COUNTER,
+        read_key=TS_READ_KEY_VALVE, endpoint=TS_API, tz=TZ,
+        request_json=_request_json, parse_timestamp=_parse_ts,
+    )
 
 
 def _counter_drop(start: datetime, end: datetime):
