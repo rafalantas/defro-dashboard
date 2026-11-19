@@ -185,3 +185,12 @@ Import wykonaj przed pierwszym wpisem dodanym przez API. Nowe dosypki najwygodni
 ```
 
 Repozytorium zawiera 15 plików źródłowych i konfiguracyjnych. Każdy jest używany przez aplikację, lokalne uruchomienie, CI albo ochronę sekretów; katalogu nie zaśmiecają kopie wynikowych obrazów ani wygenerowane pliki.
+
+
+### Telemetria w eksperymentalnym modelu paliwa
+
+Dobowe rekordy modelu AI są łączone z agregatami z dwóch kanałów ThingSpeak w strefie `Europe/Warsaw`. Dla ostatnich maksymalnie 14 dni do rekordu z licznikiem paliwa dołączane są średnie temperatur CO, CWU, podłogówki i powrotu, średnia moc kotła, średnie otwarcie zaworu 4D oraz czasy pracy pomp podłogowej, CWU i cyrkulacyjnej. Pompa zaworu 4D pozostaje wyłącznie w surowym audycie.
+
+Cechy analogowe są przyjmowane tylko przy co najmniej 1000 próbek na dobę, a czasy pomp tylko przy co najmniej 20 godzinach znanego stanu. Brakujące lub niepełne dane nie są interpolowane. Model AI porównuje wariant pogodowy z wariantem rozszerzonym o telemetrię na wspólnym zbiorze kompletnych dób i chronologicznym holdoucie. Cechy telemetryczne wymagają co najmniej 45 dób treningowych i 7 testowych; do tego czasu API raportuje status `collecting` i liczbę kompletnych dób. Wariant telemetryczny jest zaakceptowany wyłącznie przy poprawie MAE o co najmniej 3%.
+
+Integracja działa wyłącznie w `fuel_ai.py` w trybie shadow. Produkcyjne obliczenia `fuel.py`, prognoza używana przez dashboard i sterowanie kotłem pozostają bez zmian. Audyt telemetrii nadal ma limit 14 dni, więc historia cech telemetrycznych będzie narastać od wdrożenia tej wersji; starsze rekordy paliwa nie dostają sztucznie odtworzonych cech instalacji.
