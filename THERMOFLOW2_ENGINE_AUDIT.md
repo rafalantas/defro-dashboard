@@ -215,6 +215,22 @@ variable: the fallback now uses the explicitly prepared recent refill periods.
 Keep the selection tests as a migration gate before introducing any new
 selection policy.
 
+### Open-Meteo and refill provider extraction
+
+Open-Meteo temperature and weather retrieval now lives in
+`fuel_weather_provider.py`; the facade injects location, timezone, endpoints,
+transport, cache dictionaries, TTL and clocks. Historical archive requests stay
+month-bounded, forecast windows and the 7-day archive/forecast boundary remain
+unchanged, today's temperature is not frozen, future weather cache expires on
+the existing forecast TTL, and API failures retain the last known optional
+weather value.
+
+ThingSpeak refill reads and writes now live in `fuel_refill_provider.py`.
+The facade injects the existing 60-second refill cache, normalizer, transport
+and cache invalidation callback. The 8000-feed read, UTC `created_at`, missing
+channel 503 and rate-limit 429 contracts are covered by provider tests.
+Neither provider changes refill normalization/30-minute merge semantics.
+
 ### Current extraction progress — telemetry provider
 
 The ThingSpeak telemetry-history retrieval path has been moved behind
