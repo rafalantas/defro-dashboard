@@ -33,6 +33,7 @@ from fuel_schema import field_number, timezone as thermoflow_timezone
 from fuel_errors import FuelError
 from fuel_http import request_json as _request_json
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
+from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weather_for_day as _weather_impl
 from fuel_estimates import select_usage_estimate
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -250,23 +251,12 @@ def _om_fill(url: str, params: dict):
 
 
 def _openmeteo_mean(day: date):
-    key = day.isoformat()
-    if key in _om_cache or not (FUEL_LAT and FUEL_LON):
-        return _om_cache.get(key)
-    today = datetime.now(TZ).date()
-    common = {"latitude": FUEL_LAT, "longitude": FUEL_LON,
-              "daily": "temperature_2m_mean", "timezone": str(TZ)}
-    if day < today - timedelta(days=7):
-        start = day.replace(day=1)
-        month_end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-        end = min(month_end, today - timedelta(days=6))
-        _om_fill(OM_ARCHIVE, {**common, "start_date": start.isoformat(), "end_date": end.isoformat()})
-    else:
-        _om_fill(OM_FORECAST, {**common, "past_days": 14, "forecast_days": 1})
-    if day >= today:
-        # dzisiejsza wartość z prognozy zmienia się w ciągu doby: nie zamrażamy jej w cache
-        return _om_cache.pop(key, None)
-    return _om_cache.get(key)
+    return _openmeteo_mean_impl(
+        day=day, latitude=FUEL_LAT, longitude=FUEL_LON, timezone=TZ,
+        archive_url=OM_ARCHIVE, forecast_url=OM_FORECAST, cache=_om_cache,
+        request_json=_request_json, fuel_error=FuelError,
+        now=lambda: datetime.now(TZ),
+    )
 
 
 def _weather_fill(url: str, params: dict):
@@ -285,27 +275,14 @@ def _weather_fill(url: str, params: dict):
 
 def _weather(day: date) -> dict:
     """Suma promieniowania słonecznego (MJ/m²) i maks. prędkość wiatru (km/h) dla doby."""
-    key = day.isoformat()
-    today = datetime.now(TZ).date()
-    if not (FUEL_LAT and FUEL_LON):
-        return {}
-    if key in _weather_cache:
-        # prognoza dla dziś i kolejnych dób zmienia się w ciągu doby: odświeżamy co FORECAST_CACHE_SECONDS
-        fresh = day < today or time.monotonic() - _weather_fetched.get(key, 0.0) < FORECAST_CACHE_SECONDS
-        if fresh:
-            return _weather_cache[key]
-    common = {"latitude": FUEL_LAT, "longitude": FUEL_LON, "daily": WEATHER_VARS, "timezone": str(TZ)}
-    try:
-        if day < today - timedelta(days=7):
-            start = day.replace(day=1)
-            month_end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-            end = min(month_end, today - timedelta(days=6))
-            _weather_fill(OM_ARCHIVE, {**common, "start_date": start.isoformat(), "end_date": end.isoformat()})
-        else:
-            _weather_fill(OM_FORECAST, {**common, "past_days": 14, "forecast_days": 7})
-    except FuelError:
-        return _weather_cache.get(key, {})   # Open-Meteo tylko uzupełnia: zostaje ostatnia znana wartość
-    return _weather_cache.get(key, {})
+    return _weather_impl(
+        day=day, latitude=FUEL_LAT, longitude=FUEL_LON, timezone=TZ,
+        archive_url=OM_ARCHIVE, forecast_url=OM_FORECAST, variables=WEATHER_VARS,
+        cache=_weather_cache, fetched=_weather_fetched,
+        cache_seconds=FORECAST_CACHE_SECONDS, request_json=_request_json,
+        fuel_error=FuelError, now=lambda: datetime.now(TZ),
+        monotonic=time.monotonic,
+    )
 
 
 def _temps_data_start():
