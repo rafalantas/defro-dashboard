@@ -1,3 +1,13 @@
+### Regression fix: calibrated counter description
+
+CI exposed a production-path regression after feeder calibration completed:
+the method-description helper assumed every post-epoch coefficient carried
+`uncertainty_percent`. Fully calibrated coefficients intentionally do not
+carry an uncertainty estimate, so the summary path raised `KeyError`.
+The helper now distinguishes fully calibrated, epoch-spanning estimate and
+provisional coefficient states. Only the latter two display their declared
+uncertainty. Dedicated unit tests cover all three states.
+
 # ThermoFlow 2.0 — fuel engine readiness audit
 
 **Audited revision:** `main` at `3392c3e39acab3436c6182c00cf6502778cf476e`  
