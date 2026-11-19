@@ -52,7 +52,7 @@
     el.innerHTML=days.length?days.map(d=>'<div class="fuel-forecast-day"><span>'+esc(new Date(d.day+'T12:00:00').toLocaleDateString('pl-PL',{weekday:'short',day:'2-digit',month:'2-digit'}))+'</span><b>'+n(d.kg,1)+' kg</b><small>'+n(d.t_mean,1)+' °C</small></div>').join(''):'<div class="fuel-empty">Prognoza niedostępna.</div>';
   }
   async function loadDetails(){
-    try { const [daily,refills]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/refills')]); dailyData=daily.days||[];refillData=refills.refills||[];renderChart();renderRefills(); }
+    try { const [daily,stats,refills]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/stats?days=30'),get('/api/fuel/refills')]); const burnerByDay=new Map((stats.daily||[]).map(r=>[r.day,r.est_kg])); dailyData=(daily.days||[]).map(r=>({...r,est_kg:burnerByDay.get(r.day)??null}));refillData=refills.refills||[];renderChart();renderRefills(); }
     catch(e){ const el=$('fuelDetailStatus');if(el)el.textContent='Nie udało się pobrać historii: '+e.message; }
   }
   function updateSummary(s){summaryData=s;renderModel();renderForecast();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
