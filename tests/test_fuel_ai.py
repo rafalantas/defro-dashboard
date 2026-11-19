@@ -69,7 +69,8 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["telemetry"]["mode"], "shadow_only")
         self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.MIN_TRAIN_DAYS)
         self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.MIN_TEST_DAYS)
-        self.assertIn("telemetry_return_c", result["telemetry"]["features"])
+        self.assertIn("mae_kg_day", result["telemetry"]["baseline"])
+        self.assertIn("mae_kg_day", result["telemetry"]["candidate"])
 
     def test_room_temperature_never_changes_fuel_model(self):
         rows = synthetic_rows()
