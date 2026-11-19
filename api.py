@@ -1196,6 +1196,33 @@ def _read_diagnostics() -> dict:
         statistics["consumptions_day"] = _get(f"modules/{udid}/statistics/consumptions/range/day", token)
     except Exception as error:
         statistics["consumptions_error"] = str(error)[:180]
+    # Centralne parametry analizy. Nastawy kotła i zaworu pochodzą z menu
+    # eModul; stałe opisują wyłącznie reguły interpretacji zapisanej telemetrii.
+    menu_by_id = {str(item.get("id")): item for item in menus}
+    def configured_menu_value(item_id):
+        item = menu_by_id.get(str(item_id))
+        params = (item or {}).get("params") or {}
+        raw = _number(params.get("value"), 10 if str(params.get("format")) == "2" else 1)
+        return raw
+
+    co_target = configured_menu_value(2060)
+    boiler_hysteresis = configured_menu_value(2062)
+    valve_minimum_opening = configured_menu_value(2203)
+    analysis_config = {
+        "co_recovery_target": co_target,
+        "co_low_threshold": (
+            round(co_target - boiler_hysteresis, 1)
+            if co_target is not None and boiler_hysteresis is not None else None
+        ),
+        "return_protection_min": 55.0,
+        "return_protection_tolerance": 1.0,
+        "valve_minimum_opening": valve_minimum_opening,
+        "max_sample_gap_seconds": 300,
+        "pump_correlation_window_seconds": 600,
+        "boiler_power_active_min_kw": 0.0,
+        "valve_change_min_delta": 3.0,
+    }
+
     return {
         "configured": True,
         "connected": True,
@@ -1212,6 +1239,7 @@ def _read_diagnostics() -> dict:
             },
         },
         "counts": {"tiles": len(tiles), "zones": len(zones), "menu_items": len(menus)},
+        "analysis_config": analysis_config,
         "tiles": tiles,
         "zones": zones,
         "zones_data": zones_data,
