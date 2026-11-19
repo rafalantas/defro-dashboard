@@ -1,6 +1,9 @@
 import unittest
 
 import fuel_telemetry
+from datetime import datetime
+
+NOW = datetime(2026, 11, 19, 12, 0, tzinfo=fuel_telemetry.TZ)
 
 
 class FuelTelemetryTests(unittest.TestCase):
@@ -9,7 +12,7 @@ class FuelTelemetryTests(unittest.TestCase):
             {"created_at": "2026-11-18T10:00:00Z", "field1": "60", "field4": "4.5"},
             {"created_at": "2026-11-18T10:00:40Z", "field1": "62", "field4": "5.0"},
         ]
-        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 2)
+        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 2, now=NOW)
         self.assertEqual(result["quality"]["series_count"], 16)
         self.assertEqual(result["quality"]["available_series"], 2)
         self.assertIn("thermoflow-valve4d-return", result["quality"]["empty_series"])
@@ -23,7 +26,7 @@ class FuelTelemetryTests(unittest.TestCase):
             {"created_at": "2026-11-18T10:00:40Z", "field4": "1", "field5": "1"},
             {"created_at": "2026-11-18T10:20:00Z", "field4": "1", "field5": "0"},
         ]
-        result = fuel_telemetry.analyze([[], feeds], ["123", "456"], 2)
+        result = fuel_telemetry.analyze([[], feeds], ["123", "456"], 2, now=NOW)
         row = next(item for item in result["daily"] if item["day"] == "2026-11-18")
         self.assertNotIn("pump_valve4d_runtime_h", row)
         self.assertNotIn("pump_valve4d_known_h", row)
@@ -36,7 +39,7 @@ class FuelTelemetryTests(unittest.TestCase):
             {"created_at": "2026-11-18T10:00:00Z", "field5": "0", "field1": "60"},
             {"created_at": "2026-11-18T10:00:40Z", "field5": "21.1", "field1": "61"},
         ]
-        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 1)
+        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 1, now=NOW)
         row = next(item for item in result["daily"] if item["day"] == "2026-11-18")
         self.assertEqual(row["room_c_mean"], 21.1)
         self.assertEqual(row["room_c_samples"], 1)
