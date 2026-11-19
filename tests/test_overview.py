@@ -39,7 +39,7 @@ assert 'id="diagnosticsHistoryState"' in HTML
 assert 'id="diagnosticsSummary"' in HTML and 'id="diagnosticsEvents"' in HTML
 assert '/assets/js/diagnostics.js' in HTML
 assert '/api/history?hours=24&format=full' in DIAGNOSTICS
-assert "analysis" in DIAGNOSTICS and "burner_runs" in DIAGNOSTICS and "protection_cycles" in DIAGNOSTICS
+assert "coCycles" in DIAGNOSTICS and "burner" in DIAGNOSTICS and "cold" in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
 assert "age<=90" in LIVE and "classList.toggle('live',fresh)" in LIVE
 assert ".badge.live::before" in MOTION and "emodul-live-pulse" in MOTION
