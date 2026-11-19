@@ -35,6 +35,7 @@ The first refactor stage has now addressed several audit findings without replac
 - **Refill domain extraction:** normalization of ThingSpeak refill/void events and the 30-minute close-event merge now live in `fuel_refills.py`.
 - **Counter domain extraction:** old/new feeder calibration, epoch-spanning estimates, provisional coefficients and interval splitting now live in `fuel_counter.py`.
 - **Burner-energy extraction:** energy calibration and kWh-to-kg conversion, including epoch splitting, now live in `fuel_energy.py`.
+- **Planning extraction:** weather-aware kg/day, days-to-reserve and today/week/month/season pellet planning now live in `fuel_planning.py`; weather/network providers remain injected by the compatibility adapter.
 - `fuel.py` re-exports these operations through compatibility wrappers, so existing callers and tests keep their names and payload behavior.
 - Docker packaging and CI include all extracted modules, plus focused regression tests.
 
