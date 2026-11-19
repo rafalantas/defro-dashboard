@@ -45,7 +45,8 @@ def analyze(feeds_by_channel, channel_ids, days, now=None):
     """Return coverage audit and day aggregates; optional now makes date windows deterministic."""
     points = defaultdict(list)
     channel_audit = []
-    now = (now or datetime.now(TZ)).astimezone(TZ)
+    now = now or datetime.now(TZ)
+    now = now.replace(tzinfo=TZ) if now.tzinfo is None else now.astimezone(TZ)
     start = (now - timedelta(days=days)).date()
 
     for channel_index, schema in enumerate(CHANNELS):
