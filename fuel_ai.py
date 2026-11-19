@@ -114,6 +114,19 @@ def evaluate(rows: list[dict]) -> dict:
                 or source.get("wind_max_kmh") is None):
             continue
         row = dict(source)
+        # Temperatura pokoju nie jest obecnie cechą modelu paliwa. Jeśli
+        # zostanie przekazana, odczyty 0°C lub niepoprawne są usuwane,
+        # nigdy imputowane ani wykorzystywane w żadnej kalkulacji.
+        for room_key in ("room_c", "room_temp", "room_temperature_c"):
+            value = row.get(room_key)
+            if value is not None:
+                try:
+                    room_value = float(value)
+                except (TypeError, ValueError):
+                    row.pop(room_key, None)
+                else:
+                    if not (room_value > 0 and room_value < float("inf")):
+                        row.pop(room_key, None)
         row["wind_hdd_lag"] = float(row["wind_max_kmh"]) * float(row["hdd_lag"]) / 100.0
         clean.append(row)
     clean.sort(key=lambda row: row.get("day", ""))
