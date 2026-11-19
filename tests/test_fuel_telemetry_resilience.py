@@ -1,5 +1,6 @@
 """Optional telemetry failures must not escape the fuel feature boundary."""
 import unittest
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import fuel
@@ -14,6 +15,18 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
         self.assertEqual(state["status"], "unavailable")
         self.assertIn("RuntimeError", state["error"])
         self.assertIn("simulated parser failure", state["error"])
+
+    def test_maximum_history_is_partitioned_into_complete_bounded_windows(self):
+        today = date(2026, 11, 19)
+        windows = fuel._telemetry_fetch_windows(120, today)
+
+        self.assertEqual(len(windows), 41)
+        self.assertEqual(windows[0][0], today - timedelta(days=120))
+        self.assertEqual(windows[-1][1], today + timedelta(days=1))
+        for index, (start, end, _offset) in enumerate(windows):
+            self.assertLessEqual((end - start).days, 3)
+            if index:
+                self.assertEqual(windows[index - 1][1], start)
 
     def test_successful_telemetry_preserves_daily_aggregates_and_fetch_time(self):
         audit = {
