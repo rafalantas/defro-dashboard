@@ -30,8 +30,28 @@
 </head>
 <body><div class="app">
   <header class="topbar"><div class="brand"><div class="brandmark"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M35 8C31 19 19 28 19 40a13 13 0 0 0 26 0c0-8-5-15-10-21 1 8-3 11-7 14 1-9 8-15 7-25Z" fill="currentColor"/><path d="M24 47c5 3 12 3 17-1" fill="none" stroke="#153b3c" stroke-linecap="round" stroke-width="4"/></svg></div><div>Centrum sterowania ogrzewaniem<small>THERMOFLOW · PANEL INSTALACJI <span class="build-version-inline" id="buildVersion" title="Wersja obrazu dashboardu">WERSJA —</span></small></div></div><div class="topright"><span class="clock" id="clock">--:--</span><span class="badge warn" id="modeBadge">● OCZEKIWANIE NA API</span><button class="button" id="pauseBtn">Ⅱ &nbsp; Wstrzymaj</button></div></header>
+  <nav class="view-nav" aria-label="Nawigacja ThermoFlow" role="tablist">
+    <button type="button" class="view-tab active" data-view-target="overview" aria-selected="true">Overview</button>
+    <button type="button" class="view-tab" data-view-target="installation" aria-selected="false">Instalacja</button>
+    <button type="button" class="view-tab" data-view-target="fuel" aria-selected="false">Paliwo</button>
+    <button type="button" class="view-tab" data-view-target="history" aria-selected="false">Historia</button>
+    <button type="button" class="view-tab" data-view-target="diagnostics" aria-selected="false">Diagnostyka</button>
+  </nav>
+
   <div class="grid"><main class="maincol">
-    <section class="card" aria-label="Schemat instalacji">
+    <section class="card overview-card" data-view="overview" aria-labelledby="overviewTitle">
+      <div class="cardhead"><div><h2 id="overviewTitle">Overview</h2><div class="subhead">Najważniejsze parametry instalacji · podgląd tylko do odczytu</div></div><span class="badge warn" id="overviewConnection">OCZEKIWANIE NA API</span></div>
+      <div class="overview-grid">
+        <div class="overview-metric"><span>Temperatura CO</span><strong id="overviewCo">—</strong></div>
+        <div class="overview-metric"><span>Temperatura powrotu</span><strong id="overviewReturn">—</strong></div>
+        <div class="overview-metric"><span>Temperatura zewnętrzna</span><strong id="overviewOutdoor">—</strong></div>
+        <div class="overview-metric"><span>Temperatura spalin</span><strong id="overviewFlue">—</strong></div>
+        <div class="overview-metric"><span>Zapas paliwa</span><strong id="overviewFuel">—</strong></div>
+        <div class="overview-metric"><span>Stan kotła</span><strong id="overviewBoilerState">—</strong></div>
+      </div>
+      <div class="telemetry-footer">Brak odczytu oznacza brak danych z API, a nie stan wyłączony. STB pozostaje bez odczytu.</div>
+    </section>
+    <section class="card" data-view="installation" aria-label="Schemat instalacji">
       <div class="schematic-wrap"><svg class="schematic" viewBox="0 0 1380 600" role="img" aria-label="Schemat ogrzewania: zawór 4D obsługuje grzejniki, zawór 3D podłogówkę; powroty łączą się przed kotłem">
         <defs><marker id="arrHot" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#ff9c57"/></marker><marker id="arrBlue" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6bbcff"/></marker><marker id="arrWarm" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#f6d365"/></marker><marker id="arrMix" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#eab77a"/></marker>
           <path id="floorMixedFlowPath" d="M800 255 V350 H850 H935 V400"/>
@@ -101,9 +121,9 @@
       </svg></div>
       <div class="diagram-legend"><span class="key"><i style="background:var(--orange)"></i>Gorące zasilanie</span><span class="key"><i style="background:var(--yellow)"></i>Gałąź CWU</span><span class="key"><i style="background:#eab77a"></i>Zasilanie grzejników za 4D</span><span class="key"><i style="background:var(--blue)"></i>Wspólny powrót do kotła</span><span class="key"><i style="background:var(--teal)"></i>Przepływ podłogówki</span><span class="key"><i style="background:var(--orange)"></i>Ciepła woda do kranu</span><span class="key"><i style="background:var(--blue)"></i>Powrót cyrkulacji CWU</span></div>
     </section>
-    <section class="card"><div class="cardhead"><div><h2>Temperatury instalacji</h2><div class="subhead">Czujniki na schemacie i temperatury obiegów</div></div></div><div class="temperature-grid"><div class="metric"><div class="label">Czujnik za piecem</div><strong class="t1" id="mBoiler">—</strong><small>na wspólnym zasilaniu</small></div><div class="metric"><div class="label">Zasilanie podłogówki · C1</div><strong class="t2" id="mFloor">—</strong><small id="floorMetricHint">czujnik na rurze za pompą podłogową</small></div><div class="metric"><div class="label">Zasilanie grzejników</div><strong class="t3" id="mRad">—</strong><small>sterowanie z pieca · zawór 4D</small></div><div class="metric"><div class="label">CWU · bieżąca / zadana</div><strong class="t4" id="mDhw">— / —</strong><small id="dhwMetricHint">oczekiwanie na dane</small></div></div></section>
+    <section class="card" data-view="installation"><div class="cardhead"><div><h2>Temperatury instalacji</h2><div class="subhead">Czujniki na schemacie i temperatury obiegów</div></div></div><div class="temperature-grid"><div class="metric"><div class="label">Czujnik za piecem</div><strong class="t1" id="mBoiler">—</strong><small>na wspólnym zasilaniu</small></div><div class="metric"><div class="label">Zasilanie podłogówki · C1</div><strong class="t2" id="mFloor">—</strong><small id="floorMetricHint">czujnik na rurze za pompą podłogową</small></div><div class="metric"><div class="label">Zasilanie grzejników</div><strong class="t3" id="mRad">—</strong><small>sterowanie z pieca · zawór 4D</small></div><div class="metric"><div class="label">CWU · bieżąca / zadana</div><strong class="t4" id="mDhw">— / —</strong><small id="dhwMetricHint">oczekiwanie na dane</small></div></div></section>
 
-    <section class="card"><div class="cardhead"><div><h2>Odczyty sterownika pieca</h2><div class="subhead">Parametry z panelu DEfRO · odświeżane z eModul API</div></div></div>
+    <section class="card" data-view="installation"><div class="cardhead"><div><h2>Odczyty sterownika pieca</h2><div class="subhead">Parametry z panelu DEfRO · odświeżane z eModul API</div></div></div>
       <div class="telemetry-grid">
         <div class="telemetry-tile ok"><div class="telemetry-label">Temperatura CO</div><div class="telemetry-value" id="tileCo">—</div><div class="telemetry-meta" id="tileCoMeta">zadana —</div></div>
         <div class="telemetry-tile ok"><div class="telemetry-label">Temperatura CWU</div><div class="telemetry-value" id="tileDhw">—</div><div class="telemetry-meta" id="tileDhwMeta">zadana —</div></div>
@@ -128,7 +148,7 @@
         <div class="telemetry-tile wide"><div class="telemetry-label">Sterownik i wersja</div><div class="telemetry-value small" id="tileController">DEfRO · ST-9730</div><div class="telemetry-meta" id="tileVersion">wersja modułu</div></div>
       </div><div class="subhead" id="extraTempHeading" style="display:none;padding:0 18px 8px">Dodatkowe temperatury udostępnione przez sterownik</div><div class="telemetry-grid" id="extraTempGrid" style="display:none;padding-top:0"></div><div class="telemetry-footer" id="telemetryFooter">Oczekiwanie na dane sterownika przez eModul API.</div>
     </section>
-    <section class="card" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Zużycie peletu</h2><div class="subhead">Dosypki z kanału ThingSpeak „Pelet” · zużycie bieżące z licznika podajnika lub mocy palnika, kalibrowane do dosypek</div></div></div>
+    <section class="card" data-view="fuel" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Zużycie peletu</h2><div class="subhead">Dosypki z kanału ThingSpeak „Pelet” · zużycie bieżące z licznika podajnika lub mocy palnika, kalibrowane do dosypek</div></div></div>
       <div class="telemetry-grid fuel-grid">
         <div class="telemetry-tile live"><div class="telemetry-label">Ostatnie 7 dni</div><div class="telemetry-value" id="fuelWeek">—</div><div class="telemetry-meta" id="fuelWeekMeta">szacunek z mocy palnika</div></div>
         <div class="telemetry-tile live"><div class="telemetry-label" id="fuelHddLabel">kg na stopniodzień</div><div class="telemetry-value" id="fuelHdd">—</div><div class="telemetry-meta" id="fuelHddMeta">z rzeczywistych dosypek</div></div>
@@ -138,7 +158,7 @@
     </section>
   </main></div>
   <div class="valve-tooltip" id="valve4Tooltip" role="tooltip" hidden></div>
-  <section class="card sensor-panel"><div class="cardhead"><div><h2>Czujniki instalacji</h2></div></div><div class="sensor-grid">
+  <section class="card sensor-panel" data-view="diagnostics"><div class="cardhead"><div><h2>Czujniki instalacji</h2></div></div><div class="sensor-grid">
     <div class="sensor-chip" id="sensorOutdoor"><i></i><span>Czujnik zewnętrzny · oczekiwanie na API</span></div><div class="sensor-chip unknown" id="sensorReturn"><i></i><span>Czujnik powrotu · oczekiwanie na API</span></div>
     <div class="sensor-chip unknown" id="sensorValve"><i></i><span>Czujnik zaworu · oczekiwanie na API</span></div><div class="sensor-chip" id="sensorDhw"><i></i><span>Czujnik CWU · oczekiwanie na API</span></div>
     <div class="sensor-chip safety" id="sensorFire"><i></i><span>Czujnik ognia · oczekiwanie na API</span></div><div class="sensor-chip" id="sensorCo"><i></i><span>Czujnik CO · oczekiwanie na API</span></div>
@@ -146,11 +166,12 @@
     <div class="sensor-chip control unknown" id="sensorRoom"><i></i><span>Regulator pokojowy · brak odczytu</span></div>
     <div class="sensor-chip" id="sensorSupply"><i></i><span>Czujnik zasilania kotła · oczekiwanie na API</span></div>
   </div></section>
-  <section class="card" aria-labelledby="statsTitle"><div class="cardhead stats-card-head"><div><h2 id="statsTitle">Statystyki instalacji</h2><div class="subhead" id="statsDescription">Historia z dwóch kanałów ThingSpeak · CSV obejmuje serie i stany pomp</div></div><div class="stats-controls" role="group" aria-label="Zakres wykresu"><button class="stats-period active" data-period="day" aria-pressed="true">Dzień</button><button class="stats-period" data-period="week" aria-pressed="false">Tydzień</button><button class="stats-period" data-period="month" aria-pressed="false">Miesiąc</button><button class="stats-period" data-period="year" aria-pressed="false">Rok</button><div class="stats-date-nav"><button class="button stats-step" id="statsPrev" type="button" aria-label="Poprzedni dzień" title="Poprzedni dzień">‹</button><input class="stats-date" type="date" id="statsDate" aria-label="Wybierz dzień lub tydzień"><input class="stats-date" type="month" id="statsMonth" aria-label="Wybierz miesiąc" hidden><input class="stats-date" type="number" id="statsYear" min="2000" max="2100" aria-label="Wybierz rok" hidden><button class="button stats-step" id="statsNext" type="button" aria-label="Następny dzień" title="Następny dzień">›</button></div><button class="button stats-csv" id="statsCsv" disabled>Pobierz CSV</button></div></div><div class="stats-content"><div class="stats-legend-toolbar"><div class="stats-legend" id="statsLegend"></div><button class="button stats-series-toggle" id="statsSeriesToggle" type="button" disabled>Odznacz wszystkie</button></div><div class="stats-chart-wrap"><canvas class="stats-chart" id="statsChart" aria-label="Wykres historycznych odczytów sterownika"></canvas><div class="stats-tooltip" id="statsTooltip" role="status" aria-live="polite"></div><div class="stats-message" id="statsMessage">Ładowanie historii z ThingSpeak…</div></div><div class="stats-meta" id="statsMeta">Historia jest pobierana z dwóch kanałów ThingSpeak.</div></div></section>
+  <section class="card" data-view="history" aria-labelledby="statsTitle"><div class="cardhead stats-card-head"><div><h2 id="statsTitle">Statystyki instalacji</h2><div class="subhead" id="statsDescription">Historia z dwóch kanałów ThingSpeak · CSV obejmuje serie i stany pomp</div></div><div class="stats-controls" role="group" aria-label="Zakres wykresu"><button class="stats-period active" data-period="day" aria-pressed="true">Dzień</button><button class="stats-period" data-period="week" aria-pressed="false">Tydzień</button><button class="stats-period" data-period="month" aria-pressed="false">Miesiąc</button><button class="stats-period" data-period="year" aria-pressed="false">Rok</button><div class="stats-date-nav"><button class="button stats-step" id="statsPrev" type="button" aria-label="Poprzedni dzień" title="Poprzedni dzień">‹</button><input class="stats-date" type="date" id="statsDate" aria-label="Wybierz dzień lub tydzień"><input class="stats-date" type="month" id="statsMonth" aria-label="Wybierz miesiąc" hidden><input class="stats-date" type="number" id="statsYear" min="2000" max="2100" aria-label="Wybierz rok" hidden><button class="button stats-step" id="statsNext" type="button" aria-label="Następny dzień" title="Następny dzień">›</button></div><button class="button stats-csv" id="statsCsv" disabled>Pobierz CSV</button></div></div><div class="stats-content"><div class="stats-legend-toolbar"><div class="stats-legend" id="statsLegend"></div><button class="button stats-series-toggle" id="statsSeriesToggle" type="button" disabled>Odznacz wszystkie</button></div><div class="stats-chart-wrap"><canvas class="stats-chart" id="statsChart" aria-label="Wykres historycznych odczytów sterownika"></canvas><div class="stats-tooltip" id="statsTooltip" role="status" aria-live="polite"></div><div class="stats-message" id="statsMessage">Ładowanie historii z ThingSpeak…</div></div><div class="stats-meta" id="statsMeta">Historia jest pobierana z dwóch kanałów ThingSpeak.</div></div></section>
   <div class="bottomnote" id="bottomNote">ThermoFlow · Schemat pokazuje wartości udostępniane przez sterownik; brakujące czujniki są oznaczone</div>
 </div><script src="/assets/js/api.js" defer></script>
   <script src="/assets/js/reference-model.js" defer></script>
   <script src="/assets/js/schematic.js" defer></script>
   <script src="/assets/js/live.js" defer></script>
   <script src="/assets/js/statistics.js" defer></script>
-  <script src="/assets/js/fuel.js" defer></script></body></html>
+  <script src="/assets/js/fuel.js" defer></script>
+  <script src="/assets/js/navigation.js" defer></script></body></html>
