@@ -26,6 +26,24 @@ jobs:
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
 
+  frontend-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: JavaScript syntax
+        run: for file in assets/js/*.js; do node --check "$file"; done
+      - name: HTML and asset regression
+        run: python tests/test_frontend_assets.py
+
   docker-build:
     runs-on: ubuntu-latest
     strategy:
