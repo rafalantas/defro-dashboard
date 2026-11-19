@@ -676,6 +676,24 @@ def _lagged_temperature(t, prev_t):
     return LAG_WEIGHT_TODAY * t + LAG_WEIGHT_PREVIOUS * prev_t
 
 
+def _telemetry_daily_features(days: int) -> tuple[dict, dict]:
+    """Return optional telemetry aggregates without allowing telemetry faults to break fuel estimates."""
+    try:
+        audit = _telemetry_history(min(MAX_DAYS, max(1, days)))
+        daily = {row.get("day"): row for row in audit.get("daily", [])}
+        return daily, {
+            "status": "available",
+            "days": len(daily),
+            "fetched_at": audit.get("fetched_at"),
+        }
+    except Exception as error:
+        # Telemetry is an optional feature source; preserve counter/refill estimates on any failure.
+        return {}, {
+            "status": "unavailable",
+            "error": f"{type(error).__name__}: {error}"[:180],
+        }
+
+
 def _daily_rows(days: int = 120):
     """Pełne doby z licznikiem podajnika, temperaturą, słońcem i wiatrem."""
     counter = _counter_calibration(_refills())
@@ -687,12 +705,7 @@ def _daily_rows(days: int = 120):
 
     # Telemetria jest dołączana do tych samych dób co skalibrowany licznik paliwa.
     # Audyt ma limit 14 dni; starsze dni pozostają bez cech instalacji i nie są imputowane.
-    telemetry_by_day = {}
-    try:
-        audit = _telemetry_history(min(MAX_DAYS, max(1, days)))
-        telemetry_by_day = {row.get("day"): row for row in audit.get("daily", [])}
-    except FuelError:
-        telemetry_by_day = {}
+    telemetry_by_day, telemetry_state = _telemetry_daily_features(days)
 
     d = max(ts_start + timedelta(days=1), today - timedelta(days=days))
     try:
@@ -731,6 +744,8 @@ def _daily_rows(days: int = 120):
                     "telemetry_pump_dhw_h": pump_runtime("pump_dhw"),
                     "telemetry_pump_circulation_h": pump_runtime("pump_circulation"),
                     "telemetry_samples": telemetry.get("co_c_samples", 0),
+                    "telemetry_status": telemetry_state["status"],
+                    "telemetry_error": telemetry_state.get("error"),
                     "kg_counter": kg, "counter_regime": _counter_regime(d),
                     "estimate": kg is not None and counter["collecting"] and _counter_regime(d) == "new"})
         d += timedelta(days=1)
@@ -1580,8 +1595,14 @@ def _summary_build() -> dict:
 
     planning = _planning_forecast(model, daily_model, forecast, now, known_temps)
 
+    telemetry_state = next(
+        ({"status": row["telemetry_status"], "error": row.get("telemetry_error")}
+         for row in daily_rows if row.get("telemetry_status") == "unavailable"),
+        {"status": "available", "days": sum(1 for row in daily_rows if row.get("telemetry_samples", 0))},
+    )
     result = {
         "configured": True,
+        "telemetry": telemetry_state,
         "model": model,
         "hdd_base": _active_base(),
         "hdd_base_fixed": HDD_BASE_FIXED is not None,
@@ -1623,7 +1644,13 @@ def _daily(query: dict) -> dict:
             r["model_kg"] = round(_predict_kg_per_day(model, r["t_mean"]), 1)
             if r["kg_counter"] is not None:
                 r["residual_kg"] = round(r["kg_counter"] - r["model_kg"], 1)
+    telemetry_state = next(
+        ({"status": row["telemetry_status"], "error": row.get("telemetry_error")}
+         for row in rows if row.get("telemetry_status") == "unavailable"),
+        {"status": "available", "days": sum(1 for row in rows if row.get("telemetry_samples", 0))},
+    )
     return {"model": model, "daily_model": daily_model, "counter_calibration": counter,
+            "telemetry": telemetry_state,
             "weather_vars": {"solar_mj": "suma promieniowania krótkofalowego, MJ/m²",
                              "wind_max_kmh": "maksymalna prędkość wiatru na 10 m, km/h"},
             "days": rows}
