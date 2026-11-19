@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hmac
 import fuel_ai
+import fuel_telemetry
 import json
 import os
 import threading
@@ -1628,6 +1629,43 @@ def _check_token(headers):
         raise FuelError(401, "Brak lub zły token")
 
 
+
+def _telemetry_audit(query: dict) -> dict:
+    """Pobiera surową telemetrię dwóch kanałów i zwraca audyt jakości oraz cechy dobowe."""
+    try:
+        days = max(1, min(int(query.get("days", ["7"])[0]), 14))
+    except (TypeError, ValueError):
+        raise FuelError(400, "days musi być liczbą") from None
+    channel_ids = [TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE]
+    read_keys = [TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE]
+    if not all(channel_ids):
+        raise FuelError(503, "Audyt wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
+    feeds_by_channel = [[], []]
+    today = datetime.now(TZ).date()
+    # Pobieramy osobno każdą dobę: przy próbkowaniu ~40 s mieści się ona
+    # bezpiecznie w limicie 8000 rekordów ThingSpeak, bez obcinania historii.
+    for channel_index, channel_id in enumerate(channel_ids):
+        for offset in range(days, -1, -1):
+            day = today - timedelta(days=offset)
+            start = datetime.combine(day, datetime.min.time(), tzinfo=TZ)
+            end = start + timedelta(days=1)
+            params = {
+                "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+                "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+                "timezone": "Europe/Warsaw",
+                "results": 8000,
+            }
+            if read_keys[channel_index]:
+                params["api_key"] = read_keys[channel_index]
+            payload = _request_json(
+                f"{TS_API}/channels/{channel_id}/feeds.json", params=params, timeout=12
+            )
+            feeds_by_channel[channel_index].extend(payload.get("feeds", []))
+    result = fuel_telemetry.analyze(feeds_by_channel, channel_ids, days)
+    result["fetched_at"] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
 def handle(method: str, path: str, query: dict, headers, body: bytes):
     """Zwraca (status, payload) dla ścieżek /api/fuel/..., w innym przypadku None."""
     if not path.startswith("/api/fuel/"):
@@ -1641,6 +1679,8 @@ def handle(method: str, path: str, query: dict, headers, body: bytes):
             return 200, _summary()
         if method == "GET" and path == "/api/fuel/daily":
             return 200, _daily(query)
+        if method == "GET" and path == "/api/fuel/telemetry-audit":
+            return 200, _telemetry_audit(query)
         if method == "GET" and path == "/api/fuel/refills":
             return 200, {"refills": _refills()}
         if method == "POST" and path == "/api/fuel/refill":
