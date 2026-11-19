@@ -388,7 +388,7 @@ def _history_timestamp(value) -> datetime | None:
     """Parse eModul's local YYYYMMDDHHMM sample timestamps."""
     raw = str(value or "")
     try:
-        return datetime.strptime(raw, "%Y%m%d%H%M").replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+        return datetime.strptime(raw, "%Y%m%d%H%M").replace(tzinfo=thermoflow_timezone())
     except ValueError:
         return None
 
@@ -461,7 +461,7 @@ def _intervals(points: list) -> list:
 
 
 def _local_iso(timestamp: int) -> str:
-    return datetime.fromtimestamp(timestamp, ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
+    return datetime.fromtimestamp(timestamp, thermoflow_timezone()).strftime("%Y-%m-%d %H:%M")
 
 
 def _history_analysis(raw: dict, minimum_opening: float | None = None) -> dict:
@@ -574,7 +574,7 @@ def _history_query_datetime(value: str) -> datetime:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise ValueError("Datę podaj w formacie ISO, np. 2026-11-08T12:00:00+01:00") from None
-    return parsed.replace(tzinfo=ZoneInfo("Europe/Warsaw")) if parsed.tzinfo is None else parsed
+    return parsed.replace(tzinfo=thermoflow_timezone()) if parsed.tzinfo is None else parsed
 
 
 def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True, minimum_opening: float | None = None) -> dict:
@@ -585,7 +585,7 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
     if len(channel_ids) != len(fields_by_channel):
         return {"configured": False, "connected": False, "error": "Historia wymaga dwóch kanałów ThingSpeak"}
 
-    local_tz = ZoneInfo("Europe/Warsaw")
+    local_tz = thermoflow_timezone()
     end = requested_end.astimezone(local_tz) if requested_end else datetime.now(local_tz)
     start = requested_start.astimezone(local_tz) if requested_start else datetime.fromtimestamp(end.timestamp() - hours * 3600, local_tz)
     if start >= end:
