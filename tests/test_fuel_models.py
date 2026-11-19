@@ -16,7 +16,7 @@ class FuelModelsTests(unittest.TestCase):
         self.assertIsNone(fuel_models._lagged_temperature(10.0, None))
 
     def test_hdd_and_daily_prediction(self):
-        self.assertEqual(fuel_models._hdd_from([(1.0, 10.0), (0.5, 16.0)], 18.0), 11.0)
+        self.assertEqual(fuel_models._hdd_from([(1.0, 10.0), (0.5, 16.0)], 18.0), 9.0)
         model = {
             "base_kg_per_day": 1.0,
             "kg_per_hdd": 0.5,
