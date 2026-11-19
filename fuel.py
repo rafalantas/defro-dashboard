@@ -69,19 +69,18 @@ HDD_BASE = float(os.getenv("HDD_BASE", "") or 14.0)
 
 
 def _parse_hdd_base_fixed(raw: str):
-    """FUEL_HDD_BASE_FIXED: stała temperatura bazowa stopniodni (domyślnie 15,5 °C).
+    """FUEL_HDD_BASE_FIXED: opcjonalne ręczne wymuszenie temperatury bazowej.
 
-    Puste ustawienie daje domyślną wartość, a „off”/„auto”/„0” wyłącza stałą bazę (baza dopasowywana).
+    Puste ustawienie lub „off”/„auto”/„0” oznacza automatyczne dopasowanie z dosypek.
     """
     raw = (raw or "").strip().lower().replace(",", ".")
-    if not raw:
-        return 15.5
-    if raw in ("off", "auto", "none", "false", "0"):
+    if not raw or raw in ("off", "auto", "none", "false", "0"):
         return None
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
-        return 15.5
+        return None
+    return value if 8.0 <= value <= 22.0 else None
 
 
 HDD_BASE_FIXED = _parse_hdd_base_fixed(os.getenv("FUEL_HDD_BASE_FIXED", ""))
@@ -864,10 +863,8 @@ def _fit_at(rows: list, base: float):
 def _fit_model(refills: list[dict]):
     """Model budynku z dosypek: kg/dobę = stała + kg_na_stopień × stopniodni/dobę.
 
-    Stała to CWU i straty niezależne od pogody. Przy FUEL_HDD_BASE_FIXED temperatura bazowa jest
-    stała i model dopasowuje tylko stałą część i kg na stopień; dopasowanie bazy z zakresu
-    MODEL_BASES jest liczone dalej, ale tylko informacyjnie (best_fit_balance_temp).
-    Bez stałej bazy używana jest najlepiej dopasowana.
+    Domyślnie temperatura bazowa jest dopasowywana do danych. FUEL_HDD_BASE_FIXED
+    pozwala opcjonalnie wymusić wartość ręcznie.
     """
     key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)
     if _model_cache["key"] == key:
