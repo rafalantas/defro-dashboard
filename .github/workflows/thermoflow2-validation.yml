@@ -33,7 +33,7 @@ jobs:
       - name: Fuel HTTP transport regression
         run: python -m unittest tests/test_fuel_http.py
       - name: Fuel estimate contract regression
-        run: python -m unittest tests/test_fuel_estimates.py
+        run: python -m unittest tests/test_fuel_estimates.py tests/test_fuel_estimate_selection.py
       - name: Fuel refill regression
         run: python -m unittest tests/test_fuel_refills.py
       - name: Fuel pure model regression
