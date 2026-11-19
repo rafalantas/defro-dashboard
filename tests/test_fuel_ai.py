@@ -24,6 +24,22 @@ def synthetic_rows(count=90):
     return rows
 
 
+def add_telemetry(rows):
+    for index, row in enumerate(rows):
+        row.update({
+            "telemetry_co_c": 65.0 + (index * 3) % 9,
+            "telemetry_dhw_c": 42.0 + (index * 5) % 8,
+            "telemetry_floor_c": 29.0 + (index * 7) % 8,
+            "telemetry_return_c": 55.0 + (index * 11) % 12,
+            "telemetry_boiler_power_kw": 3.0 + (index * 13) % 15,
+            "telemetry_valve_opening_pct": 35.0 + (index * 17) % 55,
+            "telemetry_pump_floor_h": 8.0 + (index * 3) % 12,
+            "telemetry_pump_dhw_h": 1.0 + (index * 2) % 5,
+            "telemetry_pump_circulation_h": 2.0 + (index * 5) % 7,
+        })
+    return rows
+
+
 class FuelAiTests(unittest.TestCase):
     def test_insufficient_history_stays_collecting(self):
         result = fuel_ai.evaluate(synthetic_rows(50))
@@ -39,6 +55,21 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["holdout_to"], "2026-04-06")
         self.assertIn("mae_kg_day", result["candidate"])
         self.assertIn("production estimates are unchanged", result["safety"])
+
+    def test_seven_days_of_telemetry_are_ingested_but_not_overfit(self):
+        result = fuel_ai.evaluate(add_telemetry(synthetic_rows(7)))
+        self.assertEqual(result["status"], "collecting")
+        self.assertEqual(result["telemetry"]["status"], "collecting")
+        self.assertEqual(result["telemetry"]["complete_days"], 7)
+        self.assertGreater(result["telemetry"]["days_needed"], 7)
+
+    def test_telemetry_candidate_uses_chronological_holdout_when_history_is_sufficient(self):
+        result = fuel_ai.evaluate(add_telemetry(synthetic_rows(100)))
+        self.assertEqual(result["telemetry"]["status"], "shadow_ready")
+        self.assertEqual(result["telemetry"]["mode"], "shadow_only")
+        self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.MIN_TRAIN_DAYS)
+        self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.MIN_TEST_DAYS)
+        self.assertIn("telemetry_return_c", result["telemetry"]["features"])
 
     def test_room_temperature_never_changes_fuel_model(self):
         rows = synthetic_rows()
