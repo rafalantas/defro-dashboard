@@ -36,3 +36,9 @@ def test_history_analysis_rejects_out_of_range_minimum_and_uses_fallback():
 
     assert result["protection_cycles"]
     assert result["protection_cycles"][0]["min_opening"] == 32
+
+if __name__ == "__main__":
+    test_history_analysis_uses_configured_minimum_opening()
+    test_history_analysis_keeps_legacy_fallback_when_config_missing()
+    test_history_analysis_rejects_out_of_range_minimum_and_uses_fallback()
+    print("History analysis regression: configured minimum opening and fallback: OK")
