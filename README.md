@@ -98,7 +98,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | `/api/diagnostics` | Odczyty diagnostyczne eModul: kafelki, kompletna struktura stref, dostępność menu MU/MI/MS/MP oraz podsumowanie serii statystyk |
 | `/api/fuel/stats?days=30` | Zużycie peletu: okresy między dosypkami, stopniodni, kg na stopniodzień, szacunek dzienny z mocy palnika |
 | `/api/fuel/summary` | Podsumowanie do karty „Zużycie peletu”: ostatnie 7 dni, kg na stopniodzień, czas od dosypki i szacowany stan zasobnika |
-| `/api/fuel/daily?days=60` | Zużycie w pełnych dobach z licznika podajnika obok temperatury, promieniowania słonecznego i wiatru (Open-Meteo), odchyłka od modelu domu oraz stan modelu dobowego |
+| `/api/fuel/telemetry-audit?days=7` | Audyt jakości 16 serii ThingSpeak (próbki, zakres czasu, odstępy, luki) oraz agregaty dobowe temperatur, mocy, zaworu i czasu pracy pomp; zakres 1–14 dni, tylko odczyt. |\n| `/api/fuel/daily?days=60` | Zużycie w pełnych dobach z licznika podajnika obok temperatury, promieniowania słonecznego i wiatru (Open-Meteo), odchyłka od modelu domu oraz stan modelu dobowego |
 | `/api/fuel/refills` | Lista dosypek z kanału ThingSpeak „Pelet” |
 | `POST /api/fuel/refill` | Dodanie dosypki `{"kg": 30}` lub `{"bags": 2}`, opcjonalnie `ts` i `note`; wymaga nagłówka `X-Api-Token` |
 | `DELETE /api/fuel/refill/<id>` | Anulowanie błędnej dosypki (ThingSpeak nie usuwa pojedynczych wpisów); wymaga `X-Api-Token` |
