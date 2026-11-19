@@ -30,8 +30,12 @@ The first refactor stage has now addressed several audit findings without replac
 - **F6 — ThingSpeak schema:** `fuel_schema.py` is now the canonical definition of both eight-field channels. API writes/history, fuel field indexes and telemetry parsing derive from it. Contract tests cover field order and semantic IDs.
 - **F7 — timezone:** API, fuel and telemetry now obtain their timezone from the shared schema configuration, retaining Europe/Warsaw as the default.
 - **F8 — telemetry fault isolation:** daily feature construction now converts unexpected telemetry exceptions into an explicit `unavailable` state; counter/refill estimates continue and summary/daily payloads expose the telemetry status.
-- **Pure model extraction:** the solver, OLS/LOO scoring, lagged-temperature transform, HDD regression and prediction functions now live in `fuel_models.py`. `fuel.py` re-exports them as a compatibility façade, so existing callers and tests keep their names.
-- Docker packaging and CI include both shared schema and extracted model modules, plus dedicated regression tests.
+- **Pure model extraction:** the solver, OLS/LOO scoring, lagged-temperature transform, HDD regression and prediction functions now live in `fuel_models.py`.
+- **Refill domain extraction:** normalization of ThingSpeak refill/void events and the 30-minute close-event merge now live in `fuel_refills.py`.
+- **Counter domain extraction:** old/new feeder calibration, epoch-spanning estimates, provisional coefficients and interval splitting now live in `fuel_counter.py`.
+- **Burner-energy extraction:** energy calibration and kWh-to-kg conversion, including epoch splitting, now live in `fuel_energy.py`.
+- `fuel.py` re-exports these operations through compatibility wrappers, so existing callers and tests keep their names and payload behavior.
+- Docker packaging and CI include all extracted modules, plus focused regression tests.
 
 These are branch changes only. They do not constitute a production cutover; `fuel.py` remains the production calculation path, and AI remains shadow-only. CI must pass on the latest branch head before this stage is considered validated.
 
