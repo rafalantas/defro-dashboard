@@ -749,7 +749,7 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         result["analysis"] = {"error": "Analiza wymaga pełnego zestawu serii; pomiń parametr series albo ustaw analysis=0"}
     elif with_analysis:
         try:
-            result["analysis"] = _history_analysis(raw_by_id)
+            result["analysis"] = _history_analysis(raw_by_id, minimum_opening)
         except Exception as error:   # analiza nie może zablokować samych danych
             result["analysis"] = {"error": str(error)[:180]}
     with _history_cache_lock:
