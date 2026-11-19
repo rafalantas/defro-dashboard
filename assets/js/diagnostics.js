@@ -62,11 +62,85 @@
     notes.push(row('Temperatura spalin',flueDelta==null?'Brak danych':flue.length+' próbek','zmiana w zakresie: '+(flueDelta>0?'+':'')+fmt(flueDelta)+'°C · bez wnioskowania o zapłonie'));
     notes.push(row('Dostępność serii',[co,flue,power,ret,valve,opening,floor,dhw,rad].filter(x=>x.length).length+'/9','brakujące serie nie są estymowane · zadana 4D: '+(setpoint.length?'dostępna':'brak')+' · próbki powrotu: '+returnQuality.count));
     notes.forEach(e=>events.append(e));
-    $('diagnosticsHistoryMeta').textContent='Źródło: ThingSpeak · '+fmt(payload.range_hours)+' h · mediana odstępu próbek CO: '+(coQuality.median==null?'brak danych':fmt(coQuality.median,0)+' s')+' · przerwy >'+fmt(maxGap,0)+' s wyłączone z czasu zdarzeń · odświeżanie co 60 s · tylko odczyt.';
+    $('diagnosticsHistoryMeta').textContent='Źródło: ThingSpeak · '+fmt(payload.range_hours)+' h · mediana odstępu próbek CO: '+(coQuality.median==null?'brak danych':fmt(coQuality.median,0)+' s')+' · przerwy >'+fmt(maxGap,0)+' s wyłączone z czasu zdarzeń · odświeżanie ręczne · tylko odczyt.';
   }
   const configPromise=ThermoFlowApi.get('/api/diagnostics').then(response=>response.json()).catch(()=>null);
-  let selectedHours=24,requestId=0;
-  async function load(){const current=++requestId;try{const config=await configPromise;const minimum=config?.analysis_config?.valve_minimum_opening;const end=Date.now();const start=end-selectedHours*3600000;const windows=[];for(let cursor=start;cursor<end;cursor+=24*3600000)windows.push([cursor,Math.min(cursor+24*3600000,end)]);const responses=Array(windows.length);let next=0;await Promise.all(Array.from({length:Math.min(3,windows.length)},async()=>{while(next<windows.length){const index=next++, [from,to]=windows[index];const params=new URLSearchParams({start:new Date(from).toISOString(),end:new Date(to).toISOString(),format:'full'});if(minimum!=null&&Number.isFinite(Number(minimum)))params.set('minimum_opening',String(minimum));const response=await ThermoFlowApi.get('/api/history?'+params.toString());responses[index]=await response.json();}}));if(current!==requestId)return;const failed=responses.find(payload=>!payload?.configured||!payload?.connected||!Array.isArray(payload.series));if(failed){render(failed,config);return;}const combined=new Map();for(const payload of responses)for(const item of payload.series){if(!combined.has(item.id))combined.set(item.id,{...item,points:[]});const target=combined.get(item.id);target.points.push(...(item.points||[]));}for(const item of combined.values()){const unique=new Map();for(const point of item.points)unique.set(Number(point[0]),[Number(point[0]),Number(point[1])]);item.points=[...unique.values()].sort((a,b)=>a[0]-b[0]);}render({configured:true,connected:true,series:[...combined.values()],range_hours:selectedHours,fetched_at:new Date().toISOString()},config);}catch(_){if(current===requestId)render({configured:true,connected:false,error:'Nie udało się pobrać historii ThingSpeak.'},null);}}
-  document.querySelectorAll('[data-diagnostics-range]').forEach(button=>button.addEventListener('click',()=>{selectedHours=Number(button.dataset.diagnosticsRange);document.querySelectorAll('[data-diagnostics-range]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});load();}));
-  load();setInterval(load,60000);
+  let selectedHours=24,loading=false;
+  const rangeButtons=[...document.querySelectorAll('[data-diagnostics-range]')];
+  const refreshButton=$('diagnosticsRefresh');
+  function setLoadStatus(message,completed=0,total=1,finished=false){
+    $('diagnosticsLoadStatus').textContent=message;
+    const progress=$('diagnosticsProgress');
+    progress.max=Math.max(1,total);
+    progress.value=Math.min(completed,progress.max);
+    progress.toggleAttribute('data-finished',finished);
+  }
+  function setControlsDisabled(disabled){
+    rangeButtons.forEach(button=>button.disabled=disabled);
+    refreshButton.disabled=disabled;
+  }
+  async function load(){
+    if(loading)return;
+    loading=true;
+    setControlsDisabled(true);
+    let total=1;
+    try{
+      setLoadStatus('Pobieram konfigurację analizy…');
+      const config=await configPromise;
+      const minimum=config?.analysis_config?.valve_minimum_opening;
+      const end=Date.now(),start=end-selectedHours*3600000,windows=[];
+      for(let cursor=start;cursor<end;cursor+=24*3600000)windows.push([cursor,Math.min(cursor+24*3600000,end)]);
+      total=windows.length;
+      let next=0,completed=0;
+      const responses=Array(total);
+      setLoadStatus('Pobieram 0 z '+total+' części dobowych…',0,total);
+      await Promise.all(Array.from({length:Math.min(3,total)},async()=>{
+        while(next<total){
+          const index=next++, [from,to]=windows[index];
+          const params=new URLSearchParams({start:new Date(from).toISOString(),end:new Date(to).toISOString(),format:'full'});
+          if(minimum!=null&&Number.isFinite(Number(minimum)))params.set('minimum_opening',String(minimum));
+          const response=await ThermoFlowApi.get('/api/history?'+params.toString());
+          responses[index]=await response.json();
+          completed++;
+          setLoadStatus('Pobrano '+completed+' z '+total+' części dobowych…',completed,total);
+        }
+      }));
+      const failed=responses.find(payload=>!payload?.configured||!payload?.connected||!Array.isArray(payload.series));
+      if(failed){
+        render(failed,config);
+        setLoadStatus('Nie udało się pobrać pełnego zakresu. Sprawdź połączenie z ThingSpeak i spróbuj ponownie.',0,total);
+        return;
+      }
+      setLoadStatus('Łączę próbki według czasu i obliczam podsumowanie…',total,total);
+      const combined=new Map();
+      for(const payload of responses)for(const item of payload.series){
+        if(!combined.has(item.id))combined.set(item.id,{...item,points:[]});
+        combined.get(item.id).points.push(...(item.points||[]));
+      }
+      for(const item of combined.values()){
+        const unique=new Map();
+        for(const point of item.points)unique.set(Number(point[0]),[Number(point[0]),Number(point[1])]);
+        item.points=[...unique.values()].sort((a,b)=>a[0]-b[0]);
+      }
+      render({configured:true,connected:true,series:[...combined.values()],range_hours:selectedHours,fetched_at:new Date().toISOString()},config);
+      setLoadStatus('Gotowe. Pobrano '+total+' '+(total===1?'część dobową':'części dobowych')+'; próbki scalono i przeanalizowano.',total,total,true);
+    }catch(_){
+      render({configured:true,connected:false,error:'Nie udało się pobrać historii ThingSpeak.'},null);
+      setLoadStatus('Błąd pobierania. Sprawdź połączenie i użyj przycisku Odśwież.',0,total);
+    }finally{
+      loading=false;
+      setControlsDisabled(false);
+    }
+  }
+  rangeButtons.forEach(button=>button.addEventListener('click',()=>{
+    selectedHours=Number(button.dataset.diagnosticsRange);
+    rangeButtons.forEach(item=>{
+      const active=item===button;
+      item.classList.toggle('active',active);
+      item.setAttribute('aria-pressed',String(active));
+    });
+    load();
+  }));
+  refreshButton.addEventListener('click',load);
+  load();
 })();
