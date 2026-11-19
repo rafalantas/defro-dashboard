@@ -36,6 +36,7 @@ The first refactor stage has now addressed several audit findings without replac
 - **Counter domain extraction:** old/new feeder calibration, epoch-spanning estimates, provisional coefficients and interval splitting now live in `fuel_counter.py`.
 - **Burner-energy extraction:** energy calibration and kWh-to-kg conversion, including epoch splitting, now live in `fuel_energy.py`.
 - **Planning extraction:** weather-aware kg/day, days-to-reserve and today/week/month/season pellet planning now live in `fuel_planning.py`; weather/network providers remain injected by the compatibility adapter.
+- **Transport/error extraction:** upstream JSON transport and the shared `FuelError` contract now live in `fuel_http.py` and `fuel_errors.py`; `fuel.py` retains the legacy names as imports.
 - `fuel.py` re-exports these operations through compatibility wrappers, so existing callers and tests keep their names and payload behavior.
 - Docker packaging and CI include all extracted modules, plus focused regression tests.
 
