@@ -39,7 +39,9 @@ MOTION = (ROOT / "assets/css/motion.css").read_text(encoding="utf-8")
 assert 'id="diagnosticsHistoryState"' in HTML
 assert 'id="diagnosticsSummary"' in HTML and 'id="diagnosticsEvents"' in HTML
 assert '/assets/js/diagnostics.js' in HTML
-assert '/api/history?hours=24&format=full' in DIAGNOSTICS
+assert "ThermoFlowApi.get('/api/history?'" in DIAGNOSTICS
+assert 'data-diagnostics-range="24"' in HTML and 'data-diagnostics-range="168"' in HTML and 'data-diagnostics-range="720"' in HTML
+assert "selectedHours=24" in DIAGNOSTICS and "maxGapSeconds" in DIAGNOSTICS
 assert "coCycles" in DIAGNOSTICS and "burner" in DIAGNOSTICS and "cold" in DIAGNOSTICS
 assert "POST" not in DIAGNOSTICS and "DELETE" not in DIAGNOSTICS
 assert "age<=90" in LIVE and "classList.toggle('live',fresh)" in LIVE
@@ -48,7 +50,7 @@ assert "good live" in OVERVIEW
 print("Sprint 3 diagnostics: history analysis, read-only event list, truthful eModul live indicator: OK")
 
 # Sprint 4 deep diagnostics: full-resolution, read-only history analysis.
-assert 'format=full' in DIAGNOSTICS
+assert "format:'full'" in DIAGNOSTICS
 for series_id in (
     "thermoflow-co", "thermoflow-flue", "thermoflow-boiler-power",
     "thermoflow-valve4d-return", "thermoflow-valve4d-opening",
