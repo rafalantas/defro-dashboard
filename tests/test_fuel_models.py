@@ -20,6 +20,7 @@ class FuelModelsTests(unittest.TestCase):
         model = {
             "base_kg_per_day": 1.0,
             "kg_per_hdd": 0.5,
+            "balance_temp": 20.0,
             "kg_per_solar_mj": -0.02,
             "kg_per_wind_hdd": 0.1,
         }
@@ -37,7 +38,8 @@ class FuelModelsTests(unittest.TestCase):
         self.assertEqual(result["kg_per_hdd"], 0.5)
 
     def test_linear_solver(self):
-        self.assertEqual(fuel_models._solve([[2.0, 1.0], [1.0, 3.0]], [5.0, 6.0]), [1.8, 1.4])
+        self.assertAlmostEqual(fuel_models._solve([[2.0, 1.0], [1.0, 3.0]], [5.0, 6.0])[0], 1.8)
+        self.assertAlmostEqual(fuel_models._solve([[2.0, 1.0], [1.0, 3.0]], [5.0, 6.0])[1], 1.4)
 
 
 if __name__ == "__main__":
