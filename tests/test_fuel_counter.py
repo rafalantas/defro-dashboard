@@ -2,7 +2,8 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-import fuel_counter\nfrom fuel_counter import calibrate_pairs, counter_kg, counter_regime, span_estimate
+import fuel_counter
+from fuel_counter import calibrate_pairs, counter_kg, counter_regime, span_estimate
 
 
 EPOCH = datetime(2026, 11, 13, 18, 27, tzinfo=timezone.utc)
