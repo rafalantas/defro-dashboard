@@ -24,6 +24,7 @@
     const maxGap=settings?.max_sample_gap_seconds,pumpWindow=settings?.pump_correlation_window_seconds;
     const powerActiveMin=settings?.boiler_power_active_min_kw,valveChangeMin=settings?.valve_change_min_delta;
     const settingsReady=[coTarget,coLow,returnMinimum,returnTolerance,minimumOpening,maxGap,pumpWindow,powerActiveMin,valveChangeMin].every(v=>v!=null&&Number.isFinite(Number(v)));
+    const intro=$('diagnosticsIntro');if(intro)intro.textContent=settingsReady?`Analiza ${fmt(payload.range_hours,0)} h z ThingSpeak. Cykl CO: spadek poniżej ${fmt(coLow,1)}°C → osiągnięcie ${fmt(coTarget,1)}°C. Ochrona powrotu: ${fmt(returnMinimum,1)}°C ±${fmt(returnTolerance,1)}°C. Progi pobrane z API; wyniki opisują zapisane próbki i nie sterują kotłem.`:'Analiza z zapisanych próbek ThingSpeak. Brakuje części konfiguracji z API; wyniki są oznaczone jako częściowe.';
     const coQuality=quality(co,maxGap),returnQuality=quality(ret,maxGap);
     const coCycles=cycles(co,coLow,coTarget,maxGap);
     const cold=returnMinimum==null?{seconds:0,episodes:[]}:spans(ret,v=>v<returnMinimum,maxGap);
