@@ -49,6 +49,11 @@ from fuel_energy import (
     calibration as _calibration_impl,
     calibrate_burner as _calibrate_burner_impl,
 )
+from fuel_planning import (
+    days_until as _days_until_impl,
+    planning_forecast as _planning_forecast_impl,
+    rate_for as _rate_for_impl,
+)
 from fuel_models import (
     LAG_WEIGHT_PREVIOUS,
     LAG_WEIGHT_TODAY,
@@ -790,44 +795,14 @@ def _forecast():
 
 
 def _rate_for(model: dict, daily_model, day: date, t: float, prev_t=None) -> float:
-    """kg/dobę dla doby o średniej temperaturze t; prev_t (wczoraj) potrzebne modelowi z bezwładnością."""
-    if daily_model and daily_model.get("status") == "aktywny" and daily_model["terms"] != ["hdd"]:
-        weather = _weather(day)
-        effective = t
-        if "hdd_lag" in daily_model["terms"]:
-            effective = _lagged_temperature(t, prev_t if prev_t is not None else t)
-        return _predict_daily(daily_model, max(0.0, daily_model["balance_temp"] - effective),
-                              weather.get("solar_mj"), weather.get("wind_max_kmh"))
-    return _predict_kg_per_day(model, t)
+    return _rate_for_impl(model, daily_model, day, t, prev_t, _weather,
+                          _predict_daily, _predict_kg_per_day, _lagged_temperature)
 
 
-def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime, daily_model=None, known_temps=None):
-    """Ile dób (od teraz) wystarczy kg_needed przy prognozie pogody i modelu domu.
-
-    known_temps: {data: średnia temperatura} z minionych dób, żeby model z bezwładnością znał wczoraj.
-    """
-    if kg_needed <= 0:
-        return 0.0
-    by_day = dict(forecast)
-    temps = {**(known_temps or {}), **by_day}
-    elapsed, day = 0.0, now.date()
-    fraction = (_day_bounds(day)[1] - now).total_seconds() / 86400
-    last_t = forecast[-1][1] if forecast else None
-    for _ in range(60):
-        t = by_day.get(day, last_t)
-        if t is None:
-            return None
-        temps[day] = t
-        rate = _rate_for(model, daily_model, day, t, temps.get(day - timedelta(days=1)))
-        if rate <= 0:
-            return None
-        if kg_needed <= rate * fraction:
-            return round(elapsed + kg_needed / rate, 1)
-        kg_needed -= rate * fraction
-        elapsed += fraction
-        day += timedelta(days=1)
-        fraction = 1.0
-    return None   # powyżej 60 dób: brak sensownej prognozy
+def _days_until(kg_needed: float, model: dict, forecast: list, now: datetime,
+                daily_model=None, known_temps=None):
+    return _days_until_impl(kg_needed, model, forecast, now, daily_model, known_temps,
+                            _day_bounds, _rate_for)
 
 
 def _period_sums(start: datetime, end: datetime, base: float | None = None):
@@ -1139,69 +1114,17 @@ def _climate_monthly(today: date) -> dict:
 
 def _planning_forecast(model: dict | None, daily_model: dict | None,
                        forecast: list, now: datetime, known_temps: dict) -> dict:
-    """Prognoza pelletu: pogoda na 7 dni, dalej pięcioletnie średnie klimatyczne."""
     if not model:
         return {"status": "unavailable", "message": "Za mało danych z dosypek do prognozy"}
     try:
         climate = _climate_monthly(now.date())
     except FuelError as exc:
         return {"status": "unavailable", "message": f"Brak norm pogodowych: {exc.message}"}
-    forecast_map = dict(forecast)
-    today = now.date()
-    month_end = today + timedelta(days=29)
-    if 5 <= now.month < 10:
-        season_start, season_end = date(now.year, 10, 1), date(now.year + 1, 4, 30)
-    else:
-        season_start = today
-        season_end = date(now.year, 4, 30) if now.month <= 4 else date(now.year + 1, 4, 30)
-    horizon = max(month_end, season_end)
-    temperatures = {}
-    for offset in range((horizon - today).days + 1):
-        day = today + timedelta(days=offset)
-        if day in forecast_map:
-            temp = forecast_map[day]
-            weather = _weather(day)
-            solar, wind, source = weather.get("solar_mj"), weather.get("wind_max_kmh"), "prognoza Open-Meteo"
-        else:
-            normal = climate.get(day.month, {})
-            temp = normal.get("t_mean")
-            solar, wind, source = normal.get("solar_mj"), normal.get("wind_max_kmh"), "średnia klimatyczna 5 lat"
-            if temp is not None:
-                temp += _om_offset()["offset"]
-        if temp is None:
-            return {"status": "unavailable", "message": "Niekompletne dane pogodowe do prognozy"}
-        temperatures[day] = (temp, solar, wind, source)
-    rows, previous = [], known_temps.get(today - timedelta(days=1))
-    for offset in range((horizon - today).days + 1):
-        day = today + timedelta(days=offset)
-        temp, solar, wind, source = temperatures[day]
-        if daily_model and daily_model.get("status") == "aktywny":
-            effective = temp
-            if "hdd_lag" in daily_model.get("terms", []):
-                effective = _lagged_temperature(temp, previous if previous is not None else temp)
-            kg = _predict_daily(daily_model, max(0.0, daily_model["balance_temp"] - effective), solar, wind)
-        else:
-            kg = _predict_kg_per_day(model, temp)
-        rows.append({"day": day.isoformat(), "kg": max(0.0, kg), "t_mean": temp, "source": source})
-        previous = temp
-
-    def total(start: date, end: date):
-        selected = [r for r in rows if start <= date.fromisoformat(r["day"]) <= end]
-        kg = sum(r["kg"] for r in selected)
-        return {"from": start.isoformat(), "to": end.isoformat(), "days": len(selected),
-                "kg": round(kg, 1), "bags_15kg": int((kg + 14.999) // 15),
-                "average_kg_day": round(kg / len(selected), 2) if selected else None}
-
-    return {
-        "status": "ready", "location": "Hajnówka, Podlaskie",
-        "coordinates": {"latitude": float(FUEL_LAT), "longitude": float(FUEL_LON)},
-        "weather": "prognoza 7 dni + średnie miesięczne z 5 lat",
-        "climate_years": CLIMATE_YEARS, "generated_at": now.isoformat(),
-        "today": total(today, today), "week": total(today, today + timedelta(days=6)),
-        "month": total(today, month_end), "season": total(season_start, season_end),
-        "daily": rows[:7],
-        "note": "Orientacyjnie; po 7 dniach używane są średnie klimatyczne. Worki zaokrąglone w górę do 15 kg.",
-    }
+    return _planning_forecast_impl(
+        model, daily_model, forecast, now, known_temps, climate, _weather, _om_offset,
+        _predict_daily, _predict_kg_per_day, _lagged_temperature,
+        "Hajnówka, Podlaskie", FUEL_LAT, FUEL_LON, CLIMATE_YEARS,
+    )
 
 
 def _summary_calibration_inputs(refills: list[dict]):
