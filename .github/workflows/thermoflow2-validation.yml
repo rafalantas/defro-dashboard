@@ -1,0 +1,47 @@
+name: ThermoFlow Sprint 1 validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - "work/thermoflow2/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python syntax
+        run: python -m py_compile api.py fuel.py
+      - name: Existing fuel model regression
+        run: python tests/test_daily_lag.py
+
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build frontend image (no push)
+        run: |
+          docker buildx build --platform ${{ matrix.platform }} --output=type=oci,dest=/tmp/frontend.tar -f Dockerfile .
+      - name: Build API image (no push)
+        run: |
+          docker buildx build --platform ${{ matrix.platform }} --output=type=oci,dest=/tmp/api.tar -f Dockerfile.api .
