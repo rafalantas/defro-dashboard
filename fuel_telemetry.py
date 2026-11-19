@@ -120,6 +120,10 @@ def analyze(feeds_by_channel, channel_ids, days):
                 if ts.date() >= start:
                     if kind == "state":
                         daily_states[day][key].append((ts, value >= 0.5))
+                    elif key == "room_c" and value <= 0:
+                        # Zachowujemy surową próbkę w audycie serii, ale nie
+                        # pozwalamy, by brak łączności (np. 0°C) zaniżał agregaty.
+                        daily_states[day]["room_c_invalid"].append((ts, False))
                     else:
                         daily_values[day][key].append(value)
 
@@ -138,7 +142,11 @@ def analyze(feeds_by_channel, channel_ids, days):
             else:
                 row[key + "_mean"] = None
                 row[key + "_samples"] = 0
+        invalid_room = len(daily_states[day].get("room_c_invalid", []))
+        row["room_c_invalid_samples"] = invalid_room
         for key, samples in daily_states[day].items():
+            if key == "room_c_invalid":
+                continue
             samples.sort()
             known_seconds = on_seconds = 0.0
             transitions = 0
