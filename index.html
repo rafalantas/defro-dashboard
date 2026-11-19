@@ -40,16 +40,22 @@
 
   <div class="grid"><main class="maincol">
     <section class="card overview-card" data-view="overview" aria-labelledby="overviewTitle">
-      <div class="cardhead"><div><h2 id="overviewTitle">Overview</h2><div class="subhead">Najważniejsze parametry instalacji · podgląd tylko do odczytu</div></div><span class="badge warn" id="overviewConnection">OCZEKIWANIE NA API</span></div>
+      <div class="cardhead"><div><h2 id="overviewTitle">Centrum kotłowni</h2><div class="subhead">Stan instalacji i diagnostyka operacyjna · podgląd tylko do odczytu</div></div><span class="badge warn" id="overviewConnection">OCZEKIWANIE NA API</span></div>
       <div class="overview-grid">
         <div class="overview-metric"><span>Temperatura CO</span><strong id="overviewCo">—</strong></div>
         <div class="overview-metric"><span>Temperatura powrotu</span><strong id="overviewReturn">—</strong></div>
         <div class="overview-metric"><span>Temperatura zewnętrzna</span><strong id="overviewOutdoor">—</strong></div>
         <div class="overview-metric"><span>Temperatura spalin</span><strong id="overviewFlue">—</strong></div>
-        <div class="overview-metric"><span>Zapas paliwa</span><strong id="overviewFuel">—</strong></div>
+        <div class="overview-metric"><span>Zapas sterownika</span><strong id="overviewFuel">—</strong></div>
         <div class="overview-metric"><span>Stan kotła</span><strong id="overviewBoilerState">—</strong></div>
       </div>
-      <div class="telemetry-footer">Brak odczytu oznacza brak danych z API, a nie stan wyłączony. STB pozostaje bez odczytu.</div>
+      <div class="overview-updated" id="overviewUpdated" aria-live="polite">Oczekiwanie na odczyt…</div>
+      <section class="overview-section" aria-labelledby="overviewAlertsTitle"><h3 id="overviewAlertsTitle">Uwagi i ostrzeżenia</h3><div id="overviewAlerts" class="overview-alerts" role="status" aria-live="polite"><div class="overview-alert warn">Oczekiwanie na dane sterownika.</div></div></section>
+      <div class="overview-columns">
+        <section class="overview-section" aria-labelledby="overviewPumpsTitle"><h3 id="overviewPumpsTitle">Instalacja — stany i odczyty</h3><div id="overviewPumps" class="overview-rows"><div class="overview-muted">Oczekiwanie na dane…</div></div></section>
+        <section class="overview-section" aria-labelledby="overviewFuelTitle"><h3 id="overviewFuelTitle">Paliwo i modele predykcyjne</h3><div id="overviewFuelModels" class="overview-models"><div class="overview-muted">Oczekiwanie na podsumowanie paliwa…</div></div></section>
+      </div>
+      <div class="telemetry-footer">Brak odczytu oznacza brak danych, a nie stan wyłączony. Ochrona powrotu: punkt odniesienia 55 °C ±1 °C. STB pozostaje bez odczytu. Panel nie steruje kotłem.</div>
     </section>
     <section class="card" data-view="installation" aria-label="Schemat instalacji">
       <div class="schematic-wrap"><svg class="schematic" viewBox="0 0 1380 600" role="img" aria-label="Schemat ogrzewania: zawór 4D obsługuje grzejniki, zawór 3D podłogówkę; powroty łączą się przed kotłem">
@@ -173,4 +179,5 @@
   <script src="/assets/js/live.js" defer></script>
   <script src="/assets/js/statistics.js" defer></script>
   <script src="/assets/js/fuel.js" defer></script>
+  <script src="/assets/js/overview.js" defer></script>
   <script src="/assets/js/navigation.js" defer></script></body></html>
