@@ -34,6 +34,15 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from fuel_schema import field_number, timezone as thermoflow_timezone
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
+from fuel_counter import (
+    calibrate_pairs as _calibrate_pairs_impl,
+    counter_calibration as _counter_calibration_impl,
+    counter_factor as _counter_factor_impl,
+    counter_kg as _counter_kg_impl,
+    counter_method as _counter_method_impl,
+    counter_regime as _counter_regime_impl,
+    span_estimate as _span_estimate_impl,
+)
 from fuel_models import (
     LAG_WEIGHT_PREVIOUS,
     LAG_WEIGHT_TODAY,
@@ -462,21 +471,7 @@ def _counter_drop(start: datetime, end: datetime):
 
 
 def _calibrate_pairs(pairs: list) -> dict:
-    """kg na 1 % licznika zapasu z podanych okresów między dosypkami (z danymi licznika)."""
-    kg = drop = 0.0
-    used = 0
-    for prev, cur in pairs:
-        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
-        d, complete, floor_hit = _counter_drop(start, end)
-        if not complete or floor_hit or not d:
-            continue
-        kg += cur["kg"]
-        drop += d
-        used += 1
-    if used == 0 or drop < MIN_COUNTER_DROP:
-        return {"kg_per_percent": None, "calibrated": False, "periods_used": used, "drop_percent": round(drop, 1)}
-    return {"kg_per_percent": round(kg / drop, 3), "calibrated": True, "periods_used": used,
-            "drop_percent": round(drop, 1), "kg": round(kg, 1)}
+    return _calibrate_pairs_impl(pairs, _counter_drop, MIN_COUNTER_DROP)
 
 
 def _fmt_pl(value: float) -> str:
@@ -484,135 +479,32 @@ def _fmt_pl(value: float) -> str:
 
 
 def _span_estimate(refills: list[dict], old: dict):
-    """Współczynnik po epoce z okresu obejmującego epokę (pomiędzy dosypką przed i po niej).
-
-    Część przed epoką liczona starym współczynnikiem, reszta dosypanych kg jest przypisana
-    części po epoce. Błąd starego współczynnika i zaokrąglenie licznika zostają w wyniku,
-    stąd niepewność ok. ±10 %.
-    """
-    if not old["calibrated"]:
-        return None
-    for prev, cur in zip(refills, refills[1:]):
-        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
-        if not start < COUNTER_EPOCH < end:
-            continue
-        before, ok_before, floor_before = _counter_drop(start, COUNTER_EPOCH)
-        after, ok_after, floor_after = _counter_drop(COUNTER_EPOCH, end)
-        if not (ok_before and ok_after) or floor_before or floor_after:
-            return None
-        kg_before = before * old["kg_per_percent"]
-        kg_after = cur["kg"] - kg_before
-        if after < MIN_SPAN_DROP or kg_after <= 0:
-            return None
-        factor = kg_after / after
-        return {"kg_per_percent": round(factor, 3),
-                "uncertainty_percent": round(COUNTER_ESTIMATE_UNCERTAINTY * 100),
-                "low": round(factor * (1 - COUNTER_ESTIMATE_UNCERTAINTY), 3),
-                "high": round(factor * (1 + COUNTER_ESTIMATE_UNCERTAINTY), 3),
-                "drop_before_percent": round(before, 1), "drop_after_percent": round(after, 1),
-                "kg_before": round(kg_before, 1), "kg_after": round(kg_after, 1), "refill_ts": cur["ts"]}
-    return None
+    return _span_estimate_impl(refills, old, COUNTER_EPOCH, _counter_drop,
+                               MIN_SPAN_DROP, COUNTER_ESTIMATE_UNCERTAINTY)
 
 
 def _counter_calibration(refills: list[dict]) -> dict:
-    """Współczynnik kg na 1 % licznika, osobno przed i po zmianie wydajności podajnika (COUNTER_EPOCH).
-
-    „Stary” z okresów kończących się przed epoką, „nowy” z okresów zaczynających się po niej.
-    Okres obejmujący epokę nie kalibruje nowego współczynnika wprost, ale daje jego oszacowanie
-    (część przed epoką wg starego współczynnika, reszta po epoce, niepewność ok. ±10 %).
-    Po epoce obowiązuje kolejno: nowy z pełnych okresów, oszacowanie z okresu obejmującego epokę,
-    a bez nich wartość tymczasowa COUNTER_PROVISIONAL_KG_PER_PERCENT (szacunek, ±10 %).
-    Pola najwyższego poziomu opisują współczynnik obowiązujący teraz.
-    """
-    old_pairs, new_pairs = [], []
-    for prev, cur in zip(refills, refills[1:]):
-        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
-        if end <= COUNTER_EPOCH:
-            old_pairs.append((prev, cur))
-        elif start >= COUNTER_EPOCH:
-            new_pairs.append((prev, cur))
-    old, new = _calibrate_pairs(old_pairs), _calibrate_pairs(new_pairs)
-    span = _span_estimate(refills, old)
-    after = datetime.now(TZ) >= COUNTER_EPOCH
-    uncertainty = round(COUNTER_ESTIMATE_UNCERTAINTY * 100)
-
-    if new["calibrated"]:
-        effective = {"kg_per_percent": new["kg_per_percent"], "source": "okresy po epoce", "measured": True}
-    elif span:
-        effective = {"kg_per_percent": span["kg_per_percent"], "source": "okres obejmujący epokę",
-                     "measured": True, "uncertainty_percent": span["uncertainty_percent"]}
-    else:
-        effective = {"kg_per_percent": COUNTER_PROVISIONAL_KG_PER_PERCENT, "source": "wartość tymczasowa",
-                     "measured": False, "uncertainty_percent": uncertainty}
-    collecting = after and not new["calibrated"]
-
-    message = None
-    if collecting and effective["source"] == "okres obejmujący epokę":
-        message = (f"{COUNTER_COLLECTING_MESSAGE}, szacunek z okresu obejmującego zmianę podajnika: "
-                   f"{_fmt_pl(effective['kg_per_percent'])} kg/% (±{uncertainty}%)")
-    elif collecting:
-        message = f"{COUNTER_COLLECTING_MESSAGE}, tymczasowo {_fmt_pl(effective['kg_per_percent'])} kg/% (szacunek, ±{uncertainty}%)"
-
-    current = new if after else old
-    return {
-        "epoch": COUNTER_EPOCH.isoformat(), "after_epoch": after,
-        "old": old, "new": new, "span": span, "new_effective": effective,
-        "collecting": collecting, "provisional": collecting, "message": message,
-        "kg_per_percent": effective["kg_per_percent"] if after else old["kg_per_percent"],
-        "calibrated": current["calibrated"],
-        "periods_used": current["periods_used"], "drop_percent": current["drop_percent"],
-    }
+    return _counter_calibration_impl(
+        refills, COUNTER_EPOCH, datetime.now(TZ), _counter_drop, MIN_COUNTER_DROP,
+        MIN_SPAN_DROP, COUNTER_PROVISIONAL_KG_PER_PERCENT, COUNTER_ESTIMATE_UNCERTAINTY,
+        COUNTER_COLLECTING_MESSAGE, _fmt_pl,
+    )
 
 
 def _counter_factor(counter: dict, moment: datetime):
-    """Współczynnik kg/% właściwy dla chwili: przed epoką stary (None bez kalibracji), od epoki nowy,
-    jego oszacowanie z okresu obejmującego epokę albo wartość tymczasowa."""
-    if moment < COUNTER_EPOCH:
-        group = counter["old"]
-        return group["kg_per_percent"] if group["calibrated"] else None
-    return counter["new_effective"]["kg_per_percent"]
+    return _counter_factor_impl(counter, moment, COUNTER_EPOCH)
 
 
 def _counter_kg(start: datetime, end: datetime, counter: dict):
-    """kg z licznika w przedziale; część przed epoką liczona starym, po epoce nowym współczynnikiem.
-
-    Zwraca (kg, czy komplet danych i kalibracji, czy licznik doszedł do zera).
-    """
-    parts = []
-    if start < COUNTER_EPOCH:
-        parts.append((start, min(end, COUNTER_EPOCH)))
-    if end > COUNTER_EPOCH:
-        parts.append((max(start, COUNTER_EPOCH), end))
-    if not parts:
-        return None, False, False
-    total, floor = 0.0, False
-    for a, b in parts:
-        factor = _counter_factor(counter, a)
-        if factor is None:
-            return None, False, False
-        drop, complete, floor_hit = _counter_drop(a, b)
-        if not complete or drop is None:
-            return None, False, False
-        total += drop * factor
-        floor = floor or floor_hit
-    return total, True, floor
+    return _counter_kg_impl(start, end, counter, COUNTER_EPOCH, _counter_drop)
 
 
 def _counter_regime(day: date) -> str:
-    """„old” / „new” / „epoch”: doba przed epoką, po niej albo ze zmianą podajnika."""
-    start, end = _day_bounds(day)
-    if end <= COUNTER_EPOCH:
-        return "old"
-    return "new" if start >= COUNTER_EPOCH else "epoch"
+    return _counter_regime_impl(day, _day_bounds, COUNTER_EPOCH)
 
 
 def _counter_method(counter: dict) -> str:
-    """Opis źródła współczynnika licznika, gdy nie jest jeszcze skalibrowany po epoce."""
-    effective = counter["new_effective"]
-    value, uncertainty = _fmt_pl(counter["kg_per_percent"]), effective["uncertainty_percent"]
-    if effective["source"] == "okres obejmujący epokę":
-        return f"licznik podajnika, współczynnik z okresu obejmującego zmianę podajnika {value} kg/% (szacunek, ±{uncertainty}%)"
-    return f"licznik podajnika, współczynnik tymczasowy {value} kg/% (szacunek, ±{uncertainty}%)"
+    return _counter_method_impl(counter, _fmt_pl)
 
 
 def _counter_day_kg(day: date, counter: dict):
