@@ -26,7 +26,7 @@ def fit_daily_model(rows: list, *, cache: dict, active_base, min_days: int,
         return cache["data"]
     status = {"status": "zbiera dane", "days": len(usable), "days_needed": min_days}
     if len(usable) < min_days:
-        _daily_model_cache.update(key=key, data=status)
+        cache.update(key=key, data=status)
         return status
 
     y = [r["kg_counter"] for r in usable]
@@ -51,7 +51,7 @@ def fit_daily_model(rows: list, *, cache: dict, active_base, min_days: int,
             continue   # znak niezgodny z fizyką: czynnik odrzucony
         results.append({"terms": names, "coefs": coefs, **fit})
     if not results:
-        _daily_model_cache.update(key=key, data=status)
+        cache.update(key=key, data=status)
         return status
     baseline = next((r for r in results if r["terms"] == ["hdd"]), results[0])
     best = baseline
@@ -77,7 +77,7 @@ def fit_daily_model(rows: list, *, cache: dict, active_base, min_days: int,
         "rmse_loo_temperature_only": round(baseline["rmse_loo"], 1),
         "candidates": [{"terms": r["terms"], "rmse_loo_kg_per_day": round(r["rmse_loo"], 2)} for r in results],
     }
-    _daily_model_cache.update(key=key, data=data)
+    cache.update(key=key, data=data)
     return data
 
 
