@@ -179,12 +179,13 @@ def evaluate(rows: list[dict]) -> dict:
         return {"status": "unstable", "days": total,
                 "message": "Nie udało się dopasować modelu końcowego"}
 
+    telemetry_test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, telemetry_days // 5))
+    telemetry_train_count = telemetry_days - telemetry_test_count
+    telemetry_required_days = telemetry_train_count + telemetry_test_count
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days,
-                        "days_needed": MIN_TRAIN_DAYS + MIN_TEST_DAYS,
+                        "days_needed": telemetry_required_days,
                         "message": "Model telemetrii czeka na co najmniej 45 dób treningowych i 7 testowych"}
-    if telemetry_days >= MIN_TRAIN_DAYS + MIN_TEST_DAYS:
-        telemetry_test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, telemetry_days // 5))
-        telemetry_train_count = telemetry_days - telemetry_test_count
+    if telemetry_train_count >= MIN_TRAIN_DAYS and telemetry_test_count >= MIN_TEST_DAYS:
         telemetry_baseline_names = ["hdd_lag", "solar_mj", "wind_hdd_lag"]
         telemetry_candidate_names = telemetry_baseline_names + telemetry_names
         telemetry_test = telemetry_clean[telemetry_train_count:]
