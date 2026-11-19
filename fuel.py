@@ -35,6 +35,7 @@ from fuel_http import request_json as _request_json
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
 from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weather_for_day as _weather_impl
 from fuel_refill_provider import fetch_refills as fetch_refill_records, write_refill as write_refill_record
+from fuel_thingspeak_daily_provider import fetch_day as fetch_thingspeak_day, detect_data_start as detect_thingspeak_data_start
 from fuel_estimates import select_usage_estimate
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -204,42 +205,13 @@ def _day_bounds(day: date):
 # ---------------------------------------------------------------- temperatury i moc
 
 def _fetch_day(day: date) -> dict:
-    start, end = _day_bounds(day)
-    params = {
-        "start": start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "end": end.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "results": 8000,
-    }
-    if TS_READ_KEY_TEMPS:
-        params["api_key"] = TS_READ_KEY_TEMPS
-    feeds = _request_json(f"{TS_API}/channels/{TS_CHANNEL_TEMPS}/feeds.json", params).get("feeds", [])
-
-    temps, power = [], []
-    for f in feeds:
-        ts = _parse_ts(f["created_at"]).timestamp()
-        t = f.get(f"field{FIELD_OUTDOOR}")
-        p = f.get(f"field{FIELD_POWER}")
-        if t not in (None, ""):
-            temps.append(float(t))
-        if p not in (None, ""):
-            power.append((ts, float(p)))
-
-    power.sort()
-    kwh = 0.0
-    for (t0, p0), (t1, _) in zip(power, power[1:]):
-        dt = min(t1 - t0, MAX_GAP_S)
-        if dt > 0:
-            kwh += p0 * dt / 3600.0
-
-    t_mean = sum(temps) / len(temps) if temps else None
-    return {
-        "day": day.isoformat(),
-        "t_mean": round(t_mean, 2) if t_mean is not None else None,
-        "hdd": round(max(0.0, HDD_BASE - t_mean), 2) if t_mean is not None else None,
-        "burner_kwh": round(kwh, 2),
-        "samples": len(feeds),
-    }
-
+    return fetch_thingspeak_day(
+        day=day, tz=TZ, channel_id=TS_CHANNEL_TEMPS,
+        read_key=TS_READ_KEY_TEMPS, endpoint=TS_API,
+        outdoor_field=FIELD_OUTDOOR, power_field=FIELD_POWER,
+        hdd_base=HDD_BASE, max_gap_seconds=MAX_GAP_S,
+        request_json=_request_json, parse_timestamp=_parse_ts,
+    )
 
 
 def _openmeteo_mean(day: date):
@@ -265,19 +237,19 @@ def _weather(day: date) -> dict:
 
 
 def _temps_data_start():
-    """Pierwszy dzień z danymi w kanale temperatur (z ustawienia albo z daty utworzenia kanału)."""
+    """Pierwszy dzień z danych ThingSpeak (ustawienie albo data utworzenia kanału)."""
     if TS_DATA_START:
         return date.fromisoformat(TS_DATA_START)
     if not _temps_start:
         start = None
         if TS_CHANNEL_TEMPS:
-            params = {"results": 1}
-            if TS_READ_KEY_TEMPS:
-                params["api_key"] = TS_READ_KEY_TEMPS
             try:
-                channel = _request_json(f"{TS_API}/channels/{TS_CHANNEL_TEMPS}/feeds.json", params).get("channel", {})
-                if channel.get("created_at"):
-                    start = _parse_ts(channel["created_at"]).astimezone(TZ).date()
+                start = detect_thingspeak_data_start(
+                    configured_start="", channel_id=TS_CHANNEL_TEMPS,
+                    read_key=TS_READ_KEY_TEMPS, endpoint=TS_API,
+                    request_json=_request_json, parse_timestamp=_parse_ts,
+                    timezone=TZ,
+                )
             except FuelError:
                 return None   # spróbujemy przy następnym zapytaniu
         _temps_start.append(start)
