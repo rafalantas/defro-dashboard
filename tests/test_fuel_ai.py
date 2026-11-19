@@ -55,6 +55,13 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["holdout_to"], "2026-04-06")
         self.assertIn("mae_kg_day", result["candidate"])
         self.assertIn("production estimates are unchanged", result["safety"])
+        self.assertEqual(result["validation"]["protocol"], "walk_forward_expanding_window")
+        self.assertIn("fixed_holdout", result["validation"])
+        fixed = result["validation"]["fixed_holdout"]
+        self.assertEqual(fixed["scored_from"], result["holdout_from"])
+        self.assertEqual(fixed["scored_to"], result["holdout_to"])
+        self.assertLess(fixed["training_to"], fixed["scored_from"])
+        self.assertIn("mae_kg_day", fixed["candidate"])
 
     def test_seven_days_of_telemetry_are_ingested_but_not_overfit(self):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(7)))
@@ -71,6 +78,8 @@ class FuelAiTests(unittest.TestCase):
         self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.MIN_TEST_DAYS)
         self.assertIn("mae_kg_day", result["telemetry"]["baseline"])
         self.assertIn("mae_kg_day", result["telemetry"]["candidate"])
+        self.assertIn("fixed_holdout", result["telemetry"]["validation"])
+        self.assertIn("mae_kg_day", result["telemetry"]["validation"]["fixed_holdout"]["candidate"])
 
     def test_room_temperature_never_changes_fuel_model(self):
         rows = synthetic_rows()
