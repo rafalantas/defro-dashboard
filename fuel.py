@@ -32,11 +32,9 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from zoneinfo import ZoneInfo
+from fuel_schema import field_number, timezone
 
-from fuel_schema import field_number
-
-TZ = ZoneInfo(os.getenv("FUEL_TZ", "Europe/Warsaw"))
+TZ = timezone()
 API_TOKEN = os.getenv("FUEL_API_TOKEN", "")
 TS_API = "https://api.thingspeak.com"
 
