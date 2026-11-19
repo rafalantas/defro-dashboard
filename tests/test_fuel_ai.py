@@ -40,6 +40,18 @@ class FuelAiTests(unittest.TestCase):
         self.assertIn("mae_kg_day", result["candidate"])
         self.assertIn("production estimates are unchanged", result["safety"])
 
+    def test_room_temperature_never_changes_fuel_model(self):
+        rows = synthetic_rows()
+        with_room_zero = [dict(row, room_c=0) for row in rows]
+        with_room_valid = [dict(row, room_c=21.1) for row in rows]
+        zero_result = fuel_ai.evaluate(with_room_zero)
+        valid_result = fuel_ai.evaluate(with_room_valid)
+        baseline_result = fuel_ai.evaluate(rows)
+        self.assertEqual(zero_result["features"], baseline_result["features"])
+        self.assertEqual(valid_result["features"], baseline_result["features"])
+        self.assertEqual(zero_result["candidate"], baseline_result["candidate"])
+        self.assertEqual(valid_result["candidate"], baseline_result["candidate"])
+
     def test_provisional_and_epoch_days_are_excluded(self):
         rows = synthetic_rows()
         rows[0]["estimate"] = True
