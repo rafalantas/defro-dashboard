@@ -27,6 +27,8 @@ jobs:
         run: python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py
       - name: Fuel Intelligence regression
         run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py tests/test_fuel_calibration_windows.py
+      - name: Fuel pure model regression
+        run: python -m unittest tests/test_fuel_models.py
       - name: Fuel telemetry regression
         run: python -m unittest tests/test_fuel_telemetry.py tests/test_fuel_telemetry_resilience.py
       - name: Canonical schema and API isolation regression
