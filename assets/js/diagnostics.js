@@ -11,7 +11,7 @@
     const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pl-PL').replace(/[.\s]+/g,' ').trim();
     const item=items.find(entry=>{
       const label=normalize(entry.label);
-      return /min(imalne)? otwarcie/.test(label)&&/zawor/.test(label);
+      return /(?:min(?:imalne)? .*otwarcie|otwarcie .*min(?:imalne)?)/.test(label)&&/zawor/.test(label);
     });
     if(!item)return null;
     const params=item.params||{};
@@ -64,6 +64,7 @@
     notes.forEach(e=>events.append(e));
     $('diagnosticsHistoryMeta').textContent='Źródło: ThingSpeak · '+fmt(payload.range_hours)+' h · próbki zwykle co ok. 40 s · luki >5 min oznaczane jako niepełne · odświeżanie co 60 s · tylko odczyt.';
   }
-  async function load(){try{const [historyResponse,configResponse]=await Promise.all([ThermoFlowApi.get('/api/history?hours=24&format=full'),ThermoFlowApi.get('/api/diagnostics')]);const [history,config]=await Promise.all([historyResponse.json(),configResponse.json()]);render(history,config);}catch(_){render({configured:true,connected:false,error:'Nie udało się pobrać historii ThingSpeak.'},null);}}
+  const configPromise=ThermoFlowApi.get('/api/diagnostics').then(response=>response.json()).catch(()=>null);
+  async function load(){try{const [historyResponse,config]=await Promise.all([ThermoFlowApi.get('/api/history?hours=24&format=full'),configPromise]);render(await historyResponse.json(),config);}catch(_){render({configured:true,connected:false,error:'Nie udało się pobrać historii ThingSpeak.'},null);}}
   load();setInterval(load,60000);
 })();
