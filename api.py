@@ -12,7 +12,7 @@ import threading
 import time
 import unicodedata
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from fuel_schema import timezone as thermoflow_timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -156,7 +156,7 @@ def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict],
     fields_by_channel = _thingspeak_field_schema()
     if len(channel_ids) != len(fields_by_channel):
         return [], []
-    local_tz = ZoneInfo("Europe/Warsaw")
+    local_tz = thermoflow_timezone()
     start = datetime(year, 1 if period == "year" else month, 1, tzinfo=local_tz)
     if period == "year" or month == 12:
         end = datetime(year + 1, 1, 1, tzinfo=local_tz)
