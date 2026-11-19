@@ -28,6 +28,19 @@ class FuelTelemetryTests(unittest.TestCase):
         self.assertAlmostEqual(row["pump_valve4d_runtime_h"], 40 / 3600, places=4)
         self.assertAlmostEqual(row["pump_valve4d_known_h"], 40 / 3600, places=4)
 
+    def test_zero_room_temperature_is_excluded_from_daily_calculations(self):
+        feeds = [
+            {"created_at": "2026-11-18T10:00:00Z", "field5": "0", "field1": "60"},
+            {"created_at": "2026-11-18T10:00:40Z", "field5": "21.1", "field1": "61"},
+        ]
+        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 1)
+        row = next(item for item in result["daily"] if item["day"] == "2026-11-18")
+        self.assertEqual(row["room_c_mean"], 21.1)
+        self.assertEqual(row["room_c_samples"], 1)
+        self.assertEqual(row["room_c_invalid_samples"], 1)
+        room_series = next(item for item in result["series"] if item["id"] == "thermoflow-room")
+        self.assertEqual(room_series["samples"], 2)  # surowa telemetria pozostaje widoczna
+
     def test_bad_values_are_not_counted(self):
         feeds = [{"created_at": "2026-11-18T10:00:00Z", "field1": "", "field2": "nan"}]
         result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 1)
