@@ -1307,14 +1307,15 @@ def _summary_build() -> dict:
         with _lock:
             daily_rows, _counter_info = _daily_rows()
             daily_model = _fit_daily_model(daily_rows)
-            ai_shadow = fuel_ai.evaluate(daily_rows)
     except FuelError:
-        daily_model = None
+        daily_rows, daily_model = [], None
         ai_shadow = {"status": "unavailable", "message": "Brak danych do analizy"}
-    except Exception:
-        # Eksperyment AI nigdy nie może przerwać obliczeń produkcyjnych.
-        daily_model = None
-        ai_shadow = {"status": "unavailable", "message": "Model eksperymentalny chwilowo niedostępny"}
+    else:
+        try:
+            ai_shadow = fuel_ai.evaluate(daily_rows)
+        except Exception:
+            # Eksperyment AI nigdy nie może przerwać ani zmienić obliczeń produkcyjnych.
+            ai_shadow = {"status": "unavailable", "message": "Model eksperymentalny chwilowo niedostępny"}
 
     def est_kg(kwh: float, moment: datetime) -> float:
         return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, moment)
