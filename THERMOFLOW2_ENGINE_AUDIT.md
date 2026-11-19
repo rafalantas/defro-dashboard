@@ -349,3 +349,14 @@ independently testable. The legacy facade delegates through a compatibility
 wrapper; the new module is included in the API image and CI. Dedicated tests
 cover insufficient history, eligible history, cache reuse and exclusion of
 temporary-counter days.
+
+
+### Summary metrics extraction
+
+Two deterministic pieces of summary payload construction have been extracted
+into `fuel_summary_metrics.py`: the recent refill-period heating intensity
+(the latest four periods with at least 5 HDD) and telemetry health status.
+Both `/api/fuel/summary` and `/api/fuel/daily` now use the same telemetry
+status helper. The legacy selection order and payload shapes are unchanged.
+Tests cover the four-period window, heating-load subtraction, empty windows,
+partial/unavailable precedence and available-day counting.
