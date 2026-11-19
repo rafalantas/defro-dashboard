@@ -20,17 +20,18 @@
     const get=key=>points(payload,key),co=get('co'),flue=get('flue'),power=get('power'),ret=get('ret'),valve=get('valve'),opening=get('opening'),setpoint=get('setpoint'),floor=get('floor'),dhw=get('dhw'),rad=get('rad');
     const settings=analysisSettings(config);
     const coTarget=settings?.co_recovery_target,coLow=settings?.co_low_threshold;
-    const returnMinimum=settings?.return_protection_min,minimumOpening=settings?.valve_minimum_opening;
+    const returnMinimum=settings?.return_protection_min,returnTolerance=settings?.return_protection_tolerance,minimumOpening=settings?.valve_minimum_opening;
     const maxGap=settings?.max_sample_gap_seconds,pumpWindow=settings?.pump_correlation_window_seconds;
-    const settingsReady=[coTarget,coLow,returnMinimum,minimumOpening,maxGap,pumpWindow].every(v=>v!=null&&Number.isFinite(Number(v)));
+    const powerActiveMin=settings?.boiler_power_active_min_kw,valveChangeMin=settings?.valve_change_min_delta;
+    const settingsReady=[coTarget,coLow,returnMinimum,returnTolerance,minimumOpening,maxGap,pumpWindow,powerActiveMin,valveChangeMin].every(v=>v!=null&&Number.isFinite(Number(v)));
     const coQuality=quality(co,maxGap),returnQuality=quality(ret,maxGap);
     const coCycles=cycles(co,coLow,coTarget,maxGap);
     const cold=returnMinimum==null?{seconds:0,episodes:[]}:spans(ret,v=>v<returnMinimum,maxGap);
     const below64=coLow==null?{seconds:0,episodes:[]}:spans(co,v=>v<coLow,maxGap);
     const below70=coTarget==null?{seconds:0,episodes:[]}:spans(co,v=>v<coTarget,maxGap);
-    const burner=spans(power,v=>v>0,maxGap);
+    const burner=powerActiveMin==null?{seconds:0,episodes:[]}:spans(power,v=>v>powerActiveMin,maxGap);
     const lowOpening=minimumOpening==null?{seconds:0,episodes:[]}:spans(opening,v=>v<=minimumOpening,maxGap);
-    const changes=opening.slice(1).filter((p,i)=>Math.abs(p[1]-opening[i][1])>=3).length;
+    const changes=opening.slice(1).filter((p,i)=>Math.abs(p[1]-opening[i][1])>=valveChangeMin).length;
     const range=opening.length?Math.max(...opening.map(p=>p[1]))-Math.min(...opening.map(p=>p[1])):null;
     const floorImpact=pumpImpact(ret,floor,pumpWindow),dhwImpact=pumpImpact(ret,dhw,pumpWindow),radImpact=pumpImpact(ret,rad,pumpWindow);
     const complete=coCycles.filter(c=>c.end&&!c.interrupted),interrupted=coCycles.filter(c=>c.interrupted).length,avgCycle=average(complete.map(c=>c.minutes)),slowest=complete.length?Math.max(...complete.map(c=>c.minutes)):null;
@@ -38,7 +39,7 @@
     state.textContent=partial?'ANALIZA CZĘŚCIOWA':'ANALIZA GOTOWA';state.className='badge '+(partial?'warn':'good');
     [
       kpi(`Cykle CO <${fmt(coLow,1)} → ${fmt(coTarget,1)}°C`,String(complete.length),interrupted+' przerwanych luką danych'),
-      kpi('Średni powrót do 70°C',avgCycle==null?'Brak danych':fmt(avgCycle)+' min','tylko kompletne cykle bez luk >5 min'),
+      kpi(`Średni powrót do ${fmt(coTarget,1)}°C`,avgCycle==null?'Brak danych':fmt(avgCycle)+' min','tylko kompletne cykle bez luk powyżej '+fmt(maxGap/60,1)+' min'),
       kpi(`Czas CO poniżej ${fmt(coLow,1)}°C`,fmt(below64.seconds/60)+' min','z próbek temperatury CO'),
       kpi(`Czas CO poniżej ${fmt(coTarget,1)}°C`,fmt(below70.seconds/60)+' min','łączny czas w zakresie'),
       kpi('Palnik / moc >0',fmt(burner.seconds/60)+' min','czas zarejestrowanej mocy'),
@@ -50,9 +51,9 @@
     const notes=[];
     notes.push(complete.length?row('Najdłuższy pełny cykl odbudowy CO',fmt(slowest)+' min','minimum w cyklu '+fmt(Math.min(...complete.map(c=>c.min)))+'°C'):row('Cykle CO','—','Brak pełnego cyklu bez przerwy w danych.'));
     if(interrupted)notes.push(row('Cykle przerwane luką danych',String(interrupted),'Nie są używane do średniego czasu odbudowy.'));
-    if(coQuality.gaps||returnQuality.gaps)notes.push(row('Jakość historii','ANALIZA CZĘŚCIOWA','Wykryto przerwy próbkowania dłuższe niż 5 min; czasów w lukach nie doliczamy.'));
-    if(cold.episodes.length)cold.episodes.slice(-5).reverse().forEach(e=>notes.push(row('Powrót poniżej 55°C',when(e.start),fmt(e.seconds/60)+' min · minimum '+fmt(e.min)+'°C')));
-    else notes.push(row('Ochrona powrotu','55°C ±1°C','W zapisanych próbkach nie wykryto zejścia poniżej progu ochrony powrotu.'));
+    if(coQuality.gaps||returnQuality.gaps)notes.push(row('Jakość historii','ANALIZA CZĘŚCIOWA','Wykryto przerwy próbkowania dłuższe niż '+fmt(maxGap/60,1)+' min; czasów w lukach nie doliczamy.'));
+    if(cold.episodes.length)cold.episodes.slice(-5).reverse().forEach(e=>notes.push(row(`Powrót poniżej ${fmt(returnMinimum,1)}°C`,when(e.start),fmt(e.seconds/60)+' min · minimum '+fmt(e.min)+'°C')));
+    else notes.push(row('Ochrona powrotu',`${fmt(returnMinimum,1)}°C ±${fmt(returnTolerance,1)}°C`,'W zapisanych próbkach nie wykryto zejścia poniżej progu ochrony powrotu.'));
     for(const [label,result] of [['Pompa podłogowa',floorImpact],['Pompa CWU',dhwImpact],['Pompa 4D',radImpact]])notes.push(row(label,result.starts+' startów z próbką',result.mean==null?'Brak par próbek do porównania':'średnia zmiana powrotu w '+fmt(pumpWindow/60,0)+' min: '+fmt(result.mean)+'°C'));
     const flueDelta=flue.length?flue[flue.length-1][1]-flue[0][1]:null;
     notes.push(row('Temperatura spalin',flueDelta==null?'Brak danych':flue.length+' próbek','zmiana w zakresie: '+(flueDelta>0?'+':'')+fmt(flueDelta)+'°C · bez wnioskowania o zapłonie'));
