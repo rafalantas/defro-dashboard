@@ -28,7 +28,7 @@
     const stale=connected&&age>90;
     const badge=$('overviewConnection');
     badge.textContent=!payload?.configured?'API NIE SKONFIGUROWANE':!payload?.connected?'API NIEDOSTĘPNE':stale?'ODCZYT NIEAKTUALNY':'DANE ZE STEROWNIKA';
-    badge.className='badge '+(connected&&!stale?'good':'warn');
+    badge.className='badge '+(connected&&!stale?'good live':'warn');
     $('overviewCo').textContent=fmtTemp(t.co);
     $('overviewReturn').textContent=fmtTemp(v.return);
     $('overviewOutdoor').textContent=fmtTemp(t.outdoor);
