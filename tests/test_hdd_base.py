@@ -95,6 +95,8 @@ def fake(url, params=None, form=None, payload=None, timeout=10):
 
 
 fuel._request_json = fake
+# Test HDD-base behavior independently; telemetry aggregation has its own regression suite.
+fuel._telemetry_history = lambda days: {"daily": []}
 
 
 def reset(keep_offset=False):
