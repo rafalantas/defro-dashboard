@@ -39,6 +39,7 @@ from fuel_thingspeak_daily_provider import fetch_day as fetch_thingspeak_day, de
 from fuel_daily_provider import get_daily_raw as get_daily_raw_impl
 from fuel_counter_provider import fetch_counter_points
 from fuel_estimates import select_usage_estimate
+from fuel_summary_metrics import build_refills_based, telemetry_state as build_telemetry_state
 from fuel_period_analysis import build_periods as build_refill_periods
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -948,23 +949,7 @@ def _summary_build() -> dict:
             week["heating_kg_per_hdd"] = round(heat / hdd, 2) if hdd >= 5 else None
 
     # 2) kg na stopniodzień z rzeczywistych dosypek (ostatnie 4 okresy grzewcze)
-    recent = [p for p in recent_periods if p["hdd"] >= 5][-4:]
-    refills_based = None
-    if recent:
-        kg = sum(p["kg"] for p in recent)
-        hdd = sum(p["hdd"] for p in recent)
-        days = sum(p["days"] for p in recent)
-        refills_based = {
-            "periods": len(recent),
-            "from": recent[0]["start"],
-            "to": recent[-1]["end"],
-            "kg": kg,
-            "hdd": round(hdd, 1),
-            "kg_per_hdd": round(kg / hdd, 2),
-        }
-        if model:
-            refills_based["heating_kg_per_hdd"] = round((kg - model["base_kg_per_day"] * days) / hdd, 2)
-
+    refills_based = build_refills_based(recent_periods, model)
     # 3) od ostatniej dosypki i 4) szacowany stan zasobnika
     last = None
     hopper = None
@@ -1026,11 +1011,7 @@ def _summary_build() -> dict:
 
     planning = _planning_forecast(model, daily_model, forecast, now, known_temps)
 
-    telemetry_state = next(
-        ({"status": row["telemetry_status"], "error": row.get("telemetry_error")}
-         for row in daily_rows if row.get("telemetry_status") in ("unavailable", "partial")),
-        {"status": "available", "days": sum(1 for row in daily_rows if row.get("telemetry_samples", 0))},
-    )
+    telemetry_state = build_telemetry_state(daily_rows)
     result = {
         "configured": True,
         "telemetry": telemetry_state,
@@ -1075,11 +1056,7 @@ def _daily(query: dict) -> dict:
             r["model_kg"] = round(_predict_kg_per_day(model, r["t_mean"]), 1)
             if r["kg_counter"] is not None:
                 r["residual_kg"] = round(r["kg_counter"] - r["model_kg"], 1)
-    telemetry_state = next(
-        ({"status": row["telemetry_status"], "error": row.get("telemetry_error")}
-         for row in rows if row.get("telemetry_status") in ("unavailable", "partial")),
-        {"status": "available", "days": sum(1 for row in rows if row.get("telemetry_samples", 0))},
-    )
+    telemetry_state = build_telemetry_state(rows)
     return {"model": model, "daily_model": daily_model, "counter_calibration": counter,
             "telemetry": telemetry_state,
             "weather_vars": {"solar_mj": "suma promieniowania krótkofalowego, MJ/m²",
