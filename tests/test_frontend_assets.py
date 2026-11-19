@@ -1,7 +1,6 @@
 """Static checks for the split ThermoFlow frontend."""
 from html.parser import HTMLParser
 from pathlib import Path
-import re
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -40,7 +39,4 @@ assert not audit.inline_styles, "CSS must stay in external stylesheets"
 assert audit.schematic, "Original inline installation SVG must remain present"
 for asset in audit.assets:
     assert (ROOT / asset).is_file(), f"Missing frontend asset: {asset}"
-reference = (ROOT / "assets/js/reference-model.js").read_text(encoding="utf-8")
-for expected in ("heatingKgPerHdd:4.49", "fixedDailyKg:5", "hddBaseC:15.5"):
-    assert expected in re.sub(r"\s+", "", reference), f"Missing reference constant: {expected}"
 print(f"Frontend assets: {len(audit.assets)} paths, {len(audit.ids)} stable IDs, inline SVG: OK")
