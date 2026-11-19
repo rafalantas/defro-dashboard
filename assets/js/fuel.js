@@ -25,6 +25,6 @@ function renderFuel(summary){const week=summary.last7,refills=summary.refills_ba
     hopper?.method||null,fuelDate(summary.fetched_at)].filter(Boolean).join(' · ');
   $('fuelCard').hidden=false;}
 let fuelRetry=null;
-async function loadFuel(){try{const response=await ThermoFlowApi.get('/api/fuel/summary');if(!response.ok)return;const summary=await response.json();if(summary.warming){clearTimeout(fuelRetry);fuelRetry=setTimeout(loadFuel,15000);return;}if(summary.configured)renderFuel(summary);}catch(_){}}
+async function loadFuel(){try{const response=await ThermoFlowApi.get('/api/fuel/summary');if(!response.ok)return;const summary=await response.json();if(summary.warming){clearTimeout(fuelRetry);fuelRetry=setTimeout(loadFuel,15000);return;}window.ThermoFlowFuelSummary=summary;window.dispatchEvent(new CustomEvent('thermoflow:fuel',{detail:summary}));if(summary.configured)renderFuel(summary);}catch(_){}}
 function tick(){const d=new Date();$('clock').textContent=d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}tick();setInterval(tick,1000);loadStatus();setInterval(loadStatus,30000);loadFuel();setInterval(loadFuel,300000);
 $('pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('flowpaused',paused);const svg=document.querySelector('.schematic');if(paused)svg.pauseAnimations();else svg.unpauseAnimations();$('pauseBtn').innerHTML=paused?'▶ &nbsp; Wznów':'Ⅱ &nbsp; Wstrzymaj';};
