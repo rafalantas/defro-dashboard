@@ -617,6 +617,7 @@ def _stats(query: dict) -> dict:
         "hdd_base_fixed": HDD_BASE_FIXED,
         "bag_kg": BAG_KG,
         "counter_calibration": _counter_calibration,
+        "counter_epoch": COUNTER_EPOCH,
         "fuel_error": FuelError,
     })
 
