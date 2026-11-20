@@ -169,3 +169,47 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .fuel-model-panel .fuel-model-row span{flex-basis:40%}
   .fuel-model-panel .fuel-model-row b{flex-basis:60%}
 }
+
+
+/* Fuel model diagnostics: use a real two-column grid, not competing flex bases. */
+.fuel-model-panel #fuelModelDetails{width:100%;min-width:0;max-width:100%}
+.fuel-model-panel #fuelModelDetails .fuel-model-row{
+  display:grid;
+  grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);
+  align-items:start;
+  column-gap:14px;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+.fuel-model-panel #fuelModelDetails .fuel-model-row span{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  font-family:var(--sans);
+  font-size:11px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+.fuel-model-panel #fuelModelDetails .fuel-model-row b{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  font-family:var(--sans);
+  font-size:11px;
+  font-weight:600;
+  line-height:1.5;
+  text-align:left;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+@media(max-width:520px){
+  .fuel-model-panel #fuelModelDetails .fuel-model-row{
+    grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);
+    column-gap:10px;
+  }
+  .fuel-model-panel #fuelModelDetails .fuel-model-row span,
+  .fuel-model-panel #fuelModelDetails .fuel-model-row b{font-size:10px}
+}
