@@ -26,6 +26,27 @@ class FuelConfigTests(unittest.TestCase):
         with patch.dict("os.environ", {"THERMOFLOW_TEST_CSV": "  "}, clear=False):
             self.assertEqual(config._csv_env("THERMOFLOW_TEST_CSV"), [])
 
+    def test_fire_read_key_prefers_canonical_name_and_keeps_legacy_alias(self):
+        import importlib
+
+        try:
+            with patch.dict("os.environ", {
+                "THINGSPEAK_READ_KEY_FIRE": "canonical-read",
+                "THINGSPEAK_FIRE_READ_KEY": "legacy-read",
+            }, clear=False):
+                importlib.reload(config)
+                self.assertEqual(config.TS_READ_KEY_FIRE, "canonical-read")
+
+            with patch.dict("os.environ", {
+                "THINGSPEAK_FIRE_READ_KEY": "legacy-read",
+            }, clear=False):
+                import os
+                os.environ.pop("THINGSPEAK_READ_KEY_FIRE", None)
+                importlib.reload(config)
+                self.assertEqual(config.TS_READ_KEY_FIRE, "legacy-read")
+        finally:
+            importlib.reload(config)
+
     def test_fixed_hdd_base_parser(self):
         for raw in ("", "off", "AUTO", "none", "false", "0", "invalid", "7.9", "22.1"):
             self.assertIsNone(config._parse_hdd_base_fixed(raw))
