@@ -98,7 +98,7 @@ def _hydraulics(raw):
             before = before_point[1] if before_point else None
             after = after_point[1] if after_point else None
             paired = bool(before_point and after_point
-                          and after_point[0] - before_point[0] <= 2 * MAX_GAP_SECONDS)
+                          and after_point[0] - before_point[0] <= MAX_GAP_SECONDS)
             if paired:
                 used_return_samples.update((before_point[0], after_point[0]))
             events.append({
