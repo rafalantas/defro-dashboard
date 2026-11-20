@@ -986,17 +986,34 @@ def _telemetry_history(days: int) -> dict:
 def _telemetry_audit(query: dict) -> dict:
     """Compatibility wrapper for the uncached per-day telemetry audit service."""
     from fuel_telemetry_audit_service import build_audit
+    # Read current controller settings from the same live eModul snapshot used
+    # by the dashboard. They are not written back to ThingSpeak.
+    ignition_config = {}
+    try:
+        import api as api_module
+        snapshot = api_module.snapshot()
+        data = (snapshot or {}).get("data") or {}
+        ignition_config = {
+            "setpoint_c": (data.get("setpoints") or {}).get("co"),
+            "hysteresis_c": (data.get("hysteresis") or {}).get("boiler"),
+            "captured_at": (snapshot or {}).get("fetched_at"),
+            "source": "live_emodul_snapshot",
+        }
+    except Exception:
+        # Missing live configuration must not break the read-only telemetry audit.
+        ignition_config = {"source": "live_emodul_snapshot_unavailable"}
     return build_audit(
         query,
         max_days=MAX_DAYS,
-        channel_ids=[TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE],
-        read_keys=[TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE],
+        channel_ids=[TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE, TS_CHANNEL_FIRE],
+        read_keys=[TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE, TS_READ_KEY_FIRE],
         today=datetime.now(TZ).date(),
         tz=TZ,
         endpoint=TS_API,
         request_json=_request_json,
         analyze=fuel_telemetry.analyze,
         fuel_error=FuelError,
+        ignition_config=ignition_config,
     )
 
 
