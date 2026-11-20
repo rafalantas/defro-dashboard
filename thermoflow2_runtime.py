@@ -318,29 +318,83 @@ def _counter_method(counter: dict) -> str:
     return _counter_method_impl(counter, _fmt_pl)
 
 
-def _counter_day_kg(day: date, counter: dict):
-    """Zużycie w pełnej dobie z licznika podajnika (None: doba niepełna, ze zmianą podajnika lub bez kalibracji)."""
-    if day >= datetime.now(TZ).date():
-        return None
-    if _counter_regime(day) == "epoch":
-        return None   # doba ze zmianą wydajności podajnika nie ma jednego współczynnika
+def _counter_day_diagnostic(day: date, counter: dict):
+    """Return the unchanged daily counter result plus evidence explaining any rejection."""
     start, end = _day_bounds(day)
+    diagnostic = {
+        "day": day.isoformat(), "reason": None, "sample_count": 0,
+        "first_sample_at": None, "first_sample_pct": None,
+        "last_sample_at": None, "last_sample_pct": None,
+        "start_counter_pct": None, "end_counter_pct": None,
+        "drop_percent": None,
+    }
+
+    def finish(reason, kg=None):
+        diagnostic["reason"] = reason
+        return kg, diagnostic
+
+    if day >= datetime.now(TZ).date():
+        return finish("current_or_future_day")
+    if _counter_regime(day) == "epoch":
+        return finish("counter_epoch_transition")
     factor = _counter_factor(counter, start)
     if not factor:
-        return None
+        return finish("counter_factor_unavailable")
     try:
         points = _counter_points(day)
-        before = _counter_points(day - timedelta(days=1))
+        previous = _counter_points(day - timedelta(days=1))
+        samples = _counter_sample_points(day)
+        previous_samples = _counter_sample_points(day - timedelta(days=1))
     except FuelError:
-        return None
-    if not points or not before:
-        return None   # brak danych z poprzedniej doby: nie wiadomo, od jakiej wartości startowała
+        return finish("thingspeak_fetch_error")
+
+    combined = sorted(previous_samples + samples)
+    diagnostic["sample_count"] = len(samples)
+    if combined:
+        diagnostic["first_sample_at"] = datetime.fromtimestamp(combined[0][0], TZ).isoformat()
+        diagnostic["first_sample_pct"] = combined[0][1]
+        diagnostic["last_sample_at"] = datetime.fromtimestamp(combined[-1][0], TZ).isoformat()
+        diagnostic["last_sample_pct"] = combined[-1][1]
+    if samples:
+        diagnostic["start_counter_pct"] = next(
+            (value for stamp, value in reversed(previous_samples + samples) if stamp <= start.timestamp()), None
+        )
+        diagnostic["end_counter_pct"] = next(
+            (value for stamp, value in reversed(samples) if stamp <= end.timestamp()), None
+        )
+
+    if not points:
+        return finish("no_counter_changes_during_day")
+    if not previous:
+        return finish("no_previous_day_counter_baseline")
     if points[-1][0] < end.timestamp() - 900:
-        return None   # doba urwana (np. przerwa w zapisie)
-    drop, complete, floor_hit = _counter_drop(start, end)
-    if not complete or floor_hit or drop is None:
-        return None
-    return round(drop * factor, 1)
+        return finish("last_counter_change_more_than_15m_before_day_end")
+
+    all_points = sorted(previous_samples + samples)
+    t0, t1 = start.timestamp(), end.timestamp()
+    before_start = [point for point in all_points if point[0] <= t0]
+    inside = [point for point in all_points if t0 < point[0] <= t1]
+    sequence = ([before_start[-1]] if before_start else []) + inside
+    if len(sequence) < 2:
+        return finish("insufficient_samples_for_daily_drop")
+    if not before_start:
+        return finish("missing_counter_sample_at_day_start")
+    if t0 - sequence[0][0] > MAX_COUNTER_GAP_S:
+        return finish("counter_sample_gap_at_day_start")
+    if t1 - sequence[-1][0] > MAX_COUNTER_GAP_S:
+        return finish("counter_sample_gap_at_day_end")
+    if any(cur[0] - prev[0] > MAX_COUNTER_GAP_S for prev, cur in zip(sequence, sequence[1:])):
+        return finish("counter_sample_gap_over_15m")
+    drop = sum(prev[1] - cur[1] for prev, cur in zip(sequence, sequence[1:]) if cur[1] < prev[1])
+    diagnostic["drop_percent"] = round(drop, 2)
+    if any(value <= 1 for _stamp, value in sequence):
+        return finish("counter_floor_hit")
+    return finish(None, round(drop * factor, 1))
+
+
+def _counter_day_kg(day: date, counter: dict):
+    """Compatibility wrapper returning only the established daily kg value."""
+    return _counter_day_diagnostic(day, counter)[0]
 
 
 def _telemetry_daily_features(days: int) -> tuple[dict, dict]:
@@ -388,7 +442,7 @@ def _daily_rows(days: int = 120):
     while d < today:
         rec = _get_daily(d)
         weather = _weather(d)
-        kg = _counter_day_kg(d, counter)
+        kg, counter_diagnostic = _counter_day_diagnostic(d, counter)
         t_lag = _lagged_temperature(rec.get("t_mean"), prev_t)
         prev_t = rec.get("t_mean")
         telemetry = telemetry_by_day.get(d.isoformat(), {})
@@ -418,7 +472,8 @@ def _daily_rows(days: int = 120):
                     "telemetry_samples": telemetry.get("co_c_samples", 0),
                     "telemetry_status": telemetry_state["status"],
                     "telemetry_error": telemetry_state.get("error"),
-                    "kg_counter": kg, "counter_regime": _counter_regime(d),
+                    "kg_counter": kg, "counter_diagnostics": counter_diagnostic,
+                    "counter_regime": _counter_regime(d),
                     "estimate": kg is not None and counter["collecting"] and _counter_regime(d) == "new"})
         d += timedelta(days=1)
     return out, counter
