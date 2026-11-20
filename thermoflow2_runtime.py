@@ -847,6 +847,7 @@ def _summary_build() -> dict:
         "forecast": _forecast,
         "daily_rows": _daily_rows,
         "fit_daily_model": _fit_daily_model,
+        "refill_ai_rows": _refill_ai_rows,
         "fuel_error": FuelError,
         "ai_evaluate": fuel_ai.evaluate,
         "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
