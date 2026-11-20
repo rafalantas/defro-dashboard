@@ -171,7 +171,10 @@ def _thingspeak_write_fire(payload: dict) -> None:
     else:
         fire_detected = None
     brightness = _number(data.get("fire_brightness"))
-    if fire_detected is None and brightness is None:
+    boiler_temp = _number((data.get("temperatures") or {}).get("co"))
+    boiler_setpoint = _number((data.get("setpoints") or {}).get("co"))
+    boiler_hysteresis = _number((data.get("hysteresis") or {}).get("boiler"))
+    if all(value is None for value in (fire_detected, brightness, boiler_temp, boiler_setpoint, boiler_hysteresis)):
         return
 
     now = time.monotonic()
@@ -187,6 +190,12 @@ def _thingspeak_write_fire(payload: dict) -> None:
             form["field1"] = str(fire_detected)
         if brightness is not None:
             form["field2"] = str(brightness)
+        if boiler_temp is not None:
+            form["field3"] = str(boiler_temp)
+        if boiler_setpoint is not None:
+            form["field4"] = str(boiler_setpoint)
+        if boiler_hysteresis is not None:
+            form["field5"] = str(boiler_hysteresis)
         request = Request(
             f"https://api.thingspeak.com/update.json?{urlencode({'api_key': write_key})}",
             data=urlencode({key: value for key, value in form.items() if key != "api_key"}).encode(),
