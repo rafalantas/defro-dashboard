@@ -21,12 +21,16 @@ def _points(raw, key):
         except (TypeError, ValueError, IndexError, OverflowError):
             continue
         result.append((ts, value))
-    # Duplicate timestamps have no defensible ordering. Exclude every sample
-    # at an ambiguous timestamp instead of allowing arbitrary transitions.
+    return sorted(result)
+
+
+def _unambiguous_points(raw, key):
+    """Discard all samples at duplicate timestamps for event correlation."""
+    points = _points(raw, key)
     counts = {}
-    for ts, _value in result:
+    for ts, _value in points:
         counts[ts] = counts.get(ts, 0) + 1
-    return sorted((ts, value) for ts, value in result if counts[ts] == 1)
+    return [(ts, value) for ts, value in points if counts[ts] == 1]
 
 
 def _quality(raw):
@@ -70,13 +74,13 @@ def _quality(raw):
 
 def _hydraulics(raw):
     """Detect pump starts/stops and bounded return-temperature associations."""
-    returns = _points(raw, "thermoflow-valve4d-return")
-    opening = _points(raw, "thermoflow-valve4d-opening")
+    returns = _unambiguous_points(raw, "thermoflow-valve4d-return")
+    opening = _unambiguous_points(raw, "thermoflow-valve4d-opening")
     pumps = {}
     pump_keys = ("thermoflow-pump-floor", "thermoflow-pump-dhw",
                  "thermoflow-pump-valve4d", "thermoflow-pump-circulation")
     for key in pump_keys:
-        samples, events = _points(raw, key), []
+        samples, events = _unambiguous_points(raw, key), []
         for (old_ts, old), (ts, value) in zip(samples, samples[1:]):
             if ts - old_ts > MAX_GAP_SECONDS:
                 continue
