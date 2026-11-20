@@ -184,20 +184,53 @@ def _ignition_requests(normalized):
 
 
 def _ignition_cycles(normalized, flame_events, flue_events, requests):
-    """Correlate each hysteresis request with flame, flue response and temperature recovery."""
+    """Correlate requests one-to-one, with bounded response windows and gap-safe recovery."""
     temps = normalized.get("boiler_temp_c", [])
     setpoints = {ts: value for ts, value in normalized.get("boiler_setpoint_c", [])}
+    max_response = timedelta(minutes=30)
+    max_recovery = timedelta(minutes=60)
+    used_flame, used_flue = set(), set()
     cycles = []
-    for request in requests:
+
+    def event_for(events, start, used):
+        candidates = []
+        for index, event in enumerate(events):
+            if index in used:
+                continue
+            event_start = datetime.fromisoformat(event["start"])
+            delay = event_start - start
+            if timedelta(0) <= delay <= max_response:
+                candidates.append((delay, index, event))
+        if not candidates:
+            return None
+        _delay, index, event = min(candidates, key=lambda item: item[0])
+        used.add(index)
+        return event
+
+    for request in sorted(requests, key=lambda item: item["at"]):
         start = datetime.fromisoformat(request["at"])
-        flame = next((event for event in flame_events
-                      if datetime.fromisoformat(event["start"]) >= start), None)
-        flue = next((event for event in flue_events
-                     if datetime.fromisoformat(event["start"]) >= start), None)
-        recovery = next(((ts, value) for ts, value in temps
-                         if ts > start and ts in setpoints and value >= setpoints[ts]), None)
+        flame = event_for(flame_events, start, used_flame)
+        flue = event_for(flue_events, start, used_flue)
+
+        # Stop at the first telemetry gap. A later recovery belongs to an
+        # unknown interval and must not be attributed to this ignition request.
+        recovery = None
+        previous_ts = start
+        for ts, value in temps:
+            if ts <= start:
+                continue
+            if ts - previous_ts > timedelta(seconds=MAX_GAP_SECONDS):
+                break
+            if ts - start > max_recovery:
+                break
+            previous_ts = ts
+            if ts in setpoints and value >= setpoints[ts]:
+                recovery = (ts, value)
+                break
+
         def elapsed(event_time):
             return round((event_time - start).total_seconds() / 60, 1)
+
         cycles.append({
             **request,
             "flame_detected_at": flame["start"] if flame else None,
@@ -210,6 +243,12 @@ def _ignition_cycles(normalized, flame_events, flue_events, requests):
             "flame_presence_observed": flame is not None,
             "flue_activity_observed": flue is not None,
             "temperature_recovery_observed": recovery is not None,
+            "correlation_limits": {
+                "flame_and_flue_max_minutes": 30,
+                "temperature_recovery_max_minutes": 60,
+                "recovery_stops_at_gap_seconds": MAX_GAP_SECONDS,
+                "events_reused": False,
+            },
         })
     return cycles
 
