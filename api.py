@@ -782,6 +782,17 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
     elif with_analysis:
         try:
             result["analysis"] = _history_analysis(raw_by_id, minimum_opening)
+            try:
+                from thermoflow_diagnostic_intelligence import build_thermoflow_intelligence
+                result["analysis"]["thermoflow_intelligence"] = build_thermoflow_intelligence(
+                    raw_by_id, result["analysis"]
+                )
+            except Exception as error:
+                # Additive diagnostics must never break the existing history response.
+                result["analysis"]["thermoflow_intelligence"] = {
+                    "status": "unavailable", "error": f"{type(error).__name__}: {error}"[:180],
+                    "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes",
+                }
         except Exception as error:   # analiza nie może zablokować samych danych
             result["analysis"] = {"error": str(error)[:180]}
     with _history_cache_lock:
