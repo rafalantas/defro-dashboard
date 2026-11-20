@@ -63,23 +63,40 @@ def _quality(raw):
 
 
 def _hydraulics(raw):
+    """Detect pump starts/stops and bounded return-temperature associations."""
     returns = _points(raw, "thermoflow-valve4d-return")
     opening = _points(raw, "thermoflow-valve4d-opening")
     pumps = {}
-    for key in ("thermoflow-pump-floor", "thermoflow-pump-dhw", "thermoflow-pump-valve4d"):
+    pump_keys = ("thermoflow-pump-floor", "thermoflow-pump-dhw",
+                 "thermoflow-pump-valve4d", "thermoflow-pump-circulation")
+    for key in pump_keys:
         samples, events = _points(raw, key), []
         for (old_ts, old), (ts, value) in zip(samples, samples[1:]):
-            if ts - old_ts > MAX_GAP_SECONDS or old >= .5 or value < .5:
+            if ts - old_ts > MAX_GAP_SECONDS:
                 continue
+            old_on, new_on = old >= .5, value >= .5
+            if old_on == new_on:
+                continue
+            event_type = "start" if new_on else "stop"
             before = next((v for t, v in reversed(returns) if t <= ts and ts - t <= 600), None)
             after = next((v for t, v in returns if ts < t <= ts + 600), None)
-            if before is not None and after is not None:
-                events.append({"at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
-                               "return_delta_c": round(after - before, 2)})
-        deltas = [event["return_delta_c"] for event in events]
-        pumps[key] = {"paired_starts": len(events),
-                      "mean_return_delta_c": round(sum(deltas) / len(deltas), 2) if deltas else None,
-                      "events": events[-30:]}
+            events.append({
+                "event": event_type,
+                "at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
+                "return_before_c": before, "return_after_c": after,
+                "return_delta_c": round(after - before, 2)
+                    if before is not None and after is not None else None,
+                "association_window_seconds": 600,
+                "association_status": "paired" if before is not None and after is not None else "insufficient_return_samples",
+            })
+        paired = [event["return_delta_c"] for event in events if event["return_delta_c"] is not None]
+        pumps[key] = {
+            "starts": sum(event["event"] == "start" for event in events),
+            "stops": sum(event["event"] == "stop" for event in events),
+            "paired_events": len(paired),
+            "mean_return_delta_c": round(sum(paired) / len(paired), 2) if paired else None,
+            "events": events[-60:],
+        }
     low = [value for _, value in returns if value < RETURN_WARNING_C]
     return {
         "return_samples": len(returns),
@@ -92,41 +109,99 @@ def _hydraulics(raw):
     }
 
 
-def _combustion(raw):
-    flue, power = _points(raw, "thermoflow-flue"), _points(raw, "thermoflow-boiler-power")
+def _fire_diagnostics(raw):
+    """Interpret FIRE state and brightness independently; never infer flame from brightness."""
+    state_present = "thermoflow-fire" in raw
+    brightness_present = "thermoflow-fire-brightness" in raw
+    state_raw = raw.get("thermoflow-fire", []) or []
+    brightness_raw = raw.get("thermoflow-fire-brightness", []) or []
+    state = _points(raw, "thermoflow-fire")
+    brightness = _points(raw, "thermoflow-fire-brightness")
+    invalid_state = sum(1 for point in state_raw if _valid_numeric_point(point) and float(point[1]) not in (0.0, 1.0))
+    invalid_brightness = sum(1 for point in brightness_raw if not _valid_numeric_point(point) or float(point[1]) < 0)
+    valid_state = [(ts, value) for ts, value in state if value in (0.0, 1.0)]
+    status = "available" if valid_state or brightness else (
+        "empty" if state_present or brightness_present else "not_provided"
+    )
+    return {
+        "status": status,
+        "source": "dedicated_thingspeak_fire_channel",
+        "flame_state": {
+            "status": "available" if valid_state else ("invalid_or_empty" if state_present else "not_provided"),
+            "samples": len(state_raw), "valid_binary_samples": len(valid_state),
+            "on_samples": sum(value == 1 for _, value in valid_state),
+            "off_samples": sum(value == 0 for _, value in valid_state),
+            "invalid_samples": invalid_state,
+            "last_value": valid_state[-1][1] if valid_state else None,
+        },
+        "brightness": {
+            "status": "available" if brightness else ("empty" if brightness_present else "not_provided"),
+            "samples": len(brightness_raw),
+            "min": min((value for _, value in brightness), default=None),
+            "max": max((value for _, value in brightness), default=None),
+            "mean": round(sum(value for _, value in brightness) / len(brightness), 2) if brightness else None,
+            "invalid_samples": invalid_brightness,
+            "note": "Jasność jest analizowana niezależnie; nie zastępuje binarnego stanu płomienia.",
+        },
+        "quality": {
+            "status": "review" if invalid_state or invalid_brightness else ("available" if valid_state or brightness else "insufficient"),
+            "invalid_flame_state_samples": invalid_state,
+            "invalid_brightness_samples": invalid_brightness,
+        },
+        "note": "Brak próbek nie rozstrzyga, czy kanał nie jest skonfigurowany, czy odczyt zakończył się błędem; API nie przekazuje tu przyczyny fetch.",
+    }
+
+
+def _valid_numeric_point(point):
+    try:
+        return len(point) >= 2 and isfinite(float(point[1]))
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return False
+
+
+def _combustion(raw, fire_diagnostics=None):
+    flue = _points(raw, "thermoflow-flue")
+    fire = [(ts, value) for ts, value in _points(raw, "thermoflow-fire") if value in (0.0, 1.0)]
+    brightness = _points(raw, "thermoflow-fire-brightness")
     episodes, current, previous = [], [], None
     for ts, value in flue:
         if previous is not None and ts - previous > MAX_GAP_SECONDS and current:
-            episodes.append(current)
-            current = []
+            episodes.append(current); current = []
         if value >= 70:
             current.append((ts, value))
         elif value <= 50 and current:
-            episodes.append(current)
-            current = []
+            episodes.append(current); current = []
         previous = ts
     if current:
         episodes.append(current)
-    fire = _points(raw, "thermoflow-fire")
-    fire_by_episode = []
+    correlations = []
+    legacy_correlations = []
     for episode in episodes[-100:]:
         start_ts, end_ts = episode[0][0], episode[-1][0]
-        nearby = [(ts, value) for ts, value in fire if start_ts - 300 <= ts <= end_ts + 300]
-        nearest = min(nearby, key=lambda item: abs(item[0] - start_ts)) if nearby else None
-        fire_by_episode.append({
+        nearby_state = [(ts, value) for ts, value in fire if start_ts - 300 <= ts <= end_ts + 300]
+        nearby_brightness = [(ts, value) for ts, value in brightness if start_ts - 300 <= ts <= end_ts + 300]
+        correlations.append({
             "flue_start": datetime.fromtimestamp(start_ts, timezone.utc).isoformat(),
-            "fire_samples_within_5m": len(nearby),
-            "nearest_fire_sample": ({
-                "at": datetime.fromtimestamp(nearest[0], timezone.utc).isoformat(),
-                "value": nearest[1],
-            } if nearest else None),
+            "fire_state_samples": len(nearby_state),
+            "fire_on_samples": sum(value == 1 for _, value in nearby_state),
+            "fire_off_samples": sum(value == 0 for _, value in nearby_state),
+            "brightness_samples": len(nearby_brightness),
+            "interpretation": "correlation_only; flame-state evidence and brightness remain separate",
+        })
+        legacy_correlations.append({
+            "flue_start": datetime.fromtimestamp(start_ts, timezone.utc).isoformat(),
+            "fire_samples_within_5m": len(nearby_state),
+            "nearest_fire_sample": ({"at": datetime.fromtimestamp(nearby_state[0][0], timezone.utc).isoformat(),
+                                     "value": nearby_state[0][1]} if nearby_state else None),
             "interpretation": "timestamp_overlap_only; FIRE value semantics are not inferred",
         })
     return {
-        "flue_samples": len(flue), "power_samples": len(power),
+        "flue_samples": len(flue),
         "fire_samples": len(fire),
+        "fire_brightness_samples": len(brightness),
         "fire_join_status": "available" if fire else "not_provided",
-        "fire_flue_time_correlations": fire_by_episode,
+        "fire_flue_correlations": correlations,
+        "fire_flue_time_correlations": legacy_correlations,
         "elevated_flue_episodes": [{
             "start": datetime.fromtimestamp(ep[0][0], timezone.utc).isoformat(),
             "end": datetime.fromtimestamp(ep[-1][0], timezone.utc).isoformat(),
@@ -135,26 +210,72 @@ def _combustion(raw):
             "classification": "elevated_flue_activity", "ignition_confirmed": False,
         } for ep in episodes[-100:]],
         "fire_sensor": {
-            "status": "available_in_thermoflow_history" if fire else "not_available_in_history_window",
-            "source": "dedicated_thingspeak_fire_channel",
+            **(fire_diagnostics or _fire_diagnostics(raw)),
+            "status": ("available_in_thermoflow_history" if fire else "not_available_in_history_window"),
             "fields": {"field1": "flame_state", "field2": "brightness"},
             "note": ("FIRE został dołączony do historii ThermoFlow z osobnego kanału ThingSpeak."
-                     if fire else
-                     "Brak próbek FIRE w tym zakresie historii; odczyt kanału jest opcjonalny i może być nie skonfigurowany lub chwilowo niedostępny."),
+                     if fire else "Brak próbek FIRE w tym zakresie historii."),
         },
         "note": "Podwyższona temperatura spalin jest kandydatem do korelacji, nie potwierdzeniem rozpalenia.",
     }
 
 
-def _cycle_stage(base):
+def _burner_cycles(raw, fire_diagnostics):
+    """Build burner on/off cycles from debounced binary FIRE samples, not 4D cycles."""
+    points = [(ts, value) for ts, value in _points(raw, "thermoflow-fire") if value in (0.0, 1.0)]
+    if not points:
+        return {"status": "collecting", "cycles": [], "complete": 0, "incomplete": 0,
+                "note": "Brak poprawnych binarnych próbek FIRE; cykle palnika pozostają nieznane."}
+    # A transition is accepted only after two consecutive agreeing samples.
+    stable = []
+    for index in range(1, len(points)):
+        previous, current = points[index - 1], points[index]
+        if current[0] - previous[0] <= MAX_GAP_SECONDS and current[1] != previous[1]:
+            if index + 1 < len(points):
+                confirm = points[index + 1]
+                if confirm[0] - current[0] <= MAX_GAP_SECONDS and confirm[1] == current[1]:
+                    stable.append((current[0], current[1]))
+    state = points[0][1]
+    opened = points[0][0] if state == 1 else None
+    cycles = []
+    for ts, value in stable:
+        if value == 1 and opened is None:
+            opened = ts
+        elif value == 0 and opened is not None:
+            flue = _points(raw, "thermoflow-flue")
+            power = _points(raw, "thermoflow-boiler-power")
+            def has_activity(series):
+                return any(opened - 300 <= t <= ts + 300 and v > 0 for t, v in series)
+            cycles.append({
+                "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
+                "end": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
+                "duration_minutes": round((ts - opened) / 60, 1),
+                "flue_support": has_activity(flue), "power_support": has_activity(power),
+                "status": "confirmed_by_fire_state" if has_activity(flue) or has_activity(power) else "fire_state_only",
+                "complete": True,
+            })
+            opened = None
+        state = value
+    incomplete = []
+    if opened is not None:
+        incomplete.append({"start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
+                           "end": None, "complete": False, "status": "open_cycle"})
+    return {"status": "available", "cycles": cycles[-100:], "complete": len(cycles),
+            "incomplete": len(incomplete), "open_cycles": incomplete,
+            "transition_debounce": "two_consecutive_samples", "max_gap_seconds": MAX_GAP_SECONDS,
+            "note": "Cykle palnika wyznaczane z binarnego FIRE; spaliny i moc są wyłącznie dowodami krzyżowymi."}
+
+def _cycle_stage(base, burner_cycles=None):
+    """Keep legacy 4D protection cycles separate from burner cycles."""
     cycles = (base or {}).get("protection_cycles", [])
     complete = [c for c in cycles if c.get("complete") and isinstance(c.get("cold_gap_minutes"), (int, float))]
     return ({"status": "available" if cycles else "collecting",
              "source": "existing_timestamped_4d_protection_cycle_analysis",
              "cycles": cycles[-100:], "total": len(cycles), "complete": len(complete),
-             "incomplete": len(cycles) - len(complete), "ml_metric": "cold_gap_minutes",
-             "note": "Cykle diagnostyki zaworu 4D, nie liczba rozpaleń palnika."}, complete)
-
+             "incomplete": len(cycles) - len(complete),
+             "burner_cycle_count": (burner_cycles or {}).get("complete", 0),
+             "ml_metric": "cold_gap_minutes",
+             "note": "Cykle ochrony zaworu 4D są oddzielone od cykli palnika."}, complete)
 
 def _ml(complete):
     if len(complete) < MIN_TRAIN_CYCLES + HOLDOUT_CYCLES:
@@ -191,6 +312,34 @@ def _ml(complete):
             "note": "Metryki opisują naiwną prognozę medianą treningową; nie dowodzą gotowości modelu produkcyjnego."}
 
 
+
+def _burner_ml(burner_cycles):
+    """Chronological descriptive baseline for validated burner on-duration cycles."""
+    complete = [cycle for cycle in (burner_cycles or {}).get("cycles", [])
+                if cycle.get("complete") and isinstance(cycle.get("duration_minutes"), (int, float))]
+    if len(complete) < MIN_TRAIN_CYCLES + HOLDOUT_CYCLES:
+        return {"status": "collecting", "method": "training_median_baseline",
+                "complete_burner_cycles": len(complete),
+                "required_cycles": MIN_TRAIN_CYCLES + HOLDOUT_CYCLES,
+                "training_cycles": 0, "holdout_cycles": 0,
+                "reason": "Za mało kompletnych cykli palnika do chronologicznej walidacji baseline."}
+    train, holdout = complete[:-HOLDOUT_CYCLES], complete[-HOLDOUT_CYCLES:]
+    values = [float(cycle["duration_minutes"]) for cycle in train]
+    center = median(values)
+    errors = [center - float(cycle["duration_minutes"]) for cycle in holdout]
+    mae = sum(abs(error) for error in errors) / len(errors)
+    rmse = sqrt(sum(error * error for error in errors) / len(errors))
+    bias = sum(errors) / len(errors)
+    return {"status": "evaluated", "method": "training_median_baseline",
+            "training_cycles": len(train), "holdout_cycles": len(holdout),
+            "baseline_duration_minutes": round(center, 2),
+            "holdout_metrics": {"mae_minutes": round(mae, 3), "rmse_minutes": round(rmse, 3),
+                                "bias_minutes": round(bias, 3), "observations": len(errors)},
+            "validation": "chronological_last_5_burner_cycles_holdout",
+            "promotion": "disabled_shadow_only",
+            "note": "Naiwny baseline medianowy czasu pracy palnika, nie wytrenowany model ML."}
+
+
 def _prediction(complete, ml):
     if ml.get("status") != "evaluated":
         return {"status": "unavailable",
@@ -211,9 +360,12 @@ def build_thermoflow_intelligence(raw, base_analysis=None, now=None):
     core = {"status": "available" if any(v["samples"] for v in quality.values()) else "collecting",
             "version": VERSION, "timezone": str(now.tzinfo), "series": quality,
             "max_gap_seconds": MAX_GAP_SECONDS, "interpolation": False}
-    cycles, complete = _cycle_stage(base_analysis)
-    hydraulics, combustion = _hydraulics(raw), _combustion(raw)
-    ml, prediction = _ml(complete), None
+    fire_diagnostics = _fire_diagnostics(raw)
+    burner_cycles = _burner_cycles(raw, fire_diagnostics)
+    cycles, complete = _cycle_stage(base_analysis, burner_cycles)
+    hydraulics, combustion = _hydraulics(raw), _combustion(raw, fire_diagnostics)
+    ml = _ml(complete)
+    burner_ml = _burner_ml(burner_cycles)
     prediction = _prediction(complete, ml)
     explanations = []
     if hydraulics["return_below_54c_samples"]:
@@ -238,12 +390,27 @@ def build_thermoflow_intelligence(raw, base_analysis=None, now=None):
         explanations.append({"code": "telemetry_integrity_issues", "severity": "warning",
                              "count": quality_issues,
                              "message": "W surowych szeregach wykryto próbki niepoprawne, zduplikowane lub poza kolejnością."})
+    if burner_cycles["status"] == "available":
+        explanations.append({"code": "burner_cycles", "severity": "info",
+                             "count": burner_cycles["complete"],
+                             "message": "Cykle palnika wyznaczono z binarnego FIRE z debounce; spaliny i moc służą jako dowody krzyżowe."})
+    if fire_diagnostics["quality"]["status"] == "review":
+        explanations.append({"code": "fire_data_quality", "severity": "warning",
+                             "details": fire_diagnostics["quality"],
+                             "message": "W danych FIRE wykryto wartości spoza oczekiwanego zakresu lub niepoprawne próbki."})
+    evidence = [{"id": item["code"], "severity": item["severity"],
+                 "source": "thermoflow_diagnostic_pipeline", "message": item["message"]}
+                for item in explanations]
     ai = {"status": "evidence_available" if explanations else "no_findings",
-          "explanations": explanations,
+          "explanations": explanations, "evidence": evidence,
           "confidence": "limited" if ml["status"] != "evaluated" else "moderate",
-          "note": "Wyjaśnienia wynikają z jawnych reguł i dowodów; brak dowodu nie oznacza braku problemu."}
+          "conflicts": [],
+          "note": "Warstwowy silnik regułowy, nie LLM. Pewność jest jakościowa, nie skalibrowana; brak dowodu nie oznacza braku problemu."}
     return {"version": VERSION, "mode": "read_only", "diagnostic_core": core,
-            "cycle_analyzer": cycles, "hydraulic_diagnostics": hydraulics,
+            "cycle_analyzer": cycles, "burner_cycle_analyzer": burner_cycles,
+            "burner_ml_baseline": burner_ml,
+            "fire_diagnostics": fire_diagnostics,
+            "hydraulic_diagnostics": hydraulics,
             "combustion_diagnostics": combustion, "ml_baseline": ml,
             "predictive_diagnostics": prediction, "thermoflow_ai": ai,
             "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes"}
