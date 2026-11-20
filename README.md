@@ -203,11 +203,10 @@ Integracja `fuel_ai.py` działa w trybie shadow i nie zmienia produkcyjnych esty
 
 ### Diagnostyka cyklu rozpalenia (shadow)
 
-Dedykowany kanał `THINGSPEAK_FIRE_CHANNEL_ID` zapisuje:
+Dedykowany kanał `THINGSPEAK_FIRE_CHANNEL_ID` zapisuje wyłącznie:
 - Field 1: `fire_detected` (0/1),
-- Field 2: jasność płomienia,
-- Field 3: temperatura kotła CO,
-- Field 4: aktualna temperatura zadana kotła,
-- Field 5: aktualna histereza kotła.
+- Field 2: jasność płomienia.
+
+Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktualna zadana CO i histereza kotła są pobierane bezpośrednio z bieżącego snapshotu API eModul i nie są dublowane w ThingSpeak. Audyt stosuje bieżące nastawy do historycznych próbek CO; jeśli nastawy zmieniały się w analizowanym okresie, ich historyczne wartości nie są znane i diagnostyka jawnie raportuje to ograniczenie.
 
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
