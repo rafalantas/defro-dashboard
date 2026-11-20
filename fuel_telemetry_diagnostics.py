@@ -154,6 +154,65 @@ def _fire_events(normalized):
     return events
 
 
+
+def _ignition_requests(normalized):
+    """Detect a controller ignition request from the live boiler hysteresis threshold."""
+    temperatures = {ts: value for ts, value in normalized.get("boiler_temp_c", [])}
+    setpoints = {ts: value for ts, value in normalized.get("boiler_setpoint_c", [])}
+    hysteresis = {ts: value for ts, value in normalized.get("boiler_hysteresis_c", [])}
+    samples = sorted(set(temperatures) & set(setpoints) & set(hysteresis))
+    requests = []
+    previous = None
+    for ts in samples:
+        temp, target, band = temperatures[ts], setpoints[ts], hysteresis[ts]
+        threshold = target - band
+        if previous is not None:
+            prev_ts, prev_temp, prev_threshold = previous
+            gap = (ts - prev_ts).total_seconds()
+            if 0 < gap <= MAX_GAP_SECONDS and prev_temp > prev_threshold and temp <= threshold:
+                requests.append({
+                    "at": ts.isoformat(),
+                    "boiler_temp_c": round(temp, 2),
+                    "setpoint_c": round(target, 2),
+                    "hysteresis_c": round(band, 2),
+                    "ignition_threshold_c": round(threshold, 2),
+                    "classification": "controller_ignition_request_by_hysteresis",
+                    "source": "observed_boiler_temperature_crossing",
+                })
+        previous = (ts, temp, threshold)
+    return requests
+
+
+def _ignition_cycles(normalized, flame_events, flue_events, requests):
+    """Correlate each hysteresis request with flame, flue response and temperature recovery."""
+    temps = normalized.get("boiler_temp_c", [])
+    setpoints = {ts: value for ts, value in normalized.get("boiler_setpoint_c", [])}
+    cycles = []
+    for request in requests:
+        start = datetime.fromisoformat(request["at"])
+        flame = next((event for event in flame_events
+                      if datetime.fromisoformat(event["start"]) >= start), None)
+        flue = next((event for event in flue_events
+                     if datetime.fromisoformat(event["start"]) >= start), None)
+        recovery = next(((ts, value) for ts, value in temps
+                         if ts > start and ts in setpoints and value >= setpoints[ts]), None)
+        def elapsed(event_time):
+            return round((event_time - start).total_seconds() / 60, 1)
+        cycles.append({
+            **request,
+            "flame_detected_at": flame["start"] if flame else None,
+            "minutes_to_flame": elapsed(datetime.fromisoformat(flame["start"])) if flame else None,
+            "flue_activity_at": flue["start"] if flue else None,
+            "minutes_to_flue_activity": elapsed(datetime.fromisoformat(flue["start"])) if flue else None,
+            "temperature_recovered_at": recovery[0].isoformat() if recovery else None,
+            "minutes_to_temperature_recovery": elapsed(recovery[0]) if recovery else None,
+            "recovered_boiler_temp_c": round(recovery[1], 2) if recovery else None,
+            "flame_presence_observed": flame is not None,
+            "flue_activity_observed": flue is not None,
+            "temperature_recovery_observed": recovery is not None,
+        })
+    return cycles
+
 def build_raw_diagnostics(points, now):
     """Summarize raw samples, flue candidates and clustered low-return episodes."""
     normalized = _normalize(points)
@@ -184,6 +243,8 @@ def build_raw_diagnostics(points, now):
         })
 
     fire_events = _fire_events(normalized)
+    ignition_requests = _ignition_requests(normalized)
+    ignition_cycles = _ignition_cycles(normalized, fire_events, firing, ignition_requests)
 
     returns = normalized.get("return_c", [])
     low_samples = [(ts, value) for ts, value in returns if value < RETURN_WARNING_C]
@@ -239,6 +300,14 @@ def build_raw_diagnostics(points, now):
             "max_sample_gap_seconds": MAX_GAP_SECONDS,
             "context_window_minutes_each_side": EVENT_CONTEXT_MINUTES,
             "note": "Epizody spalin są kandydatami do korelacji z hydrauliką, nie potwierdzonymi rozpaleniami.",
+        },
+        "ignition_activity": {
+            "requests_count": len(ignition_requests),
+            "requests": ignition_requests[-100:],
+            "cycles_count": len(ignition_cycles),
+            "cycles": ignition_cycles[-100:],
+            "threshold_rule": "boiler_temp_c crosses from above to at-or-below setpoint_c - hysteresis_c",
+            "note": "Żądanie rozpalenia jest wnioskiem z przekroczenia progu histerezy; nie jest odczytem komendy sterownika.",
         },
         "fire_activity": {
             "episodes_count": len(fire_events),
