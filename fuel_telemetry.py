@@ -118,6 +118,7 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
         "hysteresis_c": band,
         "applied_to_historical_co_samples": bool(co_samples and target is not None and band is not None),
         "historical_setting_changes_known": False,
+        "historical_settings_assumption": "constant_current_values",
         "captured_at": ignition_config.get("captured_at"),
     }
     series_audit = []
