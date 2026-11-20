@@ -162,18 +162,45 @@ class FuelAiTests(unittest.TestCase):
         self.assertLess(telemetry["holdout_from"], telemetry["holdout_to"])
         self.assertEqual(telemetry["safety"], "shadow_only; production estimates are unchanged")
 
-    def test_telemetry_threshold_counts_only_complete_refill_periods(self):
+    def test_partial_feature_coverage_keeps_other_telemetry_features_trainable(self):
         rows = add_telemetry(synthetic_rows(60))
         for row in rows[24:]:
             row.pop("telemetry_return_c")
         result = fuel_ai.evaluate(rows)
         telemetry = result["telemetry"]
-        self.assertEqual(telemetry["status"], "collecting")
-        self.assertEqual(telemetry["complete_periods"], 24)
-        self.assertEqual(telemetry["incomplete_periods"], 36)
+        self.assertEqual(telemetry["status"], "shadow_ready")
+        self.assertEqual(telemetry["complete_periods"], 60)
+        self.assertEqual(telemetry["incomplete_periods"], 0)
+        self.assertNotIn("telemetry_return_c", telemetry["selected_features"])
+        self.assertIn("telemetry_pump_floor_h", telemetry["selected_features"])
+        self.assertEqual(telemetry["training_periods"], 55)
+        self.assertEqual(telemetry["holdout_periods"], 5)
         self.assertEqual(telemetry["periods_needed"], 25)
-        self.assertEqual(telemetry["training_periods_needed"], 20)
-        self.assertEqual(telemetry["holdout_periods_needed"], 5)
+        self.assertEqual(telemetry["safety"], "shadow_only; production estimates are unchanged")
+
+    def test_distributed_missing_features_use_a_common_observed_subset_without_imputation(self):
+        rows = add_telemetry(synthetic_rows(36))
+        feature_names = [
+            "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
+            "telemetry_return_c", "telemetry_boiler_power_kw",
+            "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
+            "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
+        ]
+        for index, row in enumerate(rows):
+            row.pop(feature_names[index % len(feature_names)])
+        result = fuel_ai.evaluate(rows)
+        telemetry = result["telemetry"]
+        self.assertEqual(telemetry["status"], "shadow_ready")
+        self.assertGreaterEqual(len(telemetry["selected_features"]), 1)
+        self.assertLess(len(telemetry["selected_features"]), len(feature_names))
+        self.assertEqual(telemetry["complete_periods"], 28)
+        self.assertEqual(telemetry["training_periods"], 23)
+        self.assertEqual(telemetry["holdout_periods"], 5)
+        self.assertTrue(all(
+            all(row.get(name) is not None for name in telemetry["selected_features"])
+            for row in result["period_diagnostics"][-telemetry["complete_periods"]:]
+            if row.get("status") == "complete"
+        ))
 
     def test_non_finite_and_negative_inputs_are_rejected(self):
         rows = synthetic_rows()
