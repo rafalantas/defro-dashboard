@@ -401,6 +401,8 @@ def _counter_day_kg(day: date, counter: dict):
 
 def _refill_ai_rows(refills: list[dict]):
     """Build AI targets from exact refill-to-refill periods, not daily hopper samples."""
+    telemetry_by_day, _telemetry_status = _telemetry_daily_features(MAX_DAYS)
+
     def period_features(start: datetime, end: datetime):
         slices = []
         d = start.astimezone(TZ).date()
@@ -423,11 +425,29 @@ def _refill_ai_rows(refills: list[dict]):
                 if (effective is None or weather.get("solar_mj") is None
                         or weather.get("wind_max_kmh") is None):
                     return []
+                telemetry = telemetry_by_day.get(d.isoformat(), {})
+                def analog(name):
+                    value = telemetry.get(name + "_mean")
+                    return value if telemetry.get(name + "_samples", 0) >= 1000 else None
+
+                def pump_runtime(name):
+                    known = telemetry.get(name + "_known_h")
+                    return telemetry.get(name + "_runtime_h") if known is not None and known >= 20 else None
+
                 slices.append({
                     "fraction": seconds / 86400.0,
                     "hdd_lag": max(0.0, base - effective),
                     "solar_mj": weather["solar_mj"],
                     "wind_max_kmh": weather["wind_max_kmh"],
+                    "telemetry_co_c": analog("co_c"),
+                    "telemetry_dhw_c": analog("dhw_c"),
+                    "telemetry_floor_c": analog("floor_c"),
+                    "telemetry_return_c": analog("return_c"),
+                    "telemetry_boiler_power_kw": analog("boiler_power_kw"),
+                    "telemetry_valve_opening_pct": analog("valve_opening_pct"),
+                    "telemetry_pump_floor_h": pump_runtime("pump_floor"),
+                    "telemetry_pump_dhw_h": pump_runtime("pump_dhw"),
+                    "telemetry_pump_circulation_h": pump_runtime("pump_circulation"),
                 })
                 previous_temperature = temperature
             d += timedelta(days=1)
