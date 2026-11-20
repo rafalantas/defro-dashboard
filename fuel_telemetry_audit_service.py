@@ -46,6 +46,7 @@ def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
     # Store results by channel/day, then append in chronological order. This
     # avoids completion-order jitter in event detection and daily aggregates.
     results = {}
+    channel_errors = {}
     with ThreadPoolExecutor(max_workers=AUDIT_MAX_WORKERS) as executor:
         future_to_key = {
             executor.submit(
@@ -56,7 +57,19 @@ def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
         }
         for future in as_completed(future_to_key):
             channel_index, offset = future_to_key[future]
-            payload = future.result()
+            try:
+                payload = future.result()
+            except Exception as error:
+                # TEMPS and VALVE are required. FIRE (and any later optional
+                # channel) must not take down the audit when its read key or
+                # ThingSpeak channel is unavailable.
+                if channel_index < 2:
+                    raise
+                channel_errors.setdefault(channel_index, []).append({
+                    "day_offset": offset,
+                    "error": f"{type(error).__name__}: {getattr(error, 'message', str(error))}"[:200],
+                })
+                continue
             results[(channel_index, offset)] = payload.get("feeds", [])
 
     feeds_by_channel = [[] for _ in channel_ids]
@@ -70,5 +83,27 @@ def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
         result = analyze(feeds_by_channel, channel_ids, days)
     else:
         result = analyze(feeds_by_channel, channel_ids, days, ignition_config=ignition_config)
+    fetch_status = {}
+    for channel_index, channel_id in enumerate(channel_ids):
+        if not channel_id:
+            continue
+        errors = channel_errors.get(channel_index, [])
+        if not errors:
+            status = "ok"
+        elif len(errors) >= days + 1:
+            status = "unavailable"
+        else:
+            status = "partial"
+        key = ("temps", "valve", "fire")[channel_index] if channel_index < 3 else f"channel_{channel_index + 1}"
+        fetch_status[key] = {
+            "status": status,
+            "failed_days": [
+                (today - timedelta(days=item["day_offset"])).isoformat()
+                for item in errors
+            ],
+            "errors": [item["error"] for item in errors],
+        }
+
+    result["channel_fetch_status"] = fetch_status
     result["fetched_at"] = datetime.now(timezone.utc).isoformat()
     return result
