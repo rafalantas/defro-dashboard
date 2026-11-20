@@ -756,91 +756,47 @@ def _summary_calibration_inputs(refills: list[dict]):
 
 
 def _summary_build() -> dict:
-    now = datetime.now(TZ)
-    today = now.date()
-    with _lock:
-        refills = _refills()
-        model = _fit_model(refills)                 # model ze wszystkich okresów
-        recent_periods, calib, counter = _summary_calibration_inputs(refills)
-        last7 = [_get_daily(today - timedelta(days=i)) for i in range(7, 0, -1)]
-        offset = _om_offset()
-    forecast = _forecast() if model else []
-    known_temps = {date.fromisoformat(r["day"]): r["t_mean"] for r in last7 if r.get("t_mean") is not None}
-    known_temps.update(dict(forecast))
-    try:
-        with _lock:
-            daily_rows, _counter_info = _daily_rows()
-            daily_model = _fit_daily_model(daily_rows)
-    except FuelError:
-        daily_rows, daily_model = [], None
-        ai_shadow = {"status": "unavailable", "message": "Brak danych do analizy"}
-    else:
-        try:
-            ai_shadow = fuel_ai.evaluate(daily_rows)
-        except Exception:
-            # Eksperyment AI nigdy nie może przerwać ani zmienić obliczeń produkcyjnych.
-            ai_shadow = {"status": "unavailable", "message": "Model eksperymentalny chwilowo niedostępny"}
-
-    # 1) ostatnie 7 pełnych dób i 2) zużycie od ostatniej dosypki / zasobnik.
-    def estimate_burner_kg(kwh: float, moment: datetime) -> float:
-        return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, moment)
-
-    def counter_kg_locked(start: datetime, end: datetime, current_counter: dict):
-        with _lock:
-            return _counter_kg(start, end, current_counter)
-
-    week = build_last7_estimate(
-        last7, model, calib, counter, COUNTER_EPOCH, _day_bounds,
-        estimate_burner_kg, counter_kg_locked, _predict_kg_per_day,
-    )
-
-    # 3) kg na stopniodzień z rzeczywistych dosypek (ostatnie 4 okresy grzewcze)
-    refills_based = build_refills_based(recent_periods, model)
-
-    def hopper_period_inputs(start: datetime, end: datetime, current_counter: dict, current_calibration: dict):
-        with _lock:
-            hdd_value, _kwh, _hm, kwh_missing = _period_sums(start, end)
-            counter_value, drop_ok, drop_floor = _counter_kg(start, end, current_counter)
-            burner_value = (
-                _burner_kg(start, end, current_calibration)
-                if not kwh_missing and current_calibration["calibrated"] else None
-            )
-        return hdd_value, counter_value, drop_ok, drop_floor, burner_value
-
-    last, hopper = build_last_refill_and_hopper(
-        now, refills, counter, calib, model, recent_periods, week, forecast,
-        daily_model, known_temps, hopper_period_inputs, _counter_method,
-        select_usage_estimate, _days_until, HOPPER_KG, HOPPER_RESERVE_PERCENT,
-    )
-
-    planning = _planning_forecast(model, daily_model, forecast, now, known_temps)
-
-    telemetry_state = build_telemetry_state(daily_rows)
-    result = {
-        "configured": True,
-        "telemetry": telemetry_state,
-        "model": model,
-        "hdd_base": _active_base(),
-        "hdd_base_fixed": HDD_BASE_FIXED is not None,
-        "om_offset": offset,
-        "daily_model": daily_model,
-        "ai_shadow": ai_shadow,
-        "planning": planning,
-        "forecast": [{"day": d.isoformat(), "t_mean": t,
-                      "solar_mj": _weather(d).get("solar_mj"),
-                      "wind_max_kmh": _weather(d).get("wind_max_kmh"),
-                      "kg": round(_rate_for(model, daily_model, d, t, known_temps.get(d - timedelta(days=1))), 1)}
-                     for d, t in forecast] if model else [],
-        "calibration": calib,
-        "counter_calibration": counter,
-        "last7": week,
-        "refills_based": refills_based,
-        "last_refill": last,
-        "hopper": hopper,
-        "fetched_at": now.isoformat(),
-    }
-    _summary_cache.update(at=time.monotonic(), data=result)
-    return result
+    """Compatibility wrapper for the extracted summary calculation service."""
+    from fuel_summary_service import build_summary
+    return build_summary({
+        "now": lambda: datetime.now(TZ),
+        "lock": _lock,
+        "refills": _refills,
+        "fit_model": _fit_model,
+        "calibration_inputs": _summary_calibration_inputs,
+        "get_daily": _get_daily,
+        "om_offset": _om_offset,
+        "forecast": _forecast,
+        "daily_rows": _daily_rows,
+        "fit_daily_model": _fit_daily_model,
+        "fuel_error": FuelError,
+        "ai_evaluate": fuel_ai.evaluate,
+        "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
+        "boiler_eff": BOILER_EFF,
+        "burner_factor": _burner_factor,
+        "counter_kg": _counter_kg,
+        "counter_epoch": COUNTER_EPOCH,
+        "day_bounds": _day_bounds,
+        "predict_kg_per_day": _predict_kg_per_day,
+        "build_last7": build_last7_estimate,
+        "build_refills_based": build_refills_based,
+        "period_sums": _period_sums,
+        "burner_kg": _burner_kg,
+        "build_last_refill_and_hopper": build_last_refill_and_hopper,
+        "counter_method": _counter_method,
+        "select_usage_estimate": select_usage_estimate,
+        "days_until": _days_until,
+        "hopper_kg": HOPPER_KG,
+        "hopper_reserve_percent": HOPPER_RESERVE_PERCENT,
+        "planning_forecast": _planning_forecast,
+        "telemetry_state": build_telemetry_state,
+        "active_base": _active_base,
+        "hdd_base_fixed": HDD_BASE_FIXED,
+        "weather": _weather,
+        "rate_for": _rate_for,
+        "summary_cache": _summary_cache,
+        "monotonic": time.monotonic,
+    })
 
 
 def _daily(query: dict) -> dict:
