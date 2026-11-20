@@ -37,3 +37,5 @@ CMD ["python", "-u", "/app/api.py"]
 COPY fuel_summary_estimates.py /app/fuel_summary_estimates.py
 
 COPY fuel_house_model.py /app/fuel_house_model.py
+
+COPY fuel_telemetry_audit_service.py /app/fuel_telemetry_audit_service.py
