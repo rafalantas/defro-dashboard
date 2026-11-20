@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 
 def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
-                endpoint, request_json, analyze, fuel_error):
+                endpoint, request_json, analyze, fuel_error, ignition_config=None):
     """Fetch each requested day separately; preserve the legacy audit contract."""
     try:
         days = max(1, min(int(query.get("days", ["7"])[0]), 14))
@@ -37,6 +37,9 @@ def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
             )
             feeds_by_channel[channel_index].extend(payload.get("feeds", []))
 
-    result = analyze(feeds_by_channel, channel_ids, days)
+    if ignition_config is None:
+        result = analyze(feeds_by_channel, channel_ids, days)
+    else:
+        result = analyze(feeds_by_channel, channel_ids, days, ignition_config=ignition_config)
     result["fetched_at"] = datetime.now(timezone.utc).isoformat()
     return result
