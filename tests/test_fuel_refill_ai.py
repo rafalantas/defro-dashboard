@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fuel_refill_ai import build_refill_period_rows
+import fuel_ai
 
 
 class RefillPeriodAiTests(unittest.TestCase):
@@ -28,6 +29,22 @@ class RefillPeriodAiTests(unittest.TestCase):
         self.assertEqual(rows[0]["source"], "refill_period")
         self.assertFalse(meta["daily_refills_required"])
         self.assertEqual(meta["periods_accepted"], 1)
+
+    def test_distinct_refills_on_same_date_remain_distinct_ai_samples(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        refills = [
+            {"ts": datetime(2026, 1, 1, 8, tzinfo=tz).isoformat(), "kg": 20},
+            {"ts": datetime(2026, 1, 1, 14, tzinfo=tz).isoformat(), "kg": 5},
+            {"ts": datetime(2026, 1, 2, 8, tzinfo=tz).isoformat(), "kg": 12},
+        ]
+        def features(start, end):
+            return [{"fraction": (end-start).total_seconds()/86400,
+                     "hdd_lag": 8, "solar_mj": 2, "wind_max_kmh": 10}]
+        rows, _ = build_refill_period_rows(refills, features, max_days=120)
+        self.assertEqual(len(rows), 2)
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["rejected_by_reason"]["duplicate_day"], 0)
+        self.assertEqual(result["rejected_days"], 0)
 
     def test_missing_weather_rejects_period_without_imputation(self):
         tz = ZoneInfo("Europe/Warsaw")
