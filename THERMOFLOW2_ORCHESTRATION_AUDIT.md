@@ -186,3 +186,14 @@ inclusive date range through today, the requested lookback cap, sequential
 daily-then-counter fetch per date, and best-effort behavior when one source
 fails for a day. The service is packaged in the API image and included in
 syntax/import and regression CI. No production data is written by prefetch.
+
+
+## Climate normals provider extraction
+
+Five-year monthly Open-Meteo climate-normal retrieval and aggregation now lives
+in `fuel_climate_provider.py`. The facade injects the existing coordinates,
+timezone, archive endpoint, cache object, TTL, request function, monotonic clock
+and FuelError type. The provider retains the prior date window (through
+yesterday), month buckets, per-variable null handling, temperature sample
+count, cached result shape, and HTTP 502 error when the archive has no usable
+daily records. It is included in the API image and ThermoFlow regression CI.
