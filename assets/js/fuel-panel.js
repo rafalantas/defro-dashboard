@@ -48,7 +48,7 @@
       ['AI telemetria · fixed holdout',ai.telemetry?.status==='shadow_ready'?n(ai.telemetry.fixed_holdout_mae_gain_percent,1)+'% poprawy MAE · wymagane ≥ 3%':'—'],
       ['Model domu',m.periods_used!=null?m.periods_used+' okresów · R² '+n(m.r2,2):'za mało okresów'],
       ['Model dobowy',dm.status==='aktywny'?'aktywny · '+(dm.days||0)+' dób':(dm.days!=null?'zbiera dane · '+dm.days+'/'+(dm.days_needed||30):'brak danych')],
-      ['Licznik podajnika',cc.calibrated?n(cc.kg_per_percent,2)+' kg/%':(cc.message||'w trakcie kalibracji')],
+      ['Licznik podajnika',n(cc.kg_per_percent,2)+' kg/% · '+(cc.confidence?.label||cc.message||'ocena pewności niedostępna')+(cc.periods_used!=null?' · '+cc.periods_used+' okresów':'')],
       ['Moc palnika',cal.calibrated?'skalibrowana ×'+n(cal.factor,2):(cal.provisional?'wstępny współczynnik ×'+n(cal.factor,2):'brak kalibracji')],
       ['Baza stopniodni',s.hdd_base!=null?n(s.hdd_base,1)+' °C':'—'],
       ['Korekta Open-Meteo',off.applied?n(off.offset,1)+' °C · '+(off.days||0)+' dób':'nieaktywna']
