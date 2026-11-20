@@ -31,6 +31,7 @@ COPY fuel_daily_service.py /app/fuel_daily_service.py
 COPY fuel_summary_service.py /app/fuel_summary_service.py
 COPY fuel_summary_runtime.py /app/fuel_summary_runtime.py
 COPY fuel_prefetch_service.py /app/fuel_prefetch_service.py
+COPY fuel_climate_provider.py /app/fuel_climate_provider.py
 EXPOSE 8000
 CMD ["python", "-u", "/app/api.py"]
 COPY fuel_summary_estimates.py /app/fuel_summary_estimates.py
