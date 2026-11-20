@@ -76,7 +76,7 @@ class FuelAiTests(unittest.TestCase):
         stability = result["coefficient_stability"]
         self.assertTrue(stability["available"])
         self.assertEqual(len(stability["windows"]), 3)
-        sizes = [window["training_days"] for window in stability["windows"]]
+        sizes = [window["training_periods"] for window in stability["windows"]]
         self.assertEqual(sizes, sorted(sizes))
         self.assertEqual(set(stability["features"]), set(result["features"]))
         for feature in stability["features"].values():
