@@ -255,6 +255,13 @@ def evaluate(rows: list[dict]) -> dict:
         candidate = _fit(history, candidate_names)
         if baseline is None or candidate is None:
             return {"status": "unstable", "days": total,
+                    "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days,
+                                  "incomplete_days": telemetry_incomplete_days,
+                                  "days_needed": telemetry_minimum_days,
+                                  "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
+                    "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "missing_day_gaps": day_gaps,
+                    "telemetry_incomplete_days": telemetry_incomplete_days,
                     "message": "Model nie przeszedł kontroli stabilności"}
         baseline_predictions.append(_predict(baseline, row))
         candidate_predictions.append(_predict(candidate, row))
@@ -265,6 +272,13 @@ def evaluate(rows: list[dict]) -> dict:
     fixed_candidate_score = _fixed_holdout_metrics(train, test, candidate_names)
     if fixed_baseline_score is None or fixed_candidate_score is None:
         return {"status": "unstable", "days": total,
+                "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days,
+                              "incomplete_days": telemetry_incomplete_days,
+                              "days_needed": telemetry_minimum_days,
+                              "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
+                "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                "missing_day_gaps": day_gaps,
+                "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
     gain = ((baseline_score["mae_kg_day"] - candidate_score["mae_kg_day"])
             / baseline_score["mae_kg_day"] if baseline_score["mae_kg_day"] else 0.0)
@@ -276,6 +290,13 @@ def evaluate(rows: list[dict]) -> dict:
     final_model = _fit(clean, selected_names)
     if final_model is None:
         return {"status": "unstable", "days": total,
+                "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days,
+                              "incomplete_days": telemetry_incomplete_days,
+                              "days_needed": telemetry_minimum_days,
+                              "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
+                "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                "missing_day_gaps": day_gaps,
+                "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Nie udało się dopasować modelu końcowego"}
 
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days,
