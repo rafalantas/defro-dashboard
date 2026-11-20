@@ -199,3 +199,15 @@ Dobowe rekordy modelu AI są łączone z agregatami z dwóch kanałów ThingSpea
 Cechy analogowe są przyjmowane tylko przy co najmniej 1000 próbek na dobę, a czasy pomp tylko przy co najmniej 20 godzinach znanego stanu. Brakujące lub niepełne dane nie są interpolowane. Model AI porównuje wariant pogodowy z wariantem rozszerzonym o telemetrię na wspólnym zbiorze kompletnych dób i chronologicznym holdoucie. Cechy telemetryczne wymagają co najmniej 90 kompletnych dób treningowych i 14 testowych (minimum 104 kompletne doby); do tego czasu API raportuje status `collecting`, liczbę kompletnych i niekompletnych dób oraz progi. Doby z brakującą albo fizycznie niepoprawną telemetrią nie są interpolowane. Daty są walidowane jako rzeczywiste daty ISO `YYYY-MM-DD`, a wszystkie rekordy dla zduplikowanego dnia są wykluczane, aby nie nadawać tej dobie podwójnej wagi. API raportuje powody odrzucenia i luki między dniami. Wariant telemetryczny jest zaakceptowany wyłącznie przy poprawie MAE o co najmniej 3% w obu protokołach.
 
 Integracja `fuel_ai.py` działa w trybie shadow i nie zmienia produkcyjnych estymat paliwa. Obliczenia paliwa są obsługiwane przez runtime ThermoFlow 2.0, a prognoza dashboardu zachowuje dotychczasowy kontrakt. System pozostaje odczytowy i nie steruje kotłem. Publiczny audyt nadal ma limit 14 dni, natomiast wewnętrzny loader modelu pobiera historię do 120 dni i buforuje agregaty przez 6 godzin. Starsze rekordy paliwa bez dostępnej historii ThingSpeak pozostają bez cech instalacji.
+
+
+### Diagnostyka cyklu rozpalenia (shadow)
+
+Dedykowany kanał `THINGSPEAK_FIRE_CHANNEL_ID` zapisuje:
+- Field 1: `fire_detected` (0/1),
+- Field 2: jasność płomienia,
+- Field 3: temperatura kotła CO,
+- Field 4: aktualna temperatura zadana kotła,
+- Field 5: aktualna histereza kotła.
+
+Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
