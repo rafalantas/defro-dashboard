@@ -70,6 +70,9 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(fixed["scored_to"], result["holdout_to"])
         self.assertLess(fixed["training_to"], fixed["scored_from"])
         self.assertIn("mae_kg_day", fixed["candidate"])
+        self.assertEqual(len(result["validation"]["periods"]), result["holdout_periods"])
+        self.assertIn("actual_kg_day", result["validation"]["periods"][0])
+        self.assertIn("candidate_error_kg_day", result["validation"]["periods"][0])
 
     def test_coefficient_stability_reports_expanding_windows(self):
         result = fuel_ai.evaluate(synthetic_rows(130))
