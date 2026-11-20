@@ -95,15 +95,15 @@ class FuelAiTests(unittest.TestCase):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(7)))
         self.assertEqual(result["status"], "collecting")
         self.assertEqual(result["telemetry"]["status"], "collecting")
-        self.assertEqual(result["telemetry"]["complete_days"], 7)
-        self.assertGreater(result["telemetry"]["days_needed"], 7)
+        self.assertEqual(result["telemetry"]["complete_periods"], 7)
+        self.assertEqual(result["telemetry"]["periods_needed"], 25)
 
     def test_telemetry_candidate_uses_chronological_holdout_when_history_is_sufficient(self):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(130)))
         self.assertEqual(result["telemetry"]["status"], "shadow_ready")
         self.assertEqual(result["telemetry"]["mode"], "shadow_only")
-        self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.MIN_TRAIN_DAYS)
-        self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.MIN_TEST_DAYS)
+        self.assertGreaterEqual(result["telemetry"]["training_periods"], fuel_ai.TELEMETRY_MIN_TRAIN_PERIODS)
+        self.assertGreaterEqual(result["telemetry"]["holdout_periods"], fuel_ai.TELEMETRY_MIN_TEST_PERIODS)
         self.assertIn("mae_kg_day", result["telemetry"]["baseline"])
         self.assertIn("mae_kg_day", result["telemetry"]["candidate"])
         self.assertIn("fixed_holdout", result["telemetry"]["validation"])
@@ -122,11 +122,47 @@ class FuelAiTests(unittest.TestCase):
         self.assertIn("not independent evidence", result["telemetry"]["ablation"]["method"])
         self.assertEqual(
             result["telemetry"]["ablation"]["fixed_holdout"]["weather_only"]["samples"],
-            result["telemetry"]["holdout_days"],
+            result["telemetry"]["holdout_periods"],
         )
-        self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.TELEMETRY_MIN_TRAIN_DAYS)
-        self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.TELEMETRY_MIN_TEST_DAYS)
+        self.assertGreaterEqual(result["telemetry"]["training_periods"], fuel_ai.TELEMETRY_MIN_TRAIN_PERIODS)
+        self.assertGreaterEqual(result["telemetry"]["holdout_periods"], fuel_ai.TELEMETRY_MIN_TEST_PERIODS)
 
+
+
+    def test_telemetry_threshold_is_20_training_plus_5_chronological_periods(self):
+        rows = add_telemetry(synthetic_rows(60))
+        for row in rows[25:]:
+            for name in (
+                "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
+                "telemetry_return_c", "telemetry_boiler_power_kw",
+                "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
+                "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
+            ):
+                row.pop(name)
+        result = fuel_ai.evaluate(rows)
+        telemetry = result["telemetry"]
+        self.assertEqual(telemetry["status"], "shadow_ready")
+        self.assertEqual(telemetry["complete_periods"], 25)
+        self.assertEqual(telemetry["training_periods"], 20)
+        self.assertEqual(telemetry["holdout_periods"], 5)
+        self.assertEqual(telemetry["periods_needed"], 25)
+        self.assertEqual(telemetry["holdout_from"], rows[20]["day"])
+        self.assertEqual(telemetry["holdout_to"], rows[24]["day"])
+        self.assertLess(telemetry["holdout_from"], telemetry["holdout_to"])
+        self.assertEqual(telemetry["safety"], "shadow_only; production estimates are unchanged")
+
+    def test_telemetry_threshold_counts_only_complete_refill_periods(self):
+        rows = add_telemetry(synthetic_rows(60))
+        for row in rows[24:]:
+            row.pop("telemetry_return_c")
+        result = fuel_ai.evaluate(rows)
+        telemetry = result["telemetry"]
+        self.assertEqual(telemetry["status"], "collecting")
+        self.assertEqual(telemetry["complete_periods"], 24)
+        self.assertEqual(telemetry["incomplete_periods"], 36)
+        self.assertEqual(telemetry["periods_needed"], 25)
+        self.assertEqual(telemetry["training_periods_needed"], 20)
+        self.assertEqual(telemetry["holdout_periods_needed"], 5)
 
     def test_non_finite_and_negative_inputs_are_rejected(self):
         rows = synthetic_rows()
@@ -144,7 +180,7 @@ class FuelAiTests(unittest.TestCase):
         rows[1]["telemetry_pump_floor_h"] = 25
         rows[2]["telemetry_return_c"] = float("nan")
         result = fuel_ai.evaluate(rows)
-        self.assertEqual(result["telemetry"]["complete_days"], 127)
+        self.assertEqual(result["telemetry"]["complete_periods"], 127)
         self.assertEqual(result["telemetry"]["status"], "shadow_ready")
 
     def test_fixed_holdout_must_also_improve_before_weather_model_is_accepted(self):
@@ -243,8 +279,8 @@ class FuelAiTests(unittest.TestCase):
         rows[0].pop("telemetry_return_c")
         rows[1].pop("telemetry_pump_floor_h")
         result = fuel_ai.evaluate(rows)
-        self.assertEqual(result["telemetry_incomplete_days"], 2)
-        self.assertEqual(result["telemetry"]["incomplete_days"], 2)
+        self.assertEqual(result["telemetry_incomplete_periods"], 2)
+        self.assertEqual(result["telemetry"]["incomplete_periods"], 2)
 
 
     def test_refill_period_training_does_not_require_daily_refills(self):
