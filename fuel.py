@@ -709,11 +709,11 @@ def _planning_forecast(model: dict | None, daily_model: dict | None,
 
 
 def _summary_calibration_inputs(refills: list[dict]):
-    """Use the same full-history calibration evidence as stats, with a separate recent display window."""
-    all_periods = _periods(refills)
-    recent_periods = _periods(refills[-7:])
-    calibration = _calibration(all_periods)
-    counter = _counter_calibration(refills)
+    """Preserve legacy summary calibration scope: the latest seven refill events."""
+    recent_refills = refills[-7:]
+    recent_periods = _periods(recent_refills)
+    calibration = _calibration(recent_periods)
+    counter = _counter_calibration(recent_refills)
     return recent_periods, calibration, counter
 
 
