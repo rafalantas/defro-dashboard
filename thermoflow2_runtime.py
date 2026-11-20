@@ -23,6 +23,7 @@ from __future__ import annotations
 import hmac
 import fuel_ai
 import fuel_telemetry
+from fuel_refill_ai import build_refill_period_rows
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -395,6 +396,45 @@ def _counter_day_diagnostic(day: date, counter: dict):
 def _counter_day_kg(day: date, counter: dict):
     """Compatibility wrapper returning only the established daily kg value."""
     return _counter_day_diagnostic(day, counter)[0]
+
+
+
+def _refill_ai_rows(refills: list[dict]):
+    """Build AI targets from exact refill-to-refill periods, not daily hopper samples."""
+    def period_features(start: datetime, end: datetime):
+        slices = []
+        d = start.astimezone(TZ).date()
+        last = end.astimezone(TZ).date()
+        previous_temperature = None
+        try:
+            previous_temperature = _get_daily(d - timedelta(days=1)).get("t_mean")
+        except FuelError:
+            return []
+        base = _active_base()
+        while d <= last:
+            day_start, day_end = _day_bounds(d)
+            overlap_start, overlap_end = max(start, day_start), min(end, day_end)
+            seconds = (overlap_end - overlap_start).total_seconds()
+            if seconds > 0:
+                rec = _get_daily(d)
+                weather = _weather(d)
+                temperature = rec.get("t_mean")
+                effective = _lagged_temperature(temperature, previous_temperature)
+                if (effective is None or weather.get("solar_mj") is None
+                        or weather.get("wind_max_kmh") is None):
+                    return []
+                slices.append({
+                    "fraction": seconds / 86400.0,
+                    "hdd_lag": max(0.0, base - effective),
+                    "solar_mj": weather["solar_mj"],
+                    "wind_max_kmh": weather["wind_max_kmh"],
+                })
+                previous_temperature = temperature
+            d += timedelta(days=1)
+        return slices
+
+    return build_refill_period_rows(refills, period_features, max_days=MAX_DAYS)
+
 
 
 def _telemetry_daily_features(days: int) -> tuple[dict, dict]:
