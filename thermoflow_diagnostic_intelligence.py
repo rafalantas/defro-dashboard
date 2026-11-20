@@ -81,6 +81,7 @@ def _hydraulics(raw):
                  "thermoflow-pump-valve4d", "thermoflow-pump-circulation")
     for key in pump_keys:
         samples, events = _unambiguous_points(raw, key), []
+        used_return_samples = set()
         for (old_ts, old), (ts, value) in zip(samples, samples[1:]):
             if ts - old_ts > MAX_GAP_SECONDS:
                 continue
@@ -89,13 +90,17 @@ def _hydraulics(raw):
                 continue
             event_type = "start" if new_on else "stop"
             before_point = next(((t, v) for t, v in reversed(returns)
-                                  if t <= ts and ts - t <= MAX_GAP_SECONDS), None)
+                                  if t <= ts and ts - t <= MAX_GAP_SECONDS
+                                  and t not in used_return_samples), None)
             after_point = next(((t, v) for t, v in returns
-                                 if t > ts and t - ts <= MAX_GAP_SECONDS), None)
+                                 if t > ts and t - ts <= MAX_GAP_SECONDS
+                                 and t not in used_return_samples), None)
             before = before_point[1] if before_point else None
             after = after_point[1] if after_point else None
             paired = bool(before_point and after_point
                           and after_point[0] - before_point[0] <= 2 * MAX_GAP_SECONDS)
+            if paired:
+                used_return_samples.update((before_point[0], after_point[0]))
             events.append({
                 "event": event_type,
                 "at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
@@ -105,7 +110,7 @@ def _hydraulics(raw):
                 "return_before_at": datetime.fromtimestamp(before_point[0], timezone.utc).isoformat() if paired else None,
                 "return_after_at": datetime.fromtimestamp(after_point[0], timezone.utc).isoformat() if paired else None,
                 "association_window_seconds": MAX_GAP_SECONDS,
-                "association_status": "paired" if paired else "insufficient_contiguous_return_samples",
+                "association_status": "paired" if paired else "insufficient_unique_contiguous_return_samples",
             })
         paired = [event["return_delta_c"] for event in events if event["return_delta_c"] is not None]
         pumps[key] = {
