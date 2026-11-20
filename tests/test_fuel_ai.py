@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import fuel_ai
 
@@ -71,7 +72,7 @@ class FuelAiTests(unittest.TestCase):
         self.assertGreater(result["telemetry"]["days_needed"], 7)
 
     def test_telemetry_candidate_uses_chronological_holdout_when_history_is_sufficient(self):
-        result = fuel_ai.evaluate(add_telemetry(synthetic_rows(100)))
+        result = fuel_ai.evaluate(add_telemetry(synthetic_rows(130)))
         self.assertEqual(result["telemetry"]["status"], "shadow_ready")
         self.assertEqual(result["telemetry"]["mode"], "shadow_only")
         self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.MIN_TRAIN_DAYS)
@@ -80,6 +81,40 @@ class FuelAiTests(unittest.TestCase):
         self.assertIn("mae_kg_day", result["telemetry"]["candidate"])
         self.assertIn("fixed_holdout", result["telemetry"]["validation"])
         self.assertIn("mae_kg_day", result["telemetry"]["validation"]["fixed_holdout"]["candidate"])
+        self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.TELEMETRY_MIN_TRAIN_DAYS)
+        self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.TELEMETRY_MIN_TEST_DAYS)
+
+
+    def test_non_finite_and_negative_inputs_are_rejected(self):
+        rows = synthetic_rows()
+        rows[0]["solar_mj"] = float("nan")
+        rows[1]["wind_max_kmh"] = float("inf")
+        rows[2]["kg_counter"] = -1
+        rows[3]["hdd_lag"] = "not-a-number"
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["rejected_days"], 4)
+        self.assertEqual(result["training_days"], 86)
+
+    def test_telemetry_values_outside_physical_ranges_are_excluded(self):
+        rows = add_telemetry(synthetic_rows(130))
+        rows[0]["telemetry_valve_opening_pct"] = 140
+        rows[1]["telemetry_pump_floor_h"] = 25
+        rows[2]["telemetry_return_c"] = float("nan")
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["telemetry"]["complete_days"], 127)
+        self.assertEqual(result["telemetry"]["status"], "shadow_ready")
+
+    def test_fixed_holdout_must_also_improve_before_weather_model_is_accepted(self):
+        rows = synthetic_rows()
+        with patch.object(fuel_ai, "_fixed_holdout_metrics", side_effect=[
+            {"mae_kg_day": 10.0, "rmse_kg_day": 12.0, "bias_kg_day": 0.0, "samples": 14},
+            {"mae_kg_day": 11.0, "rmse_kg_day": 13.0, "bias_kg_day": 0.0, "samples": 14},
+        ]):
+            result = fuel_ai.evaluate(rows)
+        self.assertGreaterEqual(result["mae_gain_percent"], fuel_ai.MIN_RELATIVE_GAIN * 100)
+        self.assertLess(result["fixed_holdout_mae_gain_percent"], 0)
+        self.assertFalse(result["accepted_weather_gain"])
+        self.assertEqual(result["selected"], "temperature_only")
 
     def test_room_temperature_never_changes_fuel_model(self):
         rows = synthetic_rows()
