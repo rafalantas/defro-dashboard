@@ -174,3 +174,15 @@ Both modules are packaged in the API image and covered by CI. The latest
 validation run for the preceding code head passed Python regression, frontend
 regression and Docker builds for linux/amd64 and linux/arm64. No merge,
 deployment, controller write or production engine switch was performed.
+
+
+## Prefetch orchestration extraction
+
+Daily ThingSpeak temperature and counter prefetch orchestration now lives in
+`fuel_prefetch_service.py`. The facade injects the same configured-channel
+check, data-start lookup, Warsaw-local current date, MAX_DAYS bound, daily
+fetchers, FuelError type and four-worker executor. The service preserves the
+inclusive date range through today, the requested lookback cap, sequential
+daily-then-counter fetch per date, and best-effort behavior when one source
+fails for a day. The service is packaged in the API image and included in
+syntax/import and regression CI. No production data is written by prefetch.
