@@ -126,7 +126,11 @@ def build_raw_diagnostics(points, now):
 
     returns = normalized.get("return_c", [])
     low_samples = [(ts, value) for ts, value in returns if value < RETURN_WARNING_C]
-    low_groups = _episodes(returns, lambda value: value < RETURN_WARNING_C,\n                           lambda value: value >= RETURN_WARNING_C)
+    low_groups = _episodes(
+        returns,
+        lambda value: value < RETURN_WARNING_C,
+        lambda value: value >= RETURN_WARNING_C,
+    )
     low_episodes = []
     for episode in low_groups:
         start, end = episode[0][0], episode[-1][0]
