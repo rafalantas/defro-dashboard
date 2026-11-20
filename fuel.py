@@ -24,12 +24,10 @@ import hmac
 import fuel_ai
 import fuel_telemetry
 import json
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
-from fuel_schema import field_number, timezone as thermoflow_timezone
 from fuel_errors import FuelError
 from fuel_http import request_json as _request_json
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
