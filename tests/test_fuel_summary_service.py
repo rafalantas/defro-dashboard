@@ -1,6 +1,9 @@
 """Regression tests for summary calculation orchestration."""
 import threading
 import unittest
+from unittest.mock import patch
+
+import fuel
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -64,6 +67,35 @@ class SummaryServiceTests(unittest.TestCase):
         }
         deps.update(overrides)
         return deps, cache, calls
+
+    def test_summary_calibration_preserves_legacy_last_seven_refills(self):
+        refills = [{"id": index} for index in range(10)]
+        calls = {}
+        recent_periods = [{"period": "recent"}]
+        calibration = {"scope": "recent"}
+        counter = {"scope": "recent"}
+
+        def periods(selected):
+            calls["period_refill_ids"] = [row["id"] for row in selected]
+            return recent_periods
+
+        def calibrate(selected):
+            calls["calibration_periods"] = selected
+            return calibration
+
+        def calibrate_counter(selected):
+            calls["counter_refill_ids"] = [row["id"] for row in selected]
+            return counter
+
+        with patch.object(fuel, "_periods", side_effect=periods), \
+             patch.object(fuel, "_calibration", side_effect=calibrate), \
+             patch.object(fuel, "_counter_calibration", side_effect=calibrate_counter):
+            result = fuel._summary_calibration_inputs(refills)
+
+        self.assertEqual(calls["period_refill_ids"], [3, 4, 5, 6, 7, 8, 9])
+        self.assertIs(calls["calibration_periods"], recent_periods)
+        self.assertEqual(calls["counter_refill_ids"], [3, 4, 5, 6, 7, 8, 9])
+        self.assertEqual(result, (recent_periods, calibration, counter))
 
     def test_summary_payload_and_cache_contract(self):
         deps, cache, calls = self.dependencies()
