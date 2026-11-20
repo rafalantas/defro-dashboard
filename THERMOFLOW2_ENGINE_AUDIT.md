@@ -377,3 +377,40 @@ source labels, counter-floor rejection, existing estimate-source precedence,
 recent-consumption fallback second. Legacy summary payload keys and rounding
 are retained. Dedicated tests cover partial-day filtering, counter selection,
 floor behavior, provisional labels, reserve arithmetic and forecast fallback.
+
+
+### Cache inventory and ownership audit
+
+The current cache policy has been inventoried before any consolidation. This
+commit deliberately documents the existing behavior rather than changing TTLs
+or invalidation semantics during the calculation extraction.
+
+| Cache | Current owner / storage | Lifetime and behavior |
+|---|---|---|
+| Daily source records | `fuel.py` passes `_daily_cache` to `fuel_daily_provider` | Historical days are process-lifetime cached; today is not cached. ThingSpeak failures do not freeze fallback records. |
+| Hopper counter points | `fuel.py` passes `_counter_cache` to `fuel_counter_provider` | Historical days are process-lifetime cached; today is fetched again. |
+| Open-Meteo daily temperatures | `fuel.py` passes `_om_cache` to `fuel_weather_provider` | Historical archive values are retained; today's value is not frozen. |
+| Open-Meteo weather features | `fuel.py` passes `_weather_cache` and `_weather_fetched` | Future/forecast values use the existing 1-hour TTL; historical values remain reusable. |
+| Refill records | `fuel.py` owns `_refills_cache`; `fuel_refill_provider` applies the policy | 60 seconds; successful refill writes invalidate it. |
+| Telemetry history | `fuel.py` owns `_telemetry_history_cache`; `fuel_telemetry_provider` applies the policy | 6 hours for complete results; 10 minutes for partial results. |
+| Open-Meteo offset | `fuel.py` | 1 hour until enough paired days freeze the offset; then 7-day recalculation interval. |
+| Forecast temperatures | `fuel.py` | 1 hour. A failed forecast fetch is represented by an empty result for that interval. |
+| Five-year climate normals | `fuel.py` | 30 days. |
+| Refill/HDD house model | `fuel.py` | Key-based cache (refill count/latest ID, Open-Meteo offset and fixed HDD base), no independent TTL. |
+| Daily weather model | `fuel.py` passes `_daily_model_cache` to `fuel_daily_model` | Key-based cache derived from model inputs, no independent TTL. |
+| Complete summary | `fuel.py` | 60 seconds; stale result is returned immediately while a refresh runs in the background. Cold start waits up to 25 seconds, then returns the existing warming response. |
+
+**Invalidation observed:** successful refill writes clear the refill, house
+model and summary caches. Historical daily/counter/weather records are treated
+as immutable source history and are not invalidated by a refill. Forecast,
+climate and Open-Meteo offset caches retain their independent existing
+lifetimes. This behavior is now a migration contract, not an invitation to
+silently broaden invalidation.
+
+**Important distinction:** providers currently own cache *policy* where
+extracted, while the legacy facade still owns and injects the cache *storage*.
+The model, offset, forecast, climate and summary caches remain facade-owned.
+A future cache-state consolidation should be a separate change with explicit
+tests for source freshness, write invalidation, partial telemetry TTL, stale
+summary refresh and process restart. No cache TTL or runtime behavior was
+changed by this audit.
