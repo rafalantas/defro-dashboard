@@ -6,12 +6,14 @@ holdout score. It never changes the production fuel estimate.
 """
 from __future__ import annotations
 
-from math import sqrt
+from math import isfinite, sqrt
 from statistics import median
 
 MIN_TRAIN_DAYS = 45
 MIN_TEST_DAYS = 7
 MAX_TEST_DAYS = 14
+TELEMETRY_MIN_TRAIN_DAYS = 90
+TELEMETRY_MIN_TEST_DAYS = 14
 MIN_RELATIVE_GAIN = 0.03
 RIDGE = 0.05
 HUBER_DELTA = 1.5
@@ -35,6 +37,55 @@ def _solve(matrix: list[list[float]], vector: list[float]):
                 work[row] = [a - factor * b for a, b in zip(work[row], work[col])]
     return [work[i][-1] for i in range(n)]
 
+
+
+def _number(value) -> float | None:
+    """Return only finite numeric input; reject booleans and malformed values."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if isfinite(number) else None
+
+
+def _valid_base_row(source: dict) -> dict | None:
+    """Validate target and weather features before they enter training."""
+    target = _number(source.get("kg_counter"))
+    hdd_lag = _number(source.get("hdd_lag"))
+    solar = _number(source.get("solar_mj"))
+    wind = _number(source.get("wind_max_kmh"))
+    day = source.get("day")
+    if (target is None or target < 0 or hdd_lag is None or hdd_lag < 0
+            or solar is None or solar < 0 or wind is None or wind < 0
+            or not isinstance(day, str) or len(day) != 10):
+        return None
+    row = dict(source)
+    row.update(kg_counter=target, hdd_lag=hdd_lag, solar_mj=solar,
+               wind_max_kmh=wind)
+    return row
+
+
+def _valid_telemetry_row(row: dict, names: list[str]) -> bool:
+    """Reject incomplete, non-finite or physically implausible telemetry days."""
+    ranges = {
+        "telemetry_co_c": (-10.0, 120.0),
+        "telemetry_dhw_c": (0.0, 100.0),
+        "telemetry_floor_c": (0.0, 85.0),
+        "telemetry_return_c": (0.0, 100.0),
+        "telemetry_boiler_power_kw": (0.0, 100.0),
+        "telemetry_valve_opening_pct": (0.0, 100.0),
+        "telemetry_pump_floor_h": (0.0, 24.0),
+        "telemetry_pump_dhw_h": (0.0, 24.0),
+        "telemetry_pump_circulation_h": (0.0, 24.0),
+    }
+    for name in names:
+        value = _number(row.get(name))
+        low, high = ranges[name]
+        if value is None or not low <= value <= high:
+            return False
+    return True
 
 def _prepare(rows: list[dict], names: list[str]):
     means, scales = [], []
@@ -118,28 +169,22 @@ def evaluate(rows: list[dict]) -> dict:
     any scored day. Both protocols are reported; production remains unchanged.
     """
     clean = []
+    rejected_rows = 0
     for source in rows:
-        if (source.get("kg_counter") is None or source.get("estimate")
-                or source.get("counter_regime") == "epoch"
-                or source.get("hdd_lag") is None
-                or source.get("solar_mj") is None
-                or source.get("wind_max_kmh") is None):
+        if source.get("estimate") or source.get("counter_regime") == "epoch":
+            rejected_rows += 1
             continue
-        row = dict(source)
-        # Temperatura pokoju nie jest obecnie cechą modelu paliwa. Jeśli
-        # zostanie przekazana, odczyty 0°C lub niepoprawne są usuwane,
-        # nigdy imputowane ani wykorzystywane w żadnej kalkulacji.
+        row = _valid_base_row(source)
+        if row is None:
+            rejected_rows += 1
+            continue
+        # Room temperature is not a model feature; invalid values are discarded.
         for room_key in ("room_c", "room_temp", "room_temperature_c"):
             value = row.get(room_key)
-            if value is not None:
-                try:
-                    room_value = float(value)
-                except (TypeError, ValueError):
-                    row.pop(room_key, None)
-                else:
-                    if not (room_value > 0 and room_value < float("inf")):
-                        row.pop(room_key, None)
-        row["wind_hdd_lag"] = float(row["wind_max_kmh"]) * float(row["hdd_lag"]) / 100.0
+            room_value = _number(value)
+            if value is not None and (room_value is None or room_value <= 0):
+                row.pop(room_key, None)
+        row["wind_hdd_lag"] = row["wind_max_kmh"] * row["hdd_lag"] / 100.0
         clean.append(row)
     clean.sort(key=lambda row: row.get("day", ""))
     total = len(clean)
@@ -150,25 +195,22 @@ def evaluate(rows: list[dict]) -> dict:
         "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
     ]
     telemetry_clean = [
-        row for row in clean
-        if all(row.get(name) is not None for name in telemetry_names)
+        row for row in clean if _valid_telemetry_row(row, telemetry_names)
     ]
     telemetry_days = len(telemetry_clean)
-    telemetry_test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, telemetry_days // 5))
+    telemetry_test_count = min(MAX_TEST_DAYS, max(TELEMETRY_MIN_TEST_DAYS, telemetry_days // 5))
     telemetry_train_count = telemetry_days - telemetry_test_count
-    telemetry_required_days = telemetry_train_count + telemetry_test_count
-    telemetry_minimum_days = MIN_TRAIN_DAYS + MIN_TEST_DAYS
-    while telemetry_minimum_days - min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, telemetry_minimum_days // 5)) < MIN_TRAIN_DAYS:
-        telemetry_minimum_days += 1
+    telemetry_minimum_days = TELEMETRY_MIN_TRAIN_DAYS + TELEMETRY_MIN_TEST_DAYS
     test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, total // 5))
     train_count = total - test_count
     if train_count < MIN_TRAIN_DAYS or test_count < MIN_TEST_DAYS:
         return {"status": "collecting", "days": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days,
-                              "days_needed": max(telemetry_required_days, telemetry_minimum_days),
+                              "days_needed": telemetry_minimum_days,
                               "message": "Za mało kompletnych dób z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS,
                 "test_days_needed": MIN_TEST_DAYS,
+                "rejected_days": rejected_rows,
                 "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
 
     train, test = clean[:train_count], clean[train_count:]
@@ -195,7 +237,10 @@ def evaluate(rows: list[dict]) -> dict:
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
     gain = ((baseline_score["mae_kg_day"] - candidate_score["mae_kg_day"])
             / baseline_score["mae_kg_day"] if baseline_score["mae_kg_day"] else 0.0)
-    accepted = gain >= MIN_RELATIVE_GAIN
+    fixed_gain = ((fixed_baseline_score["mae_kg_day"] - fixed_candidate_score["mae_kg_day"])
+                  / fixed_baseline_score["mae_kg_day"]
+                  if fixed_baseline_score["mae_kg_day"] else 0.0)
+    accepted = gain >= MIN_RELATIVE_GAIN and fixed_gain >= MIN_RELATIVE_GAIN
     selected_names = candidate_names if accepted else baseline_names
     final_model = _fit(clean, selected_names)
     if final_model is None:
@@ -204,8 +249,10 @@ def evaluate(rows: list[dict]) -> dict:
 
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days,
                         "days_needed": telemetry_minimum_days,
-                        "message": "Model telemetrii czeka na co najmniej 45 dób treningowych i 7 testowych"}
-    if telemetry_train_count >= MIN_TRAIN_DAYS and telemetry_test_count >= MIN_TEST_DAYS:
+                        "training_days_needed": TELEMETRY_MIN_TRAIN_DAYS,
+                        "holdout_days_needed": TELEMETRY_MIN_TEST_DAYS,
+                        "message": "Model telemetrii czeka na co najmniej 90 dób treningowych i 14 testowych"}
+    if telemetry_train_count >= TELEMETRY_MIN_TRAIN_DAYS and telemetry_test_count >= TELEMETRY_MIN_TEST_DAYS:
         telemetry_baseline_names = ["hdd_lag", "solar_mj", "wind_hdd_lag"]
         telemetry_candidate_names = telemetry_baseline_names + telemetry_names
         telemetry_test = telemetry_clean[telemetry_train_count:]
@@ -232,8 +279,17 @@ def evaluate(rows: list[dict]) -> dict:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days,
                                     "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
             else:
+                telemetry_fixed_gain = (
+                    (telemetry_fixed_base["mae_kg_day"] - telemetry_fixed_extended["mae_kg_day"])
+                    / telemetry_fixed_base["mae_kg_day"]
+                    if telemetry_fixed_base["mae_kg_day"] else 0.0
+                )
                 telemetry_gain = ((base_score["mae_kg_day"] - extended_score["mae_kg_day"])
                                   / base_score["mae_kg_day"] if base_score["mae_kg_day"] else 0.0)
+                telemetry_accepted = (
+                    telemetry_gain >= MIN_RELATIVE_GAIN
+                    and telemetry_fixed_gain >= MIN_RELATIVE_GAIN
+                )
                 telemetry_result = {
                     "status": "shadow_ready", "mode": "shadow_only",
                     "complete_days": telemetry_days, "training_days": telemetry_train_count,
@@ -247,8 +303,10 @@ def evaluate(rows: list[dict]) -> dict:
                                           "candidate": telemetry_fixed_extended},
                     },
                     "mae_gain_percent": round(telemetry_gain * 100, 1),
-                    "accepted": telemetry_gain >= MIN_RELATIVE_GAIN,
-                    "features": telemetry_candidate_names if telemetry_gain >= MIN_RELATIVE_GAIN else telemetry_baseline_names,
+                    "fixed_holdout_mae_gain_percent": round(telemetry_fixed_gain * 100, 1),
+                    "accepted": telemetry_accepted,
+                    "selected": "telemetry_enhanced" if telemetry_accepted else "weather_only",
+                    "features": telemetry_candidate_names if telemetry_accepted else telemetry_baseline_names,
                     "safety": "shadow_only; production estimates are unchanged",
                 }
 
@@ -262,6 +320,8 @@ def evaluate(rows: list[dict]) -> dict:
         "features": selected_names,
         "selected": "weather_aware" if accepted else "temperature_only",
         "accepted_weather_gain": accepted,
+        "fixed_holdout_mae_gain_percent": round(fixed_gain * 100, 1),
+        "rejected_days": rejected_rows,
         "mae_gain_percent": round(gain * 100, 1),
         "baseline": baseline_score,
         "candidate": candidate_score,
