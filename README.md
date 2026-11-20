@@ -118,7 +118,9 @@ Endpoint diagnostyczny pobiera dane bezpośrednio z eModul na żądanie. Oprócz
 | `THINGSPEAK_CHANNEL_IDS` | Tak dla historii | Dwa identyfikatory kanałów, oddzielone przecinkiem, w kolejności: temperatury i moc, zawór/pompy i paliwo. |
 | `THINGSPEAK_WRITE_KEYS` | Tak dla historii | Dwa klucze Write API w tej samej kolejności co kanały. Sekret Portainera. |
 | `THINGSPEAK_READ_KEYS` | Nie | Dwa klucze Read API w tej samej kolejności. Dla kanałów publicznych można zostawić puste. |
+| `THINGSPEAK_FIRE_WRITE_KEY` | Wymagany dla czujnika ognia | Klucz Write API osobnego kanału czujnika ognia. |
 | `THINGSPEAK_WRITE_INTERVAL_SECONDS` | Nie | Odstęp zapisu; domyślnie 40 sekund, minimum 35. |
+| `THINGSPEAK_FIRE_CHANNEL_ID` | Nie | Osobny kanał ThingSpeak na stan i jasność czujnika ognia; nie zmienia dwóch dotychczasowych kanałów. |
 | `THINGSPEAK_FUEL_CHANNEL_ID` | Nie | Osobny kanał ThingSpeak na dosypki peletu. Bez niego endpointy `/api/fuel/*` zwracają pustą listę dosypek. |
 | `THINGSPEAK_FUEL_WRITE_KEY` | Dla dosypek | Klucz Write API kanału „Pelet”. Sekret Portainera. |
 | `THINGSPEAK_FUEL_READ_KEY` | Nie | Klucz Read API kanału „Pelet”, jeśli kanał jest prywatny. |
@@ -140,6 +142,8 @@ W obu kanałach włącz pola i nadaj im poniższe nazwy. Zmienne `THINGSPEAK_CHA
 | --- | --- |
 | 3566081 · Temperatury i moc | Temperatura CO (°C), Temperatura CWU (°C), Temperatura spalin (°C), Temperatura zewnętrzna (°C), Temperatura pokoju (°C), Temperatura podłogówki (C1), Temperatura zaworu 4D (°C), Moc chwilowa pieca (kW) |
 | 3566084 · Zawór, pompy i paliwo | Zadana zaworu 4D po korekcie (°C), Otwarcie zaworu 4D (%), Temperatura powrotu (°C), Pompa zaworu 4D (0/1), Pompa podłogowa (0/1), Pompa CWU (0/1), Pompa cyrkulacyjna (0/1), Zapas paliwa (%) |
+
+Dodatkowy, opcjonalny kanał czujnika ognia (ID z `THINGSPEAK_FIRE_CHANNEL_ID`, klucz z `THINGSPEAK_FIRE_WRITE_KEY`): Field 1 `fire_detected` (0 = brak płomienia, 1 = płomień), Field 2 `fire_brightness` (jasność z eModul). Zapis odbywa się w tym samym interwale co pozostała telemetria. Wartość `0` jasności jest zapisywana; brak odczytu pozostaje pustym polem. Kanał nie jest wymagany do działania obecnej telemetrii.
 
 Zadana zaworu 4D po korekcie jest wyliczana jako wartość `setTemp` plus podpisana korekta `setTempCorrection`; korekta dodatnia podwyższa, a ujemna obniża temperaturę. W Portainerze ustaw dokładnie dwa ID oraz dwa klucze zapisu w tej samej kolejności, bez spacji. Dla prywatnych kanałów ustaw również dwa klucze odczytu. Nie dodawaj starego kanału 3566098. Klucze API nie powinny trafiać do repozytorium ani do rozmowy. W ThingSpeak ustaw interwał aktualizacji kanału na co najmniej 40 sekund.
 
