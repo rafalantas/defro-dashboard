@@ -6,12 +6,14 @@ holdout score. It never changes the production fuel estimate.
 """
 from __future__ import annotations
 
-from math import sqrt
+from math import isfinite, sqrt
 from statistics import median
 
 MIN_TRAIN_DAYS = 45
 MIN_TEST_DAYS = 7
 MAX_TEST_DAYS = 14
+TELEMETRY_MIN_TRAIN_DAYS = 90
+TELEMETRY_MIN_TEST_DAYS = 14
 MIN_RELATIVE_GAIN = 0.03
 RIDGE = 0.05
 HUBER_DELTA = 1.5
@@ -35,6 +37,55 @@ def _solve(matrix: list[list[float]], vector: list[float]):
                 work[row] = [a - factor * b for a, b in zip(work[row], work[col])]
     return [work[i][-1] for i in range(n)]
 
+
+
+def _number(value) -> float | None:
+    """Return only finite numeric input; reject booleans and malformed values."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if isfinite(number) else None
+
+
+def _valid_base_row(source: dict) -> dict | None:
+    """Validate target and weather features before they enter training."""
+    target = _number(source.get("kg_counter"))
+    hdd_lag = _number(source.get("hdd_lag"))
+    solar = _number(source.get("solar_mj"))
+    wind = _number(source.get("wind_max_kmh"))
+    day = source.get("day")
+    if (target is None or target < 0 or hdd_lag is None or hdd_lag < 0
+            or solar is None or solar < 0 or wind is None or wind < 0
+            or not isinstance(day, str) or len(day) != 10):
+        return None
+    row = dict(source)
+    row.update(kg_counter=target, hdd_lag=hdd_lag, solar_mj=solar,
+               wind_max_kmh=wind)
+    return row
+
+
+def _valid_telemetry_row(row: dict, names: list[str]) -> bool:
+    """Reject incomplete, non-finite or physically implausible telemetry days."""
+    ranges = {
+        "telemetry_co_c": (-10.0, 120.0),
+        "telemetry_dhw_c": (0.0, 100.0),
+        "telemetry_floor_c": (0.0, 85.0),
+        "telemetry_return_c": (0.0, 100.0),
+        "telemetry_boiler_power_kw": (0.0, 100.0),
+        "telemetry_valve_opening_pct": (0.0, 100.0),
+        "telemetry_pump_floor_h": (0.0, 24.0),
+        "telemetry_pump_dhw_h": (0.0, 24.0),
+        "telemetry_pump_circulation_h": (0.0, 24.0),
+    }
+    for name in names:
+        value = _number(row.get(name))
+        low, high = ranges[name]
+        if value is None or not low <= value <= high:
+            return False
+    return True
 
 def _prepare(rows: list[dict], names: list[str]):
     means, scales = [], []
@@ -118,28 +169,21 @@ def evaluate(rows: list[dict]) -> dict:
     any scored day. Both protocols are reported; production remains unchanged.
     """
     clean = []
+    rejected_rows = 0
     for source in rows:
-        if (source.get("kg_counter") is None or source.get("estimate")
-                or source.get("counter_regime") == "epoch"
-                or source.get("hdd_lag") is None
-                or source.get("solar_mj") is None
-                or source.get("wind_max_kmh") is None):
+        if source.get("estimate") or source.get("counter_regime") == "epoch":
+            rejected_rows += 1
             continue
-        row = dict(source)
-        # Temperatura pokoju nie jest obecnie cechą modelu paliwa. Jeśli
-        # zostanie przekazana, odczyty 0°C lub niepoprawne są usuwane,
-        # nigdy imputowane ani wykorzystywane w żadnej kalkulacji.
+        row = _valid_base_row(source)
+        if row is None:
+            rejected_rows += 1
+            continue
+        # Room temperature is not a model feature; invalid values are discarded.
         for room_key in ("room_c", "room_temp", "room_temperature_c"):
             value = row.get(room_key)
-            if value is not None:
-                try:
-                    room_value = float(value)
-                except (TypeError, ValueError):
-                    row.pop(room_key, None)
-                else:
-                    if not (room_value > 0 and room_value < float("inf")):
-                        row.pop(room_key, None)
-        row["wind_hdd_lag"] = float(row["wind_max_kmh"]) * float(row["hdd_lag"]) / 100.0
+            if value is not None and _number(value) is None:
+                row.pop(room_key, None)
+        row["wind_hdd_lag"] = row["wind_max_kmh"] * row["hdd_lag"] / 100.0
         clean.append(row)
     clean.sort(key=lambda row: row.get("day", ""))
     total = len(clean)
