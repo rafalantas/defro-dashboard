@@ -1,74 +1,180 @@
-"""Conservative read-only analysis of timestamped boiler telemetry.
+"""Conservative, read-only event correlation for timestamped boiler telemetry.
 
-Episode boundaries are screening heuristics, not proof of burner ignition.
-No diagnostic output is connected to boiler controls or fuel estimates.
+Flue episodes are screening candidates, never proof of burner ignition. All
+cross-signal summaries use real timestamps and bounded windows; gaps are not
+interpolated. Nothing in this module is connected to boiler controls or fuel
+estimates.
 """
 from __future__ import annotations
+
+from datetime import timedelta
 
 MAX_GAP_SECONDS = 300
 RETURN_WARNING_C = 54.0
 FLUE_ACTIVE_C = 70.0
 FLUE_COOL_C = 50.0
+EVENT_CONTEXT_MINUTES = 10
+PUMP_KEYS = ("pump_floor", "pump_dhw", "pump_circulation")
+CONTEXT_KEYS = (
+    "co_c", "dhw_c", "floor_c", "return_c", "valve_opening_pct",
+    "valve_setpoint_c", "boiler_power_kw", *PUMP_KEYS,
+)
+
 
 def _stats(values):
     values = sorted(float(v) for v in values if isinstance(v, (int, float)))
     if not values:
-        return {"count": 0, "min": None, "median": None, "max": None}
+        return {"count": 0, "min": None, "mean": None, "median": None, "max": None}
     mid = len(values) // 2
-    median = values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
-    return {"count": len(values), "min": round(values[0], 2), "median": round(median, 2), "max": round(values[-1], 2)}
+    med = values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+    return {
+        "count": len(values), "min": round(values[0], 2),
+        "mean": round(sum(values) / len(values), 2),
+        "median": round(med, 2), "max": round(values[-1], 2),
+    }
 
-def build_raw_diagnostics(points, now):
-    """Summarize raw timestamped samples, elevated flue episodes and hydraulics."""
+
+def _normalize(points):
     normalized = {}
     for key, samples in points.items():
-        normalized[key] = sorted((ts, float(value)) for ts, value in samples if ts is not None and isinstance(value, (int, float)))
-    quality = {}
+        clean = [(ts, float(value)) for ts, value in samples
+                 if ts is not None and isinstance(value, (int, float))]
+        normalized[key] = sorted(clean, key=lambda item: item[0])
+    return normalized
+
+
+def _quality(normalized):
+    result = {}
     for key, samples in normalized.items():
         gaps = [(b[0] - a[0]).total_seconds() for a, b in zip(samples, samples[1:])]
-        quality[key] = {"samples": len(samples), "first": samples[0][0].isoformat() if samples else None,
-                        "last": samples[-1][0].isoformat() if samples else None,
-                        "gaps_over_5m": sum(g > MAX_GAP_SECONDS for g in gaps),
-                        "max_gap_seconds": round(max(gaps), 1) if gaps else None}
-    flue = normalized.get("flue_c", [])
-    power = normalized.get("boiler_power_kw", [])
-    episodes, current = [], []
-    for ts, temp in flue:
+        result[key] = {
+            "samples": len(samples),
+            "first": samples[0][0].isoformat() if samples else None,
+            "last": samples[-1][0].isoformat() if samples else None,
+            "gaps_over_5m": sum(g > MAX_GAP_SECONDS for g in gaps),
+            "max_gap_seconds": round(max(gaps), 1) if gaps else None,
+        }
+    return result
+
+
+def _episodes(samples, predicate, close_predicate=None):
+    """Group matching samples; split on telemetry gaps and optional close signal."""
+    found, current = [], []
+    for ts, value in samples:
         if current and (ts - current[-1][0]).total_seconds() > MAX_GAP_SECONDS:
-            episodes.append(current); current = []
-        if temp >= FLUE_ACTIVE_C:
-            current.append((ts, temp))
-        elif current and temp <= FLUE_COOL_C:
-            episodes.append(current); current = []
+            found.append(current)
+            current = []
+        if predicate(value):
+            current.append((ts, value))
+        elif current and close_predicate and close_predicate(value):
+            found.append(current)
+            current = []
     if current:
-        episodes.append(current)
+        found.append(current)
+    return found
+
+
+def _window_stats(normalized, start, end):
+    result = {}
+    for key in CONTEXT_KEYS:
+        samples = [(ts, value) for ts, value in normalized.get(key, [])
+                   if start <= ts <= end]
+        values = [value for _, value in samples]
+        result[key] = _stats(values)
+        result[key]["first"] = samples[0][0].isoformat() if samples else None
+        result[key]["last"] = samples[-1][0].isoformat() if samples else None
+    return result
+
+
+def _trend(samples):
+    if len(samples) < 2:
+        return None
+    elapsed = (samples[-1][0] - samples[0][0]).total_seconds() / 60
+    if elapsed <= 0:
+        return None
+    return round((samples[-1][1] - samples[0][1]) / elapsed, 2)
+
+
+def build_raw_diagnostics(points, now):
+    """Summarize raw samples, flue candidates and clustered low-return episodes."""
+    normalized = _normalize(points)
+    quality = _quality(normalized)
+    flue = normalized.get("flue_c", [])
+    firing_candidates = _episodes(flue, lambda value: value >= FLUE_ACTIVE_C,
+                                  lambda value: value <= FLUE_COOL_C)
     firing = []
-    for episode in episodes:
+    context_delta = timedelta(minutes=EVENT_CONTEXT_MINUTES)
+    for episode in firing_candidates:
         start, end = episode[0][0], episode[-1][0]
-        nearby_power = [v for ts, v in power if start <= ts <= end]
-        firing.append({"start": start.isoformat(), "end": end.isoformat(),
-                       "duration_minutes": round((end - start).total_seconds() / 60, 1),
-                       "flue_c": _stats([v for _, v in episode]),
-                       "boiler_power_kw": _stats(nearby_power),
-                       "classification": "elevated_flue_activity", "ignition_confirmed": False})
+        context = _window_stats(normalized, start - context_delta, end + context_delta)
+        power = context["boiler_power_kw"]
+        firing.append({
+            "start": start.isoformat(), "end": end.isoformat(),
+            "duration_minutes": round((end - start).total_seconds() / 60, 1),
+            "flue_c": _stats([value for _, value in episode]),
+            "flue_trend_c_per_min": _trend(episode),
+            "context_window_minutes_each_side": EVENT_CONTEXT_MINUTES,
+            "context": context,
+            "evidence": {
+                "boiler_power_observed": power["count"] > 0,
+                "boiler_power_above_1kw": power["max"] is not None and power["max"] > 1.0,
+                "boiler_power_peak_kw": power["max"],
+            },
+            "classification": "elevated_flue_activity",
+            "ignition_confirmed": False,
+        })
+
     returns = normalized.get("return_c", [])
-    low_return = [{"at": ts.isoformat(), "return_c": round(v, 2),
-                   "code": "return_below_54c", "severity": "warning"}
-                  for ts, v in returns if v < RETURN_WARNING_C]
+    low_samples = [(ts, value) for ts, value in returns if value < RETURN_WARNING_C]
+    low_groups = _episodes(returns, lambda value: value < RETURN_WARNING_C)
+    low_episodes = []
+    for episode in low_groups:
+        start, end = episode[0][0], episode[-1][0]
+        context = _window_stats(normalized, start - context_delta, end + context_delta)
+        low_episodes.append({
+            "start": start.isoformat(), "end": end.isoformat(),
+            "duration_minutes": round((end - start).total_seconds() / 60, 1),
+            "samples": len(episode),
+            "return_c": _stats([value for _, value in episode]),
+            "context": context,
+            "code": "return_below_54c_episode",
+            "severity": "warning",
+            "note": "Sygnał do przeglądu; nie potwierdza zadziałania ani awarii ochrony powrotu.",
+        })
+
+    low_return = [{
+        "at": ts.isoformat(), "return_c": round(value, 2),
+        "code": "return_below_54c", "severity": "warning",
+    } for ts, value in low_samples]
     hydraulics = {
-        "return_c": _stats([v for _, v in returns]),
-        "valve_opening_pct": _stats([v for _, v in normalized.get("valve_opening_pct", [])]),
-        "boiler_power_kw": _stats([v for _, v in power]),
-        "pump_state_samples": {key: sum(v >= 0.5 for _, v in normalized.get(key, []))
-                               for key in ("pump_floor", "pump_dhw", "pump_circulation")},
-        "low_return_samples": len(low_return), "low_return_events": low_return[:200],
-        "reference_return_protection_c": 55.0, "warning_threshold_c": RETURN_WARNING_C,
-        "note": "Próbki poniżej 54°C są sygnałem do przeglądu, nie dowodem zadziałania ochrony. Nastawy pozostają bez zmian."}
-    return {"mode": "read_only_timestamped_screening", "timezone": str(now.tzinfo),
-            "series": quality,
-            "firing_activity": {"episodes_count": len(firing), "episodes": firing[-100:],
-                "threshold_flue_active_c": FLUE_ACTIVE_C, "threshold_flue_cool_c": FLUE_COOL_C,
-                "max_sample_gap_seconds": MAX_GAP_SECONDS,
-                "note": "Epizody podwyższonej temperatury spalin; nie są automatycznie utożsamiane z rozpaleniami palnika."},
-            "hydraulics": hydraulics,
-            "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes"}
+        "return_c": _stats([value for _, value in returns]),
+        "valve_opening_pct": _stats([value for _, value in normalized.get("valve_opening_pct", [])]),
+        "boiler_power_kw": _stats([value for _, value in normalized.get("boiler_power_kw", [])]),
+        "pump_state_samples": {
+            key: sum(value >= 0.5 for _, value in normalized.get(key, []))
+            for key in PUMP_KEYS
+        },
+        "low_return_samples": len(low_return),
+        "low_return_episode_count": len(low_episodes),
+        "low_return_events": low_return[:200],
+        "low_return_episodes": low_episodes[-100:],
+        "reference_return_protection_c": 55.0,
+        "warning_threshold_c": RETURN_WARNING_C,
+        "note": "Próbki poniżej 54°C są sygnałem do przeglądu, nie dowodem zadziałania ochrony. Nastawy pozostają bez zmian.",
+    }
+    return {
+        "mode": "read_only_timestamped_event_correlation",
+        "timezone": str(now.tzinfo),
+        "series": quality,
+        "firing_activity": {
+            "episodes_count": len(firing),
+            "episodes": firing[-100:],
+            "threshold_flue_active_c": FLUE_ACTIVE_C,
+            "threshold_flue_cool_c": FLUE_COOL_C,
+            "max_sample_gap_seconds": MAX_GAP_SECONDS,
+            "context_window_minutes_each_side": EVENT_CONTEXT_MINUTES,
+            "note": "Epizody spalin są kandydatami do korelacji z hydrauliką, nie potwierdzonymi rozpaleniami.",
+        },
+        "hydraulics": hydraulics,
+        "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes",
+    }
