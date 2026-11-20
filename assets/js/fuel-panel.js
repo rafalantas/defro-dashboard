@@ -44,11 +44,12 @@
       ['AI test chronologiczny',ai.status==='shadow_ready'?(ai.holdout_from+' – '+ai.holdout_to+' · '+ai.holdout_days+' okresów'):(ai.available_periods!=null?'zbiera dane · '+ai.available_periods+'/'+(ai.required_periods||((ai.train_periods_needed||0)+(ai.test_periods_needed||0)))+' okresów':'wymaga więcej danych')],
       ['AI fixed holdout',ai.status==='shadow_ready'?n(ai.fixed_holdout_mae_gain_percent,1)+'% poprawy MAE · wymagane ≥ 3%':'—'],
       ['AI telemetria',ai.telemetry?.status==='shadow_ready'?(ai.telemetry.accepted?'rozszerzony model zaakceptowany':'model bazowy zachowany'):(ai.telemetry?.complete_periods!=null?'zbiera dane · '+ai.telemetry.complete_periods+'/'+(ai.telemetry.periods_needed||25)+' kompletnych okresów'+(ai.telemetry.incomplete_periods?' · '+ai.telemetry.incomplete_periods+' niekompletnych':''):(ai.telemetry?.message||'zbieranie danych'))],
+      ['AI telemetria · pokrycie pól',ai.telemetry?.feature_coverage_periods?['telemetry_floor_c','telemetry_boiler_power_kw','telemetry_pump_floor_h','telemetry_pump_dhw_h','telemetry_pump_circulation_h'].map(k=>k.replace('telemetry_','').replaceAll('_',' ')+': '+(ai.telemetry.feature_coverage_periods[k]??0)).join(' · '):'brak rozbicia pokrycia'],
       ['AI telemetria · MAE',ai.telemetry?.status==='shadow_ready'?n(ai.telemetry.candidate?.mae_kg_day,2)+' / '+n(ai.telemetry.baseline?.mae_kg_day,2)+' kg/d':'—'],
       ['AI telemetria · fixed holdout',ai.telemetry?.status==='shadow_ready'?n(ai.telemetry.fixed_holdout_mae_gain_percent,1)+'% poprawy MAE · wymagane ≥ 3%':'—'],
       ['Model domu',m.periods_used!=null?m.periods_used+' okresów · R² '+n(m.r2,2):'za mało okresów'],
       ['Model dobowy',dm.status==='aktywny'?'aktywny · '+(dm.days||0)+' dób':(dm.days!=null?'zbiera dane · '+dm.days+'/'+(dm.days_needed||30):'brak danych')],
-      ['Licznik podajnika',cc.calibrated?n(cc.kg_per_percent,2)+' kg/%':(cc.message||'w trakcie kalibracji')],
+      ['Licznik podajnika',n(cc.kg_per_percent,2)+' kg/% · '+(cc.confidence?.label||cc.message||'ocena pewności niedostępna')+(cc.confidence?.periods_used!=null?' · '+cc.confidence.periods_used+' okresów':'')],
       ['Moc palnika',cal.calibrated?'skalibrowana ×'+n(cal.factor,2):(cal.provisional?'wstępny współczynnik ×'+n(cal.factor,2):'brak kalibracji')],
       ['Baza stopniodni',s.hdd_base!=null?n(s.hdd_base,1)+' °C':'—'],
       ['Korekta Open-Meteo',off.applied?n(off.offset,1)+' °C · '+(off.days||0)+' dób':'nieaktywna']
