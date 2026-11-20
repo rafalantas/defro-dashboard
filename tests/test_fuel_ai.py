@@ -189,7 +189,7 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["training_days"], 89)
 
     def test_invalid_base_rows_report_the_specific_first_failure(self):
-        rows = synthetic_rows(50)
+        rows = synthetic_rows(90)
         rows[0]["kg_counter"] = None
         rows[1]["hdd_lag"] = float("nan")
         rows[2]["solar_mj"] = None
@@ -204,7 +204,7 @@ class FuelAiTests(unittest.TestCase):
             "wind_max_kmh_negative": 1,
             "day_missing_or_invalid": 1,
         })
-        self.assertEqual(result["training_days"], 45)
+        self.assertEqual(result["training_days"], 85)
 
     def test_duplicate_days_are_excluded_instead_of_double_weighted(self):
         rows = synthetic_rows()
