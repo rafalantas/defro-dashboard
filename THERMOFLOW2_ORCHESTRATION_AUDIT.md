@@ -92,3 +92,22 @@ The next implementation should introduce a dependency container/service boundary
 - Preserve the return-protection target at **55 °C**; do not alter boiler, burner, feeder, valve or pump settings.
 - Do not merge the PR, deploy, or switch production engine without explicit approval.
 - A passing synthetic unit suite is necessary but not sufficient. The inactive legacy `fuel.py` requires a representative historical-data replay and then a live shadow comparison before cutover.
+
+
+## First runtime-state extraction
+
+The existing cache dictionaries and two synchronization locks have been grouped
+in `fuel_runtime.FuelCacheState`. The legacy facade now creates one state
+instance and aliases its original module-level names to the same objects.
+This is intentionally a storage-only extraction:
+
+- cache dictionary keys and initial shapes are unchanged;
+- all TTL constants remain in `fuel.py`;
+- provider cache policies remain unchanged;
+- successful refill invalidation still clears exactly the same three caches;
+- no cache persistence, eviction, or cross-process sharing was introduced;
+- each engine-state instance owns independent dictionaries and locks.
+
+The module is packaged in the API image and covered by CI tests for legacy
+initial shapes, instance isolation and lock isolation. This creates a seam for
+the future engine object without changing current module-level callers.
