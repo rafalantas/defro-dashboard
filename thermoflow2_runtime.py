@@ -968,8 +968,8 @@ def _telemetry_history(days: int) -> dict:
     return fetch_telemetry_history(
         days=days,
         max_days=MAX_DAYS,
-        channel_ids=[TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE],
-        read_keys=[TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE],
+        channel_ids=[TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE, TS_CHANNEL_FIRE],
+        read_keys=[TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE, TS_READ_KEY_FIRE],
         today=datetime.now(TZ).date(),
         tz=TZ,
         cache=_telemetry_history_cache,
