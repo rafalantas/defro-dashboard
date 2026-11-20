@@ -16,11 +16,17 @@ def _points(raw, key):
     for point in raw.get(key, []) or []:
         try:
             ts, value = int(point[0]), float(point[1])
-        except (TypeError, ValueError, IndexError):
+            if ts <= 0 or not isfinite(value):
+                continue
+        except (TypeError, ValueError, IndexError, OverflowError):
             continue
-        if ts > 0:
-            result.append((ts, value))
-    return sorted(result)
+        result.append((ts, value))
+    # Duplicate timestamps have no defensible ordering. Exclude every sample
+    # at an ambiguous timestamp instead of allowing arbitrary transitions.
+    counts = {}
+    for ts, _value in result:
+        counts[ts] = counts.get(ts, 0) + 1
+    return sorted((ts, value) for ts, value in result if counts[ts] == 1)
 
 
 def _quality(raw):
@@ -78,16 +84,24 @@ def _hydraulics(raw):
             if old_on == new_on:
                 continue
             event_type = "start" if new_on else "stop"
-            before = next((v for t, v in reversed(returns) if t <= ts and ts - t <= 600), None)
-            after = next((v for t, v in returns if ts < t <= ts + 600), None)
+            before_point = next(((t, v) for t, v in reversed(returns)
+                                  if t <= ts and ts - t <= MAX_GAP_SECONDS), None)
+            after_point = next(((t, v) for t, v in returns
+                                 if t > ts and t - ts <= MAX_GAP_SECONDS), None)
+            before = before_point[1] if before_point else None
+            after = after_point[1] if after_point else None
+            paired = bool(before_point and after_point
+                          and after_point[0] - before_point[0] <= 2 * MAX_GAP_SECONDS)
             events.append({
                 "event": event_type,
                 "at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
-                "return_before_c": before, "return_after_c": after,
-                "return_delta_c": round(after - before, 2)
-                    if before is not None and after is not None else None,
-                "association_window_seconds": 600,
-                "association_status": "paired" if before is not None and after is not None else "insufficient_return_samples",
+                "return_before_c": before if paired else None,
+                "return_after_c": after if paired else None,
+                "return_delta_c": round(after - before, 2) if paired else None,
+                "return_before_at": datetime.fromtimestamp(before_point[0], timezone.utc).isoformat() if paired else None,
+                "return_after_at": datetime.fromtimestamp(after_point[0], timezone.utc).isoformat() if paired else None,
+                "association_window_seconds": MAX_GAP_SECONDS,
+                "association_status": "paired" if paired else "insufficient_contiguous_return_samples",
             })
         paired = [event["return_delta_c"] for event in events if event["return_delta_c"] is not None]
         pumps[key] = {
