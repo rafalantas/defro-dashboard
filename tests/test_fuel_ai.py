@@ -270,7 +270,7 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(len(rows), 60)
         self.assertFalse(meta["daily_refills_required"])
         result = fuel_ai.evaluate(rows)
-        self.assertEqual(result["days"], 60)
+        self.assertEqual(result["rejected_days"], 0)
         self.assertEqual(result["rejected_by_reason"]["duplicate_day"], 0)
         self.assertNotEqual(result["status"], "collecting")
 
