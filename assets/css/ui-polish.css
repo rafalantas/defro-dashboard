@@ -1,0 +1,135 @@
+/* ThermoFlow UI polish — shared layout, readable content and responsive safeguards. */
+:root{
+  --radius-card:14px;
+  --radius-panel:11px;
+  --space-card:clamp(12px,1.5vw,18px);
+  --focus-ring:0 0 0 3px color-mix(in srgb,var(--teal) 24%,transparent);
+}
+html{min-width:320px;scroll-behavior:smooth}
+body{overflow-x:hidden}
+.app{width:min(100%,1760px);padding-inline:clamp(12px,2.2vw,32px)}
+.app,.grid,.maincol,.sidecol,.card,.cardhead,.overview-columns,.overview-section,
+.overview-grid,.fuel-detail-grid,.fuel-detail-panel,.fuel-planning-grid,
+.diagnostics-summary,.diagnostics-events,.stats-content,.stats-chart-wrap{min-width:0}
+.card{border-radius:var(--radius-card);box-shadow:0 12px 32px #00000018}
+.cardhead{gap:14px;flex-wrap:wrap}
+.cardhead>div{min-width:0;flex:1 1 240px}
+.cardhead h2,.subhead,.hero p,.telemetry-label,.telemetry-meta,
+.overview-alert,.overview-muted,.overview-model h4,.fuel-detail-heading,
+.fuel-detail-footnote,.diagnostics-intro,.diagnostics-event,
+.sensor-chip,.status-copy{overflow-wrap:anywhere;word-break:normal}
+.badge{max-width:100%;white-space:normal;text-align:center}
+button,.button,.view-tab{min-height:36px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:0;box-shadow:var(--focus-ring)
+}
+.view-nav{gap:6px;scrollbar-width:thin}
+.view-tab{white-space:nowrap;transition:background .18s ease,border-color .18s ease,color .18s ease}
+.telemetry-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr));align-items:stretch}
+.telemetry-tile{min-width:0;min-height:96px;gap:8px}
+.telemetry-value{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+.telemetry-grid .wide{grid-column:span 2}
+.temperature-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.metric{min-width:0}
+.metric strong,.overview-metric strong,.diagnostics-kpi strong{overflow-wrap:anywhere;word-break:break-word}
+.overview-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.overview-metric{min-width:0}
+.overview-metric strong{font-size:clamp(16px,1.45vw,21px)}
+.overview-row{min-width:0;gap:10px}
+.overview-row-label{flex:1 1 44%;overflow-wrap:anywhere}
+.overview-row-value{flex:0 1 56%;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.overview-model{min-width:0}
+.overview-model .overview-row{align-items:flex-start}
+.overview-model .overview-row-value{text-align:right}
+.overview-alert{min-width:0}
+.fuel-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))}
+.fuel-detail-grid{grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start}
+.fuel-detail-panel{min-width:0;overflow:hidden}
+.fuel-detail-panel h4{line-height:1.4;overflow-wrap:anywhere}
+.fuel-detail-heading{align-items:flex-start;flex-wrap:wrap}
+.fuel-model-row,.fuel-refill-row,.fuel-forecast-day{min-width:0;align-items:flex-start;gap:12px}
+.fuel-model-row span,.fuel-forecast-day span,.fuel-refill-row>div{flex:1 1 48%;min-width:0;overflow-wrap:anywhere}
+.fuel-model-row b,.fuel-refill-row b,.fuel-forecast-day b{flex:0 1 52%;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.fuel-refill-row small{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.fuel-forecast-day small{flex:0 0 auto;min-width:0}
+.fuel-planning-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.fuel-planning-card{min-width:0}
+.fuel-planning-card strong{font-size:clamp(17px,1.8vw,22px);overflow-wrap:anywhere}
+.fuel-planning-card small{overflow-wrap:anywhere}
+#fuelDailyChart,.stats-chart{max-width:100%}
+.fuel-chart-legend{gap:8px 14px;overflow-wrap:anywhere}
+.stats-card-head{min-width:0}
+.stats-controls{min-width:0}
+.stats-tooltip{white-space:normal;overflow-wrap:anywhere}
+.diagnostics-kpi,.diagnostics-event{min-width:0}
+.diagnostics-event>div{min-width:0;overflow-wrap:anywhere}
+.diagnostics-event time{white-space:normal;flex:0 0 auto}
+.sensor-chip{min-width:0}
+.diagram-legend{flex-wrap:wrap;white-space:normal;overflow:visible}
+.schematic-wrap{overscroll-behavior-x:contain}
+@media(max-width:1100px){
+  .fuel-detail-grid{grid-template-columns:minmax(0,1fr)}
+  .fuel-planning-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .telemetry-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .app{padding:14px 12px 28px}
+  .topbar{align-items:flex-start}
+  .brand{min-width:0;font-size:15px}
+  .brand>div:last-child{min-width:0;overflow-wrap:anywhere}
+  .topright{min-width:0;flex-wrap:wrap;justify-content:flex-start}
+  .view-nav{overflow-x:auto;flex-wrap:nowrap;padding-top:12px}
+  .view-tab{flex:0 0 auto;padding:9px 12px}
+  .overview-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px;gap:8px}
+  .overview-columns{grid-template-columns:minmax(0,1fr)}
+  .overview-columns>.overview-section+.overview-section{border-left:0}
+  .overview-section{padding:13px 12px}
+  .temperature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metric{border-bottom:1px solid var(--line);padding:13px}
+  .metric:nth-child(2){border-right:0}
+  .metric:nth-last-child(-n+2){border-bottom:0}
+  .telemetry-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px;gap:8px}
+  .telemetry-grid .wide{grid-column:span 2}
+  .fuel-detail-grid{grid-template-columns:minmax(0,1fr)}
+  .diagnostics-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .diagnostics-toolbar{align-items:flex-start;flex-wrap:wrap}
+  .diagnostics-periods{flex-wrap:wrap}
+  .stats-content{padding:12px}
+}
+@media(max-width:480px){
+  .app{padding-inline:10px}
+  .card{border-radius:12px}
+  .cardhead{padding:14px 13px}
+  .cardhead>div{flex-basis:100%}
+  .cardhead>.badge{align-self:flex-start}
+  .subhead{font-size:10px;line-height:1.45}
+  .topright{gap:7px}
+  .topright .badge{font-size:9px}
+  .topright .button{padding:8px 10px}
+  .overview-grid{padding:10px}
+  .overview-metric{padding:10px;gap:6px}
+  .overview-metric span{line-height:1.35;overflow-wrap:anywhere}
+  .overview-metric strong{font-size:16px}
+  .overview-row{flex-direction:column;gap:3px}
+  .overview-row-label,.overview-row-value{flex:1 1 auto;width:100%;text-align:left}
+  .fuel-detail-heading{gap:6px}
+  .fuel-detail-panel{padding:11px}
+  .fuel-model-row,.fuel-forecast-day{gap:8px}
+  .fuel-model-row span,.fuel-forecast-day span{flex-basis:42%}
+  .fuel-model-row b,.fuel-forecast-day b{flex-basis:58%}
+  .fuel-planning-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .fuel-planning-card{padding:10px}
+  .fuel-planning-card strong{font-size:18px}
+  .fuel-refill-row{align-items:flex-start}
+  .fuel-refill-row>div{flex:1 1 auto;min-width:0}
+  .fuel-refill-row>b{flex:0 0 auto}
+  .diagnostics-summary{padding:10px;gap:7px}
+  .diagnostics-kpi{padding:10px}
+  .diagnostics-kpi strong{font-size:16px}
+  .stats-chart-wrap{padding:5px;min-height:230px}
+  .stats-chart{height:230px}
+}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}
+}
