@@ -25,3 +25,4 @@ COPY fuel_thingspeak_daily_provider.py /app/fuel_thingspeak_daily_provider.py
 COPY fuel_daily_provider.py /app/fuel_daily_provider.py
 EXPOSE 8000
 CMD ["python", "-u", "/app/api.py"]
+COPY fuel_summary_estimates.py /app/fuel_summary_estimates.py
