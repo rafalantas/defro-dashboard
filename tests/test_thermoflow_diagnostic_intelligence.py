@@ -124,6 +124,63 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(model["holdout_cycles"], 5)
         self.assertEqual(model["validation"], "chronological_last_5_burner_cycles_holdout")
 
+
+    def test_burner_cycles_never_join_across_telemetry_gap(self):
+        start = 1795161600
+        raw = {"thermoflow-fire": [
+            [start, 0], [start + 60, 1], [start + 120, 1],
+            [start + 900, 0], [start + 960, 0],
+        ]}
+        burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
+        self.assertEqual(burner["complete"], 0)
+        self.assertEqual(burner["incomplete"], 1)
+        self.assertEqual(burner["incomplete_cycles"][0]["reason"], "telemetry_gap")
+        self.assertEqual(burner["timeline_segments"], 2)
+
+    def test_burner_cycles_ignore_single_sample_spike(self):
+        start = 1795161600
+        raw = {"thermoflow-fire": [
+            [start, 0], [start + 60, 1], [start + 120, 0],
+            [start + 180, 1], [start + 240, 1],
+            [start + 600, 0], [start + 660, 0],
+        ]}
+        burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
+        self.assertEqual(burner["complete"], 1)
+        self.assertEqual(burner["ignored_transitions"], 2)
+        self.assertEqual(burner["cycles"][0]["duration_minutes"], 7.0)
+
+    def test_burner_cycle_starting_on_is_left_censored_not_baseline_eligible(self):
+        start = 1795161600
+        raw = {"thermoflow-fire": [
+            [start, 1], [start + 60, 1], [start + 300, 0], [start + 360, 0],
+        ]}
+        result = build_thermoflow_intelligence(raw)
+        burner = result["burner_cycle_analyzer"]
+        self.assertEqual(burner["complete"], 0)
+        self.assertEqual(burner["incomplete_cycles"][0]["reason"],
+                         "left_censored_initial_on_state")
+        self.assertEqual(result["burner_ml_baseline"]["status"], "collecting")
+
+    def test_burner_cycle_open_at_end_is_right_censored(self):
+        start = 1795161600
+        raw = {"thermoflow-fire": [
+            [start, 0], [start + 60, 1], [start + 120, 1],
+        ]}
+        burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
+        self.assertEqual(burner["complete"], 0)
+        self.assertEqual(burner["incomplete_cycles"][0]["reason"],
+                         "right_censored_open_cycle")
+
+    def test_burner_cycle_boundary_gap_equal_to_limit_is_not_split(self):
+        start = 1795161600
+        raw = {"thermoflow-fire": [
+            [start, 0], [start + 60, 1], [start + 120, 1],
+            [start + 420, 0], [start + 480, 0],
+        ]}
+        burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
+        self.assertEqual(burner["complete"], 1)
+        self.assertEqual(burner["timeline_segments"], 1)
+
     def test_ai_exposes_evidence_and_is_explicitly_rule_based(self):
         result = build_thermoflow_intelligence({"thermoflow-fire": [[1795161600, 1]]})
         self.assertIn("evidence", result["thermoflow_ai"])
