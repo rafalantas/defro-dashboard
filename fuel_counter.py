@@ -57,6 +57,27 @@ def span_estimate(refills: list[dict], old: dict, counter_epoch: datetime,
     return None
 
 
+def _calibration_confidence(periods_used: int, source: str) -> dict:
+    """Describe evidence volume; this is not a statistical confidence interval."""
+    count = max(0, int(periods_used or 0))
+    if source == "wartość tymczasowa":
+        return {"level": "none", "label": "brak kalibracji · współczynnik tymczasowy",
+                "periods_used": count, "basis": "provisional"}
+    if source == "okres obejmujący epokę":
+        return {"level": "low", "label": "niska · szacunek z okresu granicznego",
+                "periods_used": 1, "basis": "epoch_spanning_estimate"}
+    if count <= 1:
+        level, label = "low", "niska · pojedynczy okres"
+    elif count <= 3:
+        level, label = "limited", "ograniczona · 2–3 okresy"
+    elif count <= 7:
+        level, label = "moderate", "umiarkowana · 4–7 okresów"
+    else:
+        level, label = "high", "wyższa · co najmniej 8 okresów"
+    return {"level": level, "label": label, "periods_used": count,
+            "basis": "complete_post_epoch_refill_periods"}
+
+
 def counter_calibration(refills: list[dict], counter_epoch: datetime, now: datetime,
                         counter_drop, min_counter_drop: float, min_span_drop: float,
                         provisional_factor: float, uncertainty: float,
@@ -95,8 +116,13 @@ def counter_calibration(refills: list[dict], counter_epoch: datetime, now: datet
                    f"kg/% (szacunek, ±{uncertainty_percent}%)")
 
     current = new if after else old
+    confidence = _calibration_confidence(
+        new["periods_used"] if after else old["periods_used"],
+        effective["source"] if after else ("okresy po epoce" if old["calibrated"] else "wartość tymczasowa"),
+    )
     return {
         "epoch": counter_epoch.isoformat(), "after_epoch": after,
+        "confidence": confidence,
         "old": old, "new": new, "span": span, "new_effective": effective,
         "collecting": collecting, "provisional": collecting, "message": message,
         "kg_per_percent": effective["kg_per_percent"] if after else old["kg_per_percent"],
