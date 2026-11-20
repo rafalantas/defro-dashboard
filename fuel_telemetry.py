@@ -19,9 +19,6 @@ CHANNELS = telemetry_channels()
 FIRE_SERIES = (
     ("fire_detected", "Obecność płomienia", "thermoflow-fire-detected", "state"),
     ("fire_brightness", "Jasność płomienia", "thermoflow-fire-brightness", "value"),
-    ("boiler_temp_c", "Temperatura kotła (próg rozpalenia)", "thermoflow-fire-boiler-temp", "temperature"),
-    ("boiler_setpoint_c", "Zadana kotła", "thermoflow-fire-boiler-setpoint", "temperature"),
-    ("boiler_hysteresis_c", "Histereza kotła", "thermoflow-fire-boiler-hysteresis", "temperature"),
 )
 
 def _timestamp(raw):
@@ -49,7 +46,7 @@ def _percentile(values, fraction):
     return round(ordered[min(len(ordered) - 1, int((len(ordered) - 1) * fraction))], 1)
 
 
-def analyze(feeds_by_channel, channel_ids, days, now=None):
+def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None):
     """Return coverage audit and day aggregates; optional now makes date windows deterministic."""
     points = defaultdict(list)
     channel_audit = []
@@ -100,7 +97,29 @@ def analyze(feeds_by_channel, channel_ids, days, now=None):
             "first_sample": min(fire_times).isoformat() if fire_times else None,
             "last_sample": max(fire_times).isoformat() if fire_times else None,
         })
+
+    # CO temperature history already lives in the primary ThingSpeak channel.
+    # Current setpoint/hysteresis come from the live eModul API snapshot; they
+    # are applied as a current-config assumption, never presented as historical
+    # settings. Missing live values leave ignition requests unclassified.
+    co_samples = list(points.get("co_c", []))
+    if co_samples:
+        points["boiler_temp_c"] = co_samples
+    ignition_config = ignition_config or {}
+    target = _number(ignition_config.get("setpoint_c"))
+    band = _number(ignition_config.get("hysteresis_c"))
+    if target is not None and band is not None:
+        points["boiler_setpoint_c"] = [(ts, target) for ts, _ in co_samples]
+        points["boiler_hysteresis_c"] = [(ts, band) for ts, _ in co_samples]
     raw_diagnostics = build_raw_diagnostics(points, now)
+    raw_diagnostics["ignition_activity"]["configuration"] = {
+        "source": ignition_config.get("source", "live_emodul_snapshot"),
+        "setpoint_c": target,
+        "hysteresis_c": band,
+        "applied_to_historical_co_samples": bool(co_samples and target is not None and band is not None),
+        "historical_setting_changes_known": False,
+        "captured_at": ignition_config.get("captured_at"),
+    }
     series_audit = []
     daily_values = defaultdict(lambda: defaultdict(list))
     daily_states = defaultdict(lambda: defaultdict(list))
