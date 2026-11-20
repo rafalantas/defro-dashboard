@@ -221,49 +221,99 @@ def _combustion(raw, fire_diagnostics=None):
 
 
 def _burner_cycles(raw, fire_diagnostics):
-    """Build burner on/off cycles from debounced binary FIRE samples, not 4D cycles."""
-    points = [(ts, value) for ts, value in _points(raw, "thermoflow-fire") if value in (0.0, 1.0)]
+    """Build conservative burner cycles; telemetry gaps censor rather than join cycles."""
+    points = [(ts, value) for ts, value in _points(raw, "thermoflow-fire")
+              if value in (0.0, 1.0)]
     if not points:
         return {"status": "collecting", "cycles": [], "complete": 0, "incomplete": 0,
+                "incomplete_cycles": [], "ignored_transitions": 0,
                 "note": "Brak poprawnych binarnych próbek FIRE; cykle palnika pozostają nieznane."}
-    # A transition is accepted only after two consecutive agreeing samples.
-    stable = []
-    for index in range(1, len(points)):
-        previous, current = points[index - 1], points[index]
-        if current[0] - previous[0] <= MAX_GAP_SECONDS and current[1] != previous[1]:
-            if index + 1 < len(points):
-                confirm = points[index + 1]
-                if confirm[0] - current[0] <= MAX_GAP_SECONDS and confirm[1] == current[1]:
-                    stable.append((current[0], current[1]))
-    state = points[0][1]
-    opened = points[0][0] if state == 1 else None
-    cycles = []
-    for ts, value in stable:
-        if value == 1 and opened is None:
-            opened = ts
-        elif value == 0 and opened is not None:
-            flue = _points(raw, "thermoflow-flue")
-            power = _points(raw, "thermoflow-boiler-power")
-            def has_activity(series):
-                return any(opened - 300 <= t <= ts + 300 and v > 0 for t, v in series)
-            cycles.append({
+
+    # Split the timeline at every telemetry gap. A state observed after a gap
+    # must never be joined to a cycle from before that gap.
+    segments, segment = [], [points[0]]
+    for point in points[1:]:
+        if point[0] - segment[-1][0] > MAX_GAP_SECONDS:
+            segments.append(segment)
+            segment = [point]
+        else:
+            segment.append(point)
+    if segment:
+        segments.append(segment)
+
+    flue = _points(raw, "thermoflow-flue")
+    power = _points(raw, "thermoflow-boiler-power")
+    cycles, incomplete_cycles = [], []
+    ignored_transitions = 0
+
+    def evidence(series, opened, closed):
+        return any(opened - 300 <= timestamp <= closed + 300 and value > 0
+                   for timestamp, value in series)
+
+    for segment_index, samples in enumerate(segments):
+        state = samples[0][1]
+        opened = samples[0][0] if state == 1 else None
+        left_censored = opened is not None
+        for index in range(1, len(samples)):
+            previous, current = samples[index - 1], samples[index]
+            if current[1] == previous[1]:
+                continue
+            # Accept a transition only when the new state is repeated by the
+            # next contiguous sample. A lone spike is explicitly ignored.
+            if index + 1 >= len(samples):
+                ignored_transitions += 1
+                continue
+            confirm = samples[index + 1]
+            if confirm[0] - current[0] > MAX_GAP_SECONDS or confirm[1] != current[1]:
+                ignored_transitions += 1
+                continue
+
+            if current[1] == 1:
+                if opened is None:
+                    opened = current[0]
+                    left_censored = False
+            elif opened is not None:
+                if left_censored:
+                    incomplete_cycles.append({
+                        "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
+                        "end": datetime.fromtimestamp(current[0], timezone.utc).isoformat(),
+                        "complete": False, "reason": "left_censored_initial_on_state",
+                        "duration_minutes": None,
+                    })
+                else:
+                    flue_support = evidence(flue, opened, current[0])
+                    power_support = evidence(power, opened, current[0])
+                    cycles.append({
+                        "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
+                        "end": datetime.fromtimestamp(current[0], timezone.utc).isoformat(),
+                        "duration_minutes": round((current[0] - opened) / 60, 1),
+                        "flue_support": flue_support, "power_support": power_support,
+                        "status": "confirmed_by_fire_state",
+                        "complete": True,
+                    })
+                opened = None
+                left_censored = False
+
+        if opened is not None:
+            reason = "telemetry_gap" if segment_index < len(segments) - 1 else "right_censored_open_cycle"
+            incomplete_cycles.append({
                 "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
-                "end": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
-                "duration_minutes": round((ts - opened) / 60, 1),
-                "flue_support": has_activity(flue), "power_support": has_activity(power),
-                "status": "confirmed_by_fire_state" if has_activity(flue) or has_activity(power) else "fire_state_only",
-                "complete": True,
+                "end": datetime.fromtimestamp(samples[-1][0], timezone.utc).isoformat(),
+                "complete": False, "reason": reason, "duration_minutes": None,
             })
-            opened = None
-        state = value
-    incomplete = []
-    if opened is not None:
-        incomplete.append({"start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
-                           "end": None, "complete": False, "status": "open_cycle"})
-    return {"status": "available", "cycles": cycles[-100:], "complete": len(cycles),
-            "incomplete": len(incomplete), "open_cycles": incomplete,
-            "transition_debounce": "two_consecutive_samples", "max_gap_seconds": MAX_GAP_SECONDS,
-            "note": "Cykle palnika wyznaczane z binarnego FIRE; spaliny i moc są wyłącznie dowodami krzyżowymi."}
+
+    return {
+        "status": "available" if cycles else ("partial" if incomplete_cycles else "collecting"),
+        "cycles": cycles[-100:], "complete": len(cycles),
+        "incomplete": len(incomplete_cycles),
+        "incomplete_cycles": incomplete_cycles[-100:],
+        "open_cycles": [item for item in incomplete_cycles if item["end"] is not None][-100:],
+        "ignored_transitions": ignored_transitions,
+        "transition_debounce": "two_consecutive_samples",
+        "max_gap_seconds": MAX_GAP_SECONDS,
+        "timeline_segments": len(segments),
+        "note": "Luki telemetryczne rozcinają oś czasu; cykle ucięte lub niejednoznaczne nie trafiają do baseline. Pojedyncze przełączenia są ignorowane.",
+    }
 
 def _cycle_stage(base, burner_cycles=None):
     """Keep legacy 4D protection cycles separate from burner cycles."""
