@@ -414,3 +414,21 @@ A future cache-state consolidation should be a separate change with explicit
 tests for source freshness, write invalidation, partial telemetry TTL, stale
 summary refresh and process restart. No cache TTL or runtime behavior was
 changed by this audit.
+
+
+### Refill-based house model extraction
+
+The deterministic house-model fitting path now lives in `fuel_house_model.py`.
+It builds training rows from refill intervals, rejects intervals outside the
+existing duration bounds and any interval with missing temperature coverage,
+then selects the minimum-SSE balance temperature or applies the configured
+fixed HDD base. The fitted payload retains `base_fixed`,
+`best_fit_balance_temp` and `best_fit_r2`; the private SSE value is not
+exposed.
+
+The facade still owns the model cache key (refill count/latest refill ID,
+Open-Meteo offset and fixed-base setting), temperature retrieval, period
+temperature integration and regression primitive injection. Cache TTL and
+invalidation behavior are unchanged. The active HDD base still resolves in
+the same order: explicitly fixed base, fitted model balance temperature,
+configured fallback base.
