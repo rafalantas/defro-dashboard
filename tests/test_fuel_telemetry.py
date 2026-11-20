@@ -39,7 +39,7 @@ class FuelTelemetryTests(unittest.TestCase):
             {"created_at": "2026-11-18T10:00:00Z", "field5": "0", "field1": "60"},
             {"created_at": "2026-11-18T10:00:40Z", "field5": "21.1", "field1": "61"},
         ]
-        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 1, now=NOW)
+        result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 2, now=NOW)
         row = next(item for item in result["daily"] if item["day"] == "2026-11-18")
         self.assertEqual(row["room_c_mean"], 21.1)
         self.assertEqual(row["room_c_samples"], 1)
