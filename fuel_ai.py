@@ -253,6 +253,7 @@ def evaluate(rows: list[dict]) -> dict:
     rejected_rows = 0
     rejected_by_reason = {"estimated_or_epoch": 0, "invalid_base": 0, "duplicate_day": 0}
     invalid_base_by_reason = {}
+    counter_day_diagnostics = []
     duplicate_days = set()
     for source in rows:
         if source.get("estimate") or source.get("counter_regime") == "epoch":
@@ -265,6 +266,8 @@ def evaluate(rows: list[dict]) -> dict:
             rejected_rows += 1
             rejected_by_reason["invalid_base"] += 1
             invalid_base_by_reason[base_rejection] = invalid_base_by_reason.get(base_rejection, 0) + 1
+            if base_rejection == "kg_counter_missing_or_invalid" and source.get("counter_diagnostics"):
+                counter_day_diagnostics.append(source["counter_diagnostics"])
             continue
         # Room temperature is not a model feature; invalid values are discarded.
         for room_key in ("room_c", "room_temp", "room_temperature_c"):
@@ -316,6 +319,7 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_days": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
+        "counter_day_diagnostics": counter_day_diagnostics,
         "missing_day_gaps": day_gaps,
         "telemetry_incomplete_days": telemetry_incomplete_days,
                 "rejected_by_reason": rejected_by_reason,
@@ -340,6 +344,7 @@ def evaluate(rows: list[dict]) -> dict:
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                     "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
+        "counter_day_diagnostics": counter_day_diagnostics,
                     "missing_day_gaps": day_gaps,
                     "telemetry_incomplete_days": telemetry_incomplete_days,
                     "message": "Model nie przeszedł kontroli stabilności"}
@@ -368,6 +373,7 @@ def evaluate(rows: list[dict]) -> dict:
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
+        "counter_day_diagnostics": counter_day_diagnostics,
                 "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
@@ -387,6 +393,7 @@ def evaluate(rows: list[dict]) -> dict:
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
+        "counter_day_diagnostics": counter_day_diagnostics,
                 "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Nie udało się dopasować modelu końcowego"}
@@ -504,6 +511,7 @@ def evaluate(rows: list[dict]) -> dict:
         "rejected_days": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
+        "counter_day_diagnostics": counter_day_diagnostics,
         "missing_day_gaps": day_gaps,
         "telemetry_incomplete_days": telemetry_incomplete_days,
         "mae_gain_percent": round(gain * 100, 1),

@@ -206,6 +206,29 @@ class FuelAiTests(unittest.TestCase):
         })
         self.assertEqual(result["training_days"], 85)
 
+    def test_counter_day_diagnostics_are_returned_for_missing_counter_rows(self):
+        rows = synthetic_rows(50)
+        rows[0]["kg_counter"] = None
+        rows[0]["counter_diagnostics"] = {
+            "day": rows[0]["day"],
+            "reason": "counter_sample_gap_over_15m",
+            "sample_count": 120,
+            "first_sample_at": "2026-01-01T00:00:00+01:00",
+            "last_sample_at": "2026-01-01T23:59:00+01:00",
+            "start_counter_pct": 90.0,
+            "end_counter_pct": 80.0,
+            "drop_percent": None,
+        }
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(len(result["counter_day_diagnostics"]), 1)
+        self.assertEqual(
+            result["counter_day_diagnostics"][0]["reason"],
+            "counter_sample_gap_over_15m",
+        )
+        self.assertEqual(result["status"], "collecting")
+        self.assertEqual(result["rejected_days"], 1)
+        self.assertEqual(result["invalid_base_by_reason"]["kg_counter_missing_or_invalid"], 1)
+
     def test_duplicate_days_are_excluded_instead_of_double_weighted(self):
         rows = synthetic_rows()
         duplicate = dict(rows[10])
