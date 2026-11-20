@@ -217,8 +217,12 @@ class FuelAiTests(unittest.TestCase):
         rows[1]["telemetry_pump_floor_h"] = 25
         rows[2]["telemetry_return_c"] = float("nan")
         result = fuel_ai.evaluate(rows)
-        self.assertEqual(result["telemetry"]["complete_periods"], 127)
-        self.assertEqual(result["telemetry"]["status"], "shadow_ready")
+        telemetry = result["telemetry"]
+        self.assertEqual(telemetry["complete_periods"], 130)
+        self.assertEqual(telemetry["status"], "shadow_ready")
+        self.assertNotIn("telemetry_valve_opening_pct", telemetry["selected_features"])
+        self.assertNotIn("telemetry_pump_floor_h", telemetry["selected_features"])
+        self.assertNotIn("telemetry_return_c", telemetry["selected_features"])
 
     def test_fixed_holdout_must_also_improve_before_weather_model_is_accepted(self):
         rows = synthetic_rows()
@@ -316,8 +320,16 @@ class FuelAiTests(unittest.TestCase):
         rows[0].pop("telemetry_return_c")
         rows[1].pop("telemetry_pump_floor_h")
         result = fuel_ai.evaluate(rows)
-        self.assertEqual(result["telemetry_incomplete_periods"], 2)
-        self.assertEqual(result["telemetry"]["incomplete_periods"], 2)
+        telemetry = result["telemetry"]
+        # Missing sensors are excluded from the selected model feature set;
+        # the remaining observed sensors keep all periods trainable.
+        self.assertEqual(result["telemetry_incomplete_periods"], 0)
+        self.assertEqual(telemetry["incomplete_periods"], 0)
+        self.assertNotIn("telemetry_return_c", telemetry["selected_features"])
+        self.assertNotIn("telemetry_pump_floor_h", telemetry["selected_features"])
+        diagnostics = {item["date"]: item for item in result["period_diagnostics"]}
+        self.assertEqual(diagnostics[rows[0]["day"]]["status"], "incomplete")
+        self.assertEqual(diagnostics[rows[1]["day"]]["status"], "incomplete")
 
 
     def test_refill_period_training_does_not_require_daily_refills(self):
