@@ -118,7 +118,8 @@ Endpoint diagnostyczny pobiera dane bezpośrednio z eModul na żądanie. Oprócz
 | `THINGSPEAK_CHANNEL_IDS` | Tak dla historii | Dwa identyfikatory kanałów, oddzielone przecinkiem, w kolejności: temperatury i moc, zawór/pompy i paliwo. |
 | `THINGSPEAK_WRITE_KEYS` | Tak dla historii | Dwa klucze Write API w tej samej kolejności co kanały. Sekret Portainera. |
 | `THINGSPEAK_READ_KEYS` | Nie | Dwa klucze Read API w tej samej kolejności. Dla kanałów publicznych można zostawić puste. |
-| `THINGSPEAK_FIRE_WRITE_KEY` | Wymagany dla czujnika ognia | Klucz Write API osobnego kanału czujnika ognia. |
+| `THINGSPEAK_FIRE_WRITE_KEY` | Wymagany dla zapisu czujnika ognia | Klucz Write API osobnego kanału czujnika ognia. |
+| `THINGSPEAK_READ_KEY_FIRE` | Nie | Klucz Read API kanału czujnika ognia, jeśli kanał jest prywatny. Starsza nazwa `THINGSPEAK_FIRE_READ_KEY` pozostaje obsługiwana jako alias. |
 | `THINGSPEAK_WRITE_INTERVAL_SECONDS` | Nie | Odstęp zapisu; domyślnie 40 sekund, minimum 35. |
 | `THINGSPEAK_FIRE_CHANNEL_ID` | Nie | Osobny kanał ThingSpeak na stan i jasność czujnika ognia; nie zmienia dwóch dotychczasowych kanałów. |
 | `THINGSPEAK_FUEL_CHANNEL_ID` | Nie | Osobny kanał ThingSpeak na dosypki peletu. Bez niego endpointy `/api/fuel/*` zwracają pustą listę dosypek. |
