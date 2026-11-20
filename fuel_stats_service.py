@@ -46,7 +46,7 @@ def build_stats(query: dict, deps: dict) -> dict:
 
     calibration = deps["calibration"](periods)
     for row in daily:
-        if row.get("burner_kwh") is None:
+        if row.get("burner_kwh") is None or not row.get("burner_kwh_complete", True):
             continue
         day_start = deps["day_bounds"](
             date.fromisoformat(row["day"])

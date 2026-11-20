@@ -35,7 +35,8 @@ ThermoFlow 2.0 must preserve these as distinguishable sources. It must never sil
 The first refactor stage has now addressed several audit findings without replacing production calculations:
 
 - **F1 — API isolation:** `api.py` no longer imports `fuel` at module load. Fuel routes load the optional engine lazily; warmup runs in a daemon thread after the HTTP server is created. A fuel import/warmup failure no longer prevents the core server from starting.
-- **F3 — calibration windows:** summary calibration now uses the same full refill history as statistics; the recent seven-refill window remains separate for recent-period display metrics. A focused regression test protects this distinction.
+- **F3 — calibration windows:** the summary deliberately retains its legacy latest-seven-refill calibration window, while stats and daily calculations use their existing history scopes. This matches the requested legacy behavior and is protected by `tests/test_fuel_calibration_windows.py`; the windows must remain named and explicit during migration.
+- **Counter and burner coverage:** counter periods now require a baseline and reject raw-sample gaps over 15 minutes. Daily burner energy reports covered hours and is excluded from estimates/calibration below 90% daily coverage. Refill IDs are normalized before matching ThingSpeak void references so CSV string IDs behave like API integer IDs.
 - **F4 — AI validation:** AI output now reports both expanding-window walk-forward scores and a fixed holdout score whose scored rows are never used for fitting. Existing top-level score fields and shadow-only behavior remain for compatibility; the acceptance flag still follows the existing walk-forward gain threshold.
 - **F6 — ThingSpeak schema:** `fuel_schema.py` is now the canonical definition of both eight-field channels. API writes/history, fuel field indexes and telemetry parsing derive from it. Contract tests cover field order and semantic IDs.
 - **F7 — timezone:** API, fuel and telemetry now obtain their timezone from the shared schema configuration, retaining Europe/Warsaw as the default.
@@ -111,13 +112,13 @@ Keep this read-only analysis capability separate from the fuel estimator.
 
 **Priority:** critical migration gate.
 
-### F3 — calibration windows differ between endpoints
+### F3 — calibration windows differ between endpoints (intentional compatibility)
 
 **Evidence:** `_stats()` fits the refill model and calculates burner calibration from the full refill history. `_summary_build()` fits the house model from all refills but passes only `refills[-7:]` into `_periods()` and `_counter_calibration()`. `_daily_rows()` calculates counter calibration from the full refill history.
 
-**Risk:** the same physical period can be represented using different calibration evidence depending on which endpoint is queried. In particular, summary counter calibration can lose older pre-epoch evidence once it falls outside the last seven refill records, while daily rows still use it.
+**Risk:** summary and stats/daily can show different calibration evidence. The summary can lose older pre-epoch evidence once it falls outside the last seven refill records, while daily rows still use it.
 
-**Required direction:** define named calibration windows and one shared calibration result per regime. If a recent-only calibration is intentional, expose it explicitly as a separate calibration rather than silently substituting it for the all-history calibration. Add tests where more than seven refills span the counter epoch.
+**Status:** compatibility is intentionally preserved: the summary uses the latest seven refill events as requested; stats and daily retain their existing history scopes. The focused regression test protects this rule. Do not unify these windows during the extraction unless the API contract is deliberately changed and reviewed.
 
 **Priority:** critical correctness issue.
 

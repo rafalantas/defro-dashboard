@@ -26,6 +26,8 @@ def get_daily_raw(*, day, today, cache, channel_configured, data_start,
             "hdd": round(max(0.0, hdd_base - temperature), 2)
                    if temperature is not None else None,
             "burner_kwh": record["burner_kwh"] if record and record["samples"] else None,
+            "burner_coverage_h": record.get("burner_coverage_h", 0.0) if record and record["samples"] else 0.0,
+            "burner_kwh_complete": bool(record and record.get("burner_kwh_complete")),
             "samples": record["samples"] if record else 0,
             "source": "open-meteo",
         }

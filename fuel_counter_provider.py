@@ -5,10 +5,15 @@ from datetime import datetime, time, timedelta, timezone
 
 
 def fetch_counter_points(*, day, today, cache, channel_id, field_number,
-                         read_key, endpoint, tz, request_json, parse_timestamp):
+                         read_key, endpoint, tz, request_json, parse_timestamp,
+                         include_unchanged=False):
     key = day.isoformat()
+    raw_key = f"{key}:samples"
     if day < today and key in cache:
-        return cache[key]
+        if not include_unchanged:
+            return cache[key]
+        if raw_key in cache:
+            return cache[raw_key]
     if not channel_id:
         return []
 
@@ -24,18 +29,36 @@ def fetch_counter_points(*, day, today, cache, channel_id, field_number,
     feeds = request_json(
         f"{endpoint}/channels/{channel_id}/fields/{field_number}.json", params
     ).get("feeds", [])
-    points = []
+    samples = []
     for feed in feeds:
         raw = feed.get(f"field{field_number}")
         if raw in (None, ""):
             continue
         stamp, value = parse_timestamp(feed["created_at"]).timestamp(), float(raw)
-        if not points or points[-1][1] != value:
-            points.append((stamp, value))
+        samples.append((stamp, value))
+    if include_unchanged:
+        points = []
+        for sample in samples:
+            if not points or points[-1][1] != sample[1]:
+                points.append(sample)
+        if feeds and points and points[-1][0] != parse_timestamp(
+                feeds[-1]["created_at"]).timestamp():
+            points.append((parse_timestamp(feeds[-1]["created_at"]).timestamp(),
+                           points[-1][1]))
+        if day < today and feeds:
+            cache[raw_key] = samples
+            cache[key] = points
+        return samples
+
+    points = []
+    for sample in samples:
+        if not points or points[-1][1] != sample[1]:
+            points.append(sample)
     if feeds and points and points[-1][0] != parse_timestamp(
             feeds[-1]["created_at"]).timestamp():
         points.append((parse_timestamp(feeds[-1]["created_at"]).timestamp(),
                        points[-1][1]))
     if day < today and feeds:
         cache[key] = points
+        cache[raw_key] = samples
     return points

@@ -90,6 +90,7 @@ from fuel_config import (
     WEATHER_VARS, MIN_DAILY_DAYS, DAILY_MODEL_MIN_GAIN, MIN_COUNTER_DROP,
     COUNTER_COLLECTING_MESSAGE, COUNTER_PROVISIONAL_KG_PER_PERCENT,
     COUNTER_ESTIMATE_UNCERTAINTY, MIN_SPAN_DROP, REFILL_MERGE_SECONDS,
+    MIN_DAILY_BURNER_COVERAGE, MAX_COUNTER_GAP_S,
     BURNER_FACTOR_AFTER_EPOCH, _parse_epoch, COUNTER_EPOCH,
 )
 
@@ -137,6 +138,7 @@ def _fetch_day(day: date) -> dict:
         read_key=TS_READ_KEY_TEMPS, endpoint=TS_API,
         outdoor_field=FIELD_OUTDOOR, power_field=FIELD_POWER,
         hdd_base=HDD_BASE, max_gap_seconds=MAX_GAP_S,
+        minimum_coverage=MIN_DAILY_BURNER_COVERAGE,
         request_json=_request_json, parse_timestamp=_parse_ts,
     )
 
@@ -233,6 +235,17 @@ def _counter_points(day: date) -> list:
     )
 
 
+def _counter_sample_points(day: date) -> list:
+    """Raw valid counter samples, including unchanged readings, for gap checks."""
+    return fetch_counter_points(
+        day=day, today=datetime.now(TZ).date(), cache=_counter_cache,
+        channel_id=TS_CHANNEL_VALVE, field_number=FIELD_COUNTER,
+        read_key=TS_READ_KEY_VALVE, endpoint=TS_API, tz=TZ,
+        request_json=_request_json, parse_timestamp=_parse_ts,
+        include_unchanged=True,
+    )
+
+
 def _counter_drop(start: datetime, end: datetime):
     """Spadek licznika zapasu w przedziale (pp), z pominięciem resetów do 100 %.
 
@@ -245,10 +258,11 @@ def _counter_drop(start: datetime, end: datetime):
     d, last = start.astimezone(TZ).date(), end.astimezone(TZ).date()
     while d <= last:
         try:
-            points.extend(_counter_points(d))
+            points.extend(_counter_sample_points(d))
         except FuelError:
             return None, False, False
         d += timedelta(days=1)
+    points.sort(key=lambda point: point[0])
     t0, t1 = start.timestamp(), end.timestamp()
     before = [p for p in points if p[0] <= t0]
     inside = [p for p in points if t0 < p[0] <= t1]
@@ -258,6 +272,10 @@ def _counter_drop(start: datetime, end: datetime):
     # It can still tell us whether a baseline at or before the interval start
     # exists; without one, the interval's starting level is unknown.
     if len(seq) < 2 or not before:
+        return None, False, False
+    if t0 - seq[0][0] > MAX_COUNTER_GAP_S or t1 - seq[-1][0] > MAX_COUNTER_GAP_S:
+        return None, False, False
+    if any(cur[0] - prev[0] > MAX_COUNTER_GAP_S for prev, cur in zip(seq, seq[1:])):
         return None, False, False
     drop = sum(prev[1] - cur[1] for prev, cur in zip(seq, seq[1:]) if cur[1] < prev[1])
     floor_hit = any(value <= 1 for _ts, value in seq)
@@ -521,7 +539,7 @@ def _period_sums(start: datetime, end: datetime, base: float | None = None):
                 hdd_missing += 1
             else:
                 hdd += rec["hdd"] * overlap / 86400
-            if rec.get("burner_kwh") is None:
+            if rec.get("burner_kwh") is None or not rec.get("burner_kwh_complete", True):
                 kwh_missing += 1
             else:
                 elapsed = (min(now, day_end) - day_start).total_seconds()

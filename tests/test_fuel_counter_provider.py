@@ -1,6 +1,6 @@
 """ThingSpeak hopper-counter provider regressions."""
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
@@ -34,6 +34,30 @@ class CounterProviderTests(unittest.TestCase):
         self.assertEqual(request.call_count, 1)
         self.assertEqual(request.call_args.args[0],
                          "https://example.invalid/channels/valve/fields/4.json")
+
+    def test_raw_samples_are_available_for_coverage_checks(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        day = date(2026, 11, 19)
+        start = datetime.fromisoformat("2026-11-19T10:00:00+01:00")
+        feeds = [
+            {"created_at": start.isoformat(), "field4": "70"},
+            {"created_at": (start + timedelta(minutes=5)).isoformat(), "field4": "70"},
+            {"created_at": (start + timedelta(minutes=10)).isoformat(), "field4": "65"},
+        ]
+        request = Mock(return_value={"feeds": feeds})
+        cache = {}
+        raw = fetch_counter_points(
+            day=day, today=date(2026, 11, 20), cache=cache,
+            channel_id="valve", field_number=4, read_key="",
+            endpoint="https://example.invalid", tz=tz,
+            request_json=request,
+            parse_timestamp=lambda value: datetime.fromisoformat(value),
+            include_unchanged=True,
+        )
+
+        self.assertEqual([value for _stamp, value in raw], [70.0, 70.0, 65.0])
+        self.assertEqual([value for _stamp, value in cache[day.isoformat()]], [70.0, 65.0])
+        request.assert_called_once()
 
     def test_no_channel_returns_empty_without_network(self):
         request = Mock()

@@ -52,11 +52,11 @@ The next implementation should introduce a dependency container/service boundary
 1. Return `configured:false` when the refill channel is absent.
 2. Return cached summary immediately; kick background refresh when stale.
 3. On cold start, start one background job and wait at most 25 seconds.
-4. Background job prefetches, loads all refills, fits the house model, builds all-history calibration plus separate recent display periods, and fetches the last seven complete days.
+4. Background job prefetches, loads all refills, fits the house model, calibrates counter and burner estimates from the latest seven refill events, and fetches the last seven complete days.
 5. It then builds daily rows/model, evaluates AI in shadow-only mode, calculates weekly and hopper estimates, forecast and planning, and finally stores the complete response.
 6. If the cold worker finishes with a recorded error, return HTTP 502 through `FuelError`; otherwise preserve the `warming:true` response.
 
-**Parity-sensitive details:** never let AI evaluation failure invalidate deterministic estimates; do not replace the all-history calibration with the recent seven-refill display window; keep the existing counter/burner/model/recent-period precedence.
+**Parity-sensitive details:** never let AI evaluation failure invalidate deterministic estimates; preserve the latest-seven-refill calibration window and keep it distinct from the all-history house model; keep the existing counter/burner/model/recent-period precedence.
 
 ### Refill command validation and orchestration now lives in `fuel_refill_service.py`; `fuel.py` retains the HTTP body decoding and token check, and injects the existing ThingSpeak writer/raw-refill reader into the service. The command service preserves kg-versus-bags conversion, the 0–1000 kg range, ISO timestamp parsing and Warsaw timezone for naive timestamps, 255-character note truncation, single-raw-entry void semantics, and existing 400/404 errors. The existing ThingSpeak writer remains responsible for UTC `created_at`, 503/429 handling and the exact three-cache invalidation set.
 
@@ -128,8 +128,8 @@ The daily service preserves the prefetch-before-lock boundary, the lock scope
 around refills/model/row generation, the house-model prediction and residual
 fields, telemetry aggregation and exact response keys. The summary service
 preserves both calculation lock sections, the separate counter/period lock
-callbacks, AI shadow-only failure isolation, all-history calibration versus
-recent display periods, estimate precedence, planning/forecast assembly and
+callbacks, AI shadow-only failure isolation, latest-seven-refill calibration
+versus all-history house-model fitting, estimate precedence, planning/forecast assembly and
 the final summary-cache update. Summary background-worker lifecycle,
 stale-while-refresh behavior, cold-start wait and cache TTL remain in
 `fuel.py` and are not yet extracted.

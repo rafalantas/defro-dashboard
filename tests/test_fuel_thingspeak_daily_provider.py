@@ -1,6 +1,6 @@
 """ThingSpeak daily provider temperature and energy regressions."""
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
@@ -28,6 +28,8 @@ class ThingSpeakDailyProviderTests(unittest.TestCase):
         self.assertEqual(result["hdd"], 5.0)
         self.assertEqual(result["samples"], 3)
         self.assertEqual(result["burner_kwh"], 0.37)
+        self.assertEqual(result["burner_coverage_h"], 0.1)
+        self.assertFalse(result["burner_kwh_complete"])
         self.assertEqual(request.call_args.args[0], "https://example.invalid/channels/temps/feeds.json")
         self.assertEqual(request.call_args.args[1]["api_key"], "read-key")
         self.assertEqual(request.call_args.args[1]["results"], 8000)
@@ -44,6 +46,43 @@ class ThingSpeakDailyProviderTests(unittest.TestCase):
         self.assertIsNone(result["hdd"])
         self.assertEqual(result["burner_kwh"], 0.0)
         self.assertEqual(result["samples"], 0)
+        self.assertEqual(result["burner_coverage_h"], 0.0)
+        self.assertFalse(result["burner_kwh_complete"])
+
+    def test_full_day_power_coverage_is_usable(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        start = datetime(2026, 11, 18, 0, 0, tzinfo=tz)
+        feeds = [
+            {"created_at": (start + timedelta(minutes=5 * i)).isoformat(),
+             "field2": "6", "field3": "8"}
+            for i in range(24 * 12)
+        ]
+        result = fetch_day(
+            day=date(2026, 11, 18), tz=tz, channel_id="temps", read_key="",
+            endpoint="https://example.invalid", outdoor_field=2, power_field=3,
+            hdd_base=14.0, max_gap_seconds=300, request_json=Mock(return_value={"feeds": feeds}),
+            parse_timestamp=lambda value: datetime.fromisoformat(value),
+        )
+        self.assertGreaterEqual(result["burner_coverage_h"], 23.9)
+        self.assertTrue(result["burner_kwh_complete"])
+
+    def test_multi_hour_power_outage_marks_burner_total_incomplete(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        start = datetime(2026, 11, 17, 0, 0, tzinfo=tz)
+        feeds = [
+            {"created_at": (start + timedelta(minutes=5 * i)).isoformat(),
+             "field2": "6", "field3": "8"}
+            for i in range(24 * 12)
+            if not 2 * 12 <= i < 8 * 12
+        ]
+        result = fetch_day(
+            day=date(2026, 11, 17), tz=tz, channel_id="temps", read_key="",
+            endpoint="https://example.invalid", outdoor_field=2, power_field=3,
+            hdd_base=14.0, max_gap_seconds=300, request_json=Mock(return_value={"feeds": feeds}),
+            parse_timestamp=lambda value: datetime.fromisoformat(value),
+        )
+        self.assertLess(result["burner_coverage_h"], 20.0)
+        self.assertFalse(result["burner_kwh_complete"])
 
     def test_detect_data_start_uses_configured_date_without_network(self):
         request = Mock()

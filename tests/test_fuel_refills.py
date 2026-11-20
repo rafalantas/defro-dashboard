@@ -28,6 +28,20 @@ class FuelRefillsTests(unittest.TestCase):
         self.assertEqual([row["kg"] for row in result], [20.0, 15.0])
         self.assertEqual(result[0]["note"], "second")
 
+    def test_normalization_matches_string_csv_entry_ids_to_void_references(self):
+        feeds = [
+            {"entry_id": "37", "created_at": "2026-11-14T13:03:20+01:00", "field1": "6", "field2": ""},
+            {"entry_id": "38", "created_at": "2026-11-14T13:03:47+01:00", "field1": "84", "field2": ""},
+            {"entry_id": "39", "created_at": "2026-11-14T17:55:48+01:00", "field3": "37"},
+            {"entry_id": "40", "created_at": "2026-11-14T17:56:04+01:00", "field3": "38"},
+            {"entry_id": "41", "created_at": "2026-11-14T13:04:00+01:00", "field1": "90", "field2": "6+84, scalone"},
+        ]
+
+        result = normalize_refill_feeds(feeds, TZ, parse_timestamp)
+
+        self.assertEqual([row["id"] for row in result], [41])
+        self.assertEqual([row["kg"] for row in result], [90.0])
+
     def test_merge_close_events_preserves_all_ids_and_combines_notes(self):
         rows = [
             {"id": 10, "ts": "2026-11-18T10:00:00+01:00", "kg": 30.0, "note": "A"},

@@ -10,10 +10,18 @@ def normalize_refill_feeds(feeds: list[dict], timezone, parse_timestamp) -> list
     voided = {int(feed["field3"]) for feed in feeds if feed.get("field3") not in (None, "")}
     out = []
     for feed in feeds:
-        if feed.get("field1") in (None, "") or feed["entry_id"] in voided:
+        if feed.get("field1") in (None, ""):
+            continue
+        try:
+            entry_id = int(feed["entry_id"])
+        except (KeyError, TypeError, ValueError):
+            # ThingSpeak returns numeric IDs, while CSV exports represent them
+            # as strings. Normalize before comparing them with void references.
+            continue
+        if entry_id in voided:
             continue
         out.append({
-            "id": feed["entry_id"],
+            "id": entry_id,
             "ts": parse_timestamp(feed["created_at"]).astimezone(timezone).isoformat(),
             "kg": float(feed["field1"]),
             "note": feed.get("field2") or None,

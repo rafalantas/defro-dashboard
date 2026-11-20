@@ -48,23 +48,23 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
         end = start + timedelta(minutes=10)
         points = [(start.timestamp() + 60, 99.0), (start.timestamp() + 120, 98.0)]
         with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
-            fuel, "_counter_points", return_value=points
+            fuel, "_counter_sample_points", return_value=points
         ):
             self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
 
-    def test_counter_drop_does_not_mistake_suppressed_unchanged_values_for_gaps(self):
+    def test_counter_drop_rejects_a_gap_over_fifteen_minutes(self):
         start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
         end = start + timedelta(minutes=30)
-        # The provider emits change points, not every unchanged feed sample.
+        # Raw samples retain unchanged values so this is a true coverage gap.
         points = [
             (start.timestamp() - 60, 100.0),
             (start.timestamp() + 60, 99.0),
             (start.timestamp() + 20 * 60, 98.0),
         ]
         with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
-            fuel, "_counter_points", return_value=points
+            fuel, "_counter_sample_points", return_value=points
         ):
-            self.assertEqual(fuel._counter_drop(start, end), (2.0, True, False))
+            self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
 
     def test_counter_drop_accepts_complete_interval_with_regular_samples(self):
         start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
@@ -75,7 +75,7 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
             (start.timestamp() + 9 * 60, 98.0),
         ]
         with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
-            fuel, "_counter_points", return_value=points
+            fuel, "_counter_sample_points", return_value=points
         ):
             self.assertEqual(fuel._counter_drop(start, end), (2.0, True, False))
 
