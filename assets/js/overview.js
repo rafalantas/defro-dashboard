@@ -40,7 +40,11 @@
     for(const [key,label] of Object.entries(labels))row(pumpRoot,label,state(p[key]),p[key]==null?'unknown':p[key]?'active':'inactive');
     row(pumpRoot,'Otwarcie zaworu 4D',v.opening==null?'Brak odczytu':fmtNum(v.opening,0)+' %',v.opening==null?'unknown':'');
     row(pumpRoot,'Temperatura bieżąca zaworu 4D',fmtTemp(v.current),v.current==null?'unknown':'');
-    row(pumpRoot,'Temperatura zadana zaworu 4D',fmtTemp(v.set),v.set==null?'unknown':'');
+    const valveCorrection=v.set_correction==null?null:Number(v.set_correction);
+    const effectiveValveSet=v.set_after_correction==null?(v.set!=null&&valveCorrection!=null?Number(v.set)+valveCorrection:null):Number(v.set_after_correction);
+    const valveSetLabel=v.set==null?'Brak odczytu':fmtTemp(v.set);
+    const valveSetDetails=valveCorrection==null?'':` · korekta regulatora ${valveCorrection>0?'+':''}${fmtNum(valveCorrection,0)} °C${effectiveValveSet==null?'':` → ${fmtTemp(effectiveValveSet)} po korekcie`}`;
+    row(pumpRoot,'Temperatura zadana zaworu 4D',valveSetLabel+valveSetDetails,v.set==null?'unknown':'');
     row(pumpRoot,'Płomień',data.fire==null?'Brak odczytu':data.fire?'Wykryty':'Niewykryty',data.fire==null?'unknown':data.fire?'active':'inactive');
     renderAlerts(payload,window.ThermoFlowFuelSummary,age);
   }
