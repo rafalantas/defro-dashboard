@@ -58,6 +58,12 @@ class FuelAiTests(unittest.TestCase):
         self.assertIn("production estimates are unchanged", result["safety"])
         self.assertEqual(result["validation"]["protocol"], "walk_forward_expanding_window")
         self.assertIn("fixed_holdout", result["validation"])
+        self.assertTrue(result["ablation"]["available"])
+        self.assertEqual(
+            set(result["ablation"]["fixed_holdout"]),
+            {"hdd_only", "hdd_plus_solar", "hdd_solar_wind_interaction"},
+        )
+        self.assertIn("not independent evidence", result["ablation"]["method"])
         fixed = result["validation"]["fixed_holdout"]
         self.assertEqual(fixed["scored_from"], result["holdout_from"])
         self.assertEqual(fixed["scored_to"], result["holdout_to"])
