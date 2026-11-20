@@ -75,6 +75,18 @@ _i18n_cache: dict[str, str] | None = None
 THINGSPEAK_COMPACT_CHANNEL_FIELDS = api_channel_fields()
 
 THINGSPEAK_LAST_WRITES = [0.0] * len(THINGSPEAK_COMPACT_CHANNEL_FIELDS)
+THINGSPEAK_WRITE_LOCK = threading.Lock()
+
+
+def _thingspeak_write_interval_seconds() -> int:
+    """Return the configured per-channel write interval with a safe minimum."""
+    try:
+        return max(35, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
+    except (TypeError, ValueError):
+        return 40
+
+
+THINGSPEAK_WRITE_INTERVAL_SECONDS = _thingspeak_write_interval_seconds()
 
 
 def _thingspeak_field_schema() -> tuple:
