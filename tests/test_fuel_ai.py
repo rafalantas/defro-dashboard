@@ -193,8 +193,12 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(telemetry["status"], "shadow_ready")
         self.assertGreaterEqual(len(telemetry["selected_features"]), 1)
         self.assertLess(len(telemetry["selected_features"]), len(feature_names))
-        self.assertEqual(telemetry["complete_periods"], 52)
-        self.assertEqual(telemetry["training_periods"], 47)
+        # Each row is missing exactly one feature. The three features
+        # missing only six times each are individually complete in 54 rows;
+        # combining distinct missingness patterns would discard valid periods.
+        self.assertEqual(telemetry["selected_features"], ["telemetry_pump_floor_h"])
+        self.assertEqual(telemetry["complete_periods"], 54)
+        self.assertEqual(telemetry["training_periods"], 49)
         self.assertEqual(telemetry["holdout_periods"], 5)
 
     def test_non_finite_and_negative_inputs_are_rejected(self):
