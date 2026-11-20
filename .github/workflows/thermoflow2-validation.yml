@@ -34,6 +34,8 @@ jobs:
         run: python -m unittest tests/test_fuel_http.py
       - name: Fuel estimate contract regression
         run: python -m unittest tests/test_fuel_estimates.py tests/test_fuel_estimate_selection.py tests/test_fuel_engine_interface.py tests/test_fuel_period_analysis.py tests/test_fuel_weather_provider.py tests/test_fuel_refill_provider.py tests/test_fuel_thingspeak_daily_provider.py tests/test_fuel_daily_provider.py tests/test_fuel_counter_provider.py
+      - name: ThermoFlow cutover HTTP integration
+        run: python -m unittest tests/test_thermoflow_cutover.py
       - name: Fuel refill regression
         run: python -m unittest tests/test_fuel_refills.py
       - name: Fuel pure model regression
