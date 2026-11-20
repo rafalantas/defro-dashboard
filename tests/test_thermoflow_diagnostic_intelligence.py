@@ -207,6 +207,17 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(pump["paired_events"], 0)
         self.assertIsNone(pump["events"][0]["return_delta_c"])
 
+    def test_hydraulic_return_pairing_rejects_two_sided_samples_with_600s_gap(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start, 56], [start + 600, 52]],
+            "thermoflow-pump-floor": [[start, 0], [start + 300, 1]],
+        }
+        pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["paired_events"], 0)
+        self.assertEqual(pump["events"][0]["association_status"],
+                         "insufficient_unique_contiguous_return_samples")
+
     def test_hydraulic_return_pairing_requires_samples_on_both_sides(self):
         start = 1795161600
         raw = {
