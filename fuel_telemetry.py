@@ -16,6 +16,13 @@ from fuel_telemetry_diagnostics import build_raw_diagnostics
 TZ = timezone()
 MAX_SAMPLE_GAP_SECONDS = 300
 CHANNELS = telemetry_channels()
+FIRE_SERIES = (
+    ("fire_detected", "Obecność płomienia", "thermoflow-fire-detected", "state"),
+    ("fire_brightness", "Jasność płomienia", "thermoflow-fire-brightness", "value"),
+    ("boiler_temp_c", "Temperatura kotła (próg rozpalenia)", "thermoflow-fire-boiler-temp", "temperature"),
+    ("boiler_setpoint_c", "Zadana kotła", "thermoflow-fire-boiler-setpoint", "temperature"),
+    ("boiler_hysteresis_c", "Histereza kotła", "thermoflow-fire-boiler-hysteresis", "temperature"),
+)
 
 def _timestamp(raw):
     try:
@@ -73,6 +80,26 @@ def analyze(feeds_by_channel, channel_ids, days, now=None):
             "last_sample": max(channel_times).isoformat() if channel_times else None,
         })
 
+    fire_feeds = feeds_by_channel[2] if len(feeds_by_channel) > 2 else []
+    fire_times = []
+    for feed in fire_feeds:
+        ts = _timestamp(feed.get("created_at"))
+        if ts is None:
+            continue
+        fire_times.append(ts)
+        for index, (key, _label, _series_id, _kind) in enumerate(FIRE_SERIES, 1):
+            value = _number(feed.get(f"field{index}"))
+            if value is not None:
+                points[key].append((ts, value))
+    if len(channel_ids) > 2:
+        channel_audit.append({
+            "name": "fire_sensor",
+            "configured": bool(channel_ids[2]),
+            "feed_count": len(fire_feeds),
+            "timestamped_feeds": len(fire_times),
+            "first_sample": min(fire_times).isoformat() if fire_times else None,
+            "last_sample": max(fire_times).isoformat() if fire_times else None,
+        })
     raw_diagnostics = build_raw_diagnostics(points, now)
     series_audit = []
     daily_values = defaultdict(lambda: defaultdict(list))
@@ -103,6 +130,20 @@ def analyze(feeds_by_channel, channel_ids, days, now=None):
                         daily_states[day]["room_c_invalid"].append((ts, False))
                     else:
                         daily_values[day][key].append(value)
+
+    for key, label, series_id, kind in FIRE_SERIES:
+        values = sorted(points.get(key, []))
+        gaps = [(b[0] - a[0]).total_seconds() for a, b in zip(values, values[1:])]
+        series_audit.append({
+            "id": series_id, "key": key, "label": label, "kind": kind,
+            "samples": len(values),
+            "first_sample": values[0][0].isoformat() if values else None,
+            "last_sample": values[-1][0].isoformat() if values else None,
+            "median_interval_s": round(median(gaps), 1) if gaps else None,
+            "p95_interval_s": _percentile(gaps, 0.95),
+            "gaps_over_5m": sum(gap > MAX_SAMPLE_GAP_SECONDS for gap in gaps),
+            "missing": not bool(values),
+        })
 
     daily = []
     all_keys = [item[0] for channel in CHANNELS for item in channel["series"] if item[0] != "pump_valve4d"]
