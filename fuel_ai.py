@@ -167,6 +167,64 @@ def _fixed_holdout_metrics(train: list[dict], test: list[dict], names: list[str]
     return _metrics(actual, predicted)
 
 
+
+def _coefficient_stability(rows: list[dict], names: list[str]) -> dict:
+    """Describe standardized coefficient drift across expanding training windows."""
+    count = len(rows)
+    window_sizes = sorted({
+        max(MIN_TRAIN_DAYS, int(count * 0.6 + 0.999999)),
+        max(MIN_TRAIN_DAYS, int(count * 0.8 + 0.999999)),
+        count,
+    })
+    if len(window_sizes) < 3 or window_sizes[0] > count:
+        return {
+            "available": False,
+            "reason": "insufficient_history_for_three_expanding_windows",
+            "windows": [],
+            "features": {},
+        }
+
+    snapshots = []
+    for size in window_sizes:
+        model = _fit(rows[:size], names)
+        if model is None:
+            return {
+                "available": False,
+                "reason": "one_or_more_expanding_window_fits_unstable",
+                "windows": snapshots,
+                "features": {},
+            }
+        snapshots.append({
+            "training_days": size,
+            "training_to": rows[size - 1].get("day"),
+            "standardized_coefficients": {
+                name: round(float(coefficient), 6)
+                for name, coefficient in zip(names, model["beta"][1:])
+            },
+        })
+
+    features = {}
+    for name in names:
+        values = [snapshot["standardized_coefficients"][name] for snapshot in snapshots]
+        signs = [1 if value > 0 else (-1 if value < 0 else 0) for value in values]
+        nonzero_signs = [sign for sign in signs if sign]
+        features[name] = {
+            "values": values,
+            "min": round(min(values), 6),
+            "max": round(max(values), 6),
+            "sign_consistent": bool(nonzero_signs)
+                and len(nonzero_signs) == len(signs)
+                and len(set(nonzero_signs)) == 1,
+        }
+    return {
+        "available": True,
+        "method": "expanding chronological training windows; standardized coefficients; descriptive only",
+        "windows": snapshots,
+        "features": features,
+    }
+
+
+
 def evaluate(rows: list[dict]) -> dict:
     """Compare robust models with walk-forward and fixed chronological validation.
 
@@ -405,9 +463,12 @@ def evaluate(rows: list[dict]) -> dict:
                     "validation_note": "walk-forward and fixed holdout currently score the same terminal dates; treat as complementary protocols, not independent samples",
                 }
 
+    coefficient_stability = _coefficient_stability(train, selected_names)
+
     return {
         "status": "shadow_ready",
         "mode": "shadow_only",
+        "coefficient_stability": coefficient_stability,
         "telemetry": telemetry_result,
         "training_days": total,
         "holdout_days": test_count,
