@@ -349,6 +349,29 @@ def evaluate(rows: list[dict]) -> dict:
                     / telemetry_fixed_base["mae_kg_day"]
                     if telemetry_fixed_base["mae_kg_day"] else 0.0
                 )
+                telemetry_ablation_specs = {
+                    "weather_only": telemetry_baseline_names,
+                    "weather_plus_temperatures": telemetry_baseline_names + [
+                        "telemetry_co_c", "telemetry_dhw_c",
+                        "telemetry_floor_c", "telemetry_return_c",
+                    ],
+                    "weather_plus_boiler_and_valve": telemetry_baseline_names + [
+                        "telemetry_boiler_power_kw", "telemetry_valve_opening_pct",
+                    ],
+                    "weather_plus_pumps": telemetry_baseline_names + [
+                        "telemetry_pump_floor_h", "telemetry_pump_dhw_h",
+                        "telemetry_pump_circulation_h",
+                    ],
+                    "weather_plus_all_telemetry": telemetry_candidate_names,
+                }
+                telemetry_ablation_scores = {
+                    label: _fixed_holdout_metrics(
+                        telemetry_clean[:telemetry_train_count], telemetry_test, names)
+                    for label, names in telemetry_ablation_specs.items()
+                }
+                telemetry_ablation_available = all(
+                    score is not None for score in telemetry_ablation_scores.values()
+                )
                 telemetry_gain = ((base_score["mae_kg_day"] - extended_score["mae_kg_day"])
                                   / base_score["mae_kg_day"] if base_score["mae_kg_day"] else 0.0)
                 telemetry_accepted = (
@@ -374,6 +397,11 @@ def evaluate(rows: list[dict]) -> dict:
                     "selected": "telemetry_enhanced" if telemetry_accepted else "weather_only",
                     "features": telemetry_candidate_names if telemetry_accepted else telemetry_baseline_names,
                     "safety": "shadow_only; production estimates are unchanged",
+                    "ablation": {
+                        "method": "same chronological fixed holdout; descriptive feature-group comparison, not independent evidence",
+                        "available": telemetry_ablation_available,
+                        "fixed_holdout": telemetry_ablation_scores,
+                    },
                     "validation_note": "walk-forward and fixed holdout currently score the same terminal dates; treat as complementary protocols, not independent samples",
                 }
 
