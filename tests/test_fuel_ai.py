@@ -109,6 +109,22 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["telemetry"]["complete_periods"], 7)
         self.assertEqual(result["telemetry"]["periods_needed"], 25)
 
+    def test_partial_telemetry_coverage_is_reported_before_25_periods(self):
+        rows = add_telemetry(synthetic_rows(19))
+        rows[7].pop("telemetry_return_c")
+
+        result = fuel_ai.evaluate(rows)
+        telemetry = result["telemetry"]
+
+        self.assertEqual(result["status"], "collecting")
+        self.assertEqual(telemetry["status"], "collecting")
+        self.assertEqual(telemetry["complete_periods"], 18)
+        self.assertEqual(telemetry["incomplete_periods"], 1)
+        self.assertEqual(telemetry["periods_needed"], 25)
+        self.assertNotIn("telemetry_return_c", telemetry["selected_features"])
+        self.assertIn("telemetry_pump_floor_h", telemetry["selected_features"])
+        self.assertEqual(telemetry["feature_coverage_periods"]["telemetry_return_c"], 18)
+
     def test_telemetry_candidate_uses_chronological_holdout_when_history_is_sufficient(self):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(130)))
         self.assertEqual(result["telemetry"]["status"], "shadow_ready")
