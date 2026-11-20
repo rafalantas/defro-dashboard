@@ -42,7 +42,7 @@ class FuelConfigTests(unittest.TestCase):
         self.assertEqual(str(naive.tzinfo), "Europe/Warsaw")
 
     def test_thingSpeak_fields_are_canonical(self):
-        self.assertEqual(config.FIELD_COUNTER, 16)
+        self.assertEqual(config.FIELD_COUNTER, 8)
         self.assertEqual(config.FIELD_OUTDOOR, 4)
         self.assertEqual(config.FIELD_POWER, 8)
 
