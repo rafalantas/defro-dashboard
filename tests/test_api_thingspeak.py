@@ -22,6 +22,33 @@ class ThingSpeakWriteConfigurationTests(unittest.TestCase):
             # exercises the lock and interval configuration used by the writer.
             api._thingspeak_write({"fetched_at": "2026-11-20T10:00:00+00:00", "data": {}})
 
+    def test_thermoflow_reads_optional_fire_channel_with_same_time_range(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = (
+            b'{"feeds":[{"created_at":"2026-11-20T10:00:00Z","field1":"1","field2":"321"}]}'
+        )
+        start = api.datetime(2026, 11, 20, 10, 0, tzinfo=api.timezone.utc)
+        end = api.datetime(2026, 11, 20, 11, 0, tzinfo=api.timezone.utc)
+        with patch.dict(os.environ, {
+            "THINGSPEAK_FIRE_CHANNEL_ID": "3590535",
+            "THINGSPEAK_FIRE_READ_KEY": "test-read-key",
+        }), patch.object(api, "urlopen", return_value=response) as request:
+            result = api._read_thermoflow_fire_history(start, end, api.timezone.utc)
+        self.assertEqual(result["thermoflow-fire"], [[1795168800, 1.0]])
+        self.assertEqual(result["thermoflow-fire-brightness"], [[1795168800, 321.0]])
+        params = request.call_args.args[0].full_url
+        self.assertIn("channels/3590535/feeds.json", params)
+        self.assertIn("api_key=test-read-key", params)
+
+    def test_thermoflow_fire_history_is_optional_on_upstream_failure(self):
+        start = api.datetime(2026, 11, 20, 10, 0, tzinfo=api.timezone.utc)
+        end = api.datetime(2026, 11, 20, 11, 0, tzinfo=api.timezone.utc)
+        with patch.dict(os.environ, {"THINGSPEAK_FIRE_CHANNEL_ID": "3590535"}), \
+             patch.object(api, "urlopen", side_effect=OSError("offline")):
+            self.assertEqual(
+                api._read_thermoflow_fire_history(start, end, api.timezone.utc), {}
+            )
+
     def test_fire_channel_writes_only_flame_and_brightness(self):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b'{"entry_id": 123}'
