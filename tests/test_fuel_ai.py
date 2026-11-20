@@ -109,6 +109,31 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["telemetry"]["complete_periods"], 7)
         self.assertEqual(result["telemetry"]["periods_needed"], 25)
 
+    def test_partial_telemetry_coverage_is_reported_before_25_periods(self):
+        rows = add_telemetry(synthetic_rows(19))
+        for name in (
+            "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
+            "telemetry_return_c", "telemetry_boiler_power_kw",
+            "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
+            "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
+        ):
+            rows[7].pop(name)
+
+        result = fuel_ai.evaluate(rows)
+        telemetry = result["telemetry"]
+
+        self.assertEqual(result["status"], "collecting")
+        self.assertEqual(telemetry["status"], "collecting")
+        self.assertEqual(telemetry["complete_periods"], 18)
+        self.assertEqual(telemetry["incomplete_periods"], 1)
+        self.assertEqual(telemetry["periods_needed"], 25)
+        # All feature columns have equal coverage here. Assert the invariant,
+        # not the selector's intentional tie-break ordering.
+        self.assertGreaterEqual(len(telemetry["selected_features"]), 1)
+        self.assertEqual(
+            telemetry["feature_coverage_periods"]["telemetry_co_c"], 18
+        )
+
     def test_telemetry_candidate_uses_chronological_holdout_when_history_is_sufficient(self):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(130)))
         self.assertEqual(result["telemetry"]["status"], "shadow_ready")
