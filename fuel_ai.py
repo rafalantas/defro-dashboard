@@ -119,32 +119,40 @@ def _valid_telemetry_row(row: dict, names: list[str]) -> bool:
 
 
 def _select_telemetry_features(rows: list[dict], names: list[str], minimum_periods: int):
-    """Choose the broadest feature set with enough fully observed periods.
+    """Maximize complete-period count, then retain every compatible feature.
 
     Selection uses telemetry availability only, never target values. Missing
-    values are not imputed; each selected feature is valid in every retained
-    period.
+    values are not imputed. Adding a feature is allowed only when it does not
+    reduce the maximum number of fully observed periods.
     """
     coverage = {
         name: sum(_valid_telemetry_row(row, [name]) for row in rows)
         for name in names
     }
     ordered = sorted(names, key=lambda name: (-coverage[name], names.index(name)))
-    selected = []
-    eligible = list(rows)
-    # Keep diagnostics meaningful before the training threshold is reached.
-    # For short histories, use all available rows as the selection floor;
-    # once enough history exists, retain the broadest subset meeting the
-    # configured train + holdout minimum.
     selection_floor = min(minimum_periods, len(rows))
-    for name in ordered:
-        candidate = [row for row in eligible
-                     if _valid_telemetry_row(row, selected + [name])]
-        if candidate and len(candidate) >= selection_floor:
+    best_count = max(coverage.values(), default=0)
+    if best_count < selection_floor:
+        return [], [], coverage
+
+    selected = []
+    eligible = [
+        row for row in rows
+        if _valid_telemetry_row(row, [ordered[0]])
+    ]
+    for name in ordered[1:]:
+        candidate = [
+            row for row in eligible
+            if _valid_telemetry_row(row, selected + [name])
+        ]
+        # Preserve the maximum coverage; never trade away valid periods just
+        # to add another sensor to the model.
+        if len(candidate) == best_count:
             selected.append(name)
             eligible = candidate
+    selected.insert(0, ordered[0])
     # With no usable telemetry feature, do not treat weather-only rows as telemetry rows.
-    return selected, (eligible if selected else []), coverage
+    return selected, eligible, coverage
 
 
 def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None) -> dict:
