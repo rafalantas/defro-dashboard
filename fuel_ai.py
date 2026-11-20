@@ -117,6 +117,70 @@ def _valid_telemetry_row(row: dict, names: list[str]) -> bool:
             return False
     return True
 
+def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None) -> dict:
+    """Explain model eligibility without pretending aggregated features are raw samples."""
+    day = row.get("day")
+    end = row.get("end")
+    start = row.get("start")
+    date_value = day or (str(end)[:10] if end else None) or (str(start)[:10] if start else None)
+    result = {
+        "date": date_value,
+        "period_start": start,
+        "period_end": end,
+        "status": status,
+        "reason_codes": list(reason_codes or []),
+        "missing_fields": [],
+        "invalid_fields": [],
+        "telemetry_feature_count": None,
+        "telemetry_feature_total": len(telemetry_names) if telemetry_names else None,
+        "telemetry_coverage_percent": None,
+        # Refill-period rows contain aggregated features, not raw timestamped samples.
+        "samples_expected": None,
+        "samples_received": None,
+        "max_gap_minutes": None,
+        "diagnostic_granularity": "aggregated_period_features",
+    }
+    if telemetry_names is None:
+        return result
+
+    ranges = {
+        "telemetry_co_c": (-10.0, 120.0),
+        "telemetry_dhw_c": (0.0, 100.0),
+        "telemetry_floor_c": (0.0, 85.0),
+        "telemetry_return_c": (0.0, 100.0),
+        "telemetry_boiler_power_kw": (0.0, 100.0),
+        "telemetry_valve_opening_pct": (0.0, 100.0),
+        "telemetry_pump_floor_h": (0.0, 24.0),
+        "telemetry_pump_dhw_h": (0.0, 24.0),
+        "telemetry_pump_circulation_h": (0.0, 24.0),
+    }
+    valid_count = 0
+    for name in telemetry_names:
+        raw = row.get(name)
+        value = _number(raw)
+        if value is None:
+            if raw is None:
+                result["missing_fields"].append(name)
+                result["reason_codes"].append(f"telemetry_missing:{name}")
+            else:
+                result["invalid_fields"].append(name)
+                result["reason_codes"].append(f"telemetry_invalid:{name}")
+            continue
+        low, high = ranges[name]
+        if not low <= value <= high:
+            result["invalid_fields"].append(name)
+            result["reason_codes"].append(f"telemetry_out_of_range:{name}")
+            continue
+        valid_count += 1
+
+    result["telemetry_feature_count"] = valid_count
+    result["telemetry_coverage_percent"] = round(
+        valid_count / len(telemetry_names) * 100, 1
+    ) if telemetry_names else None
+    result["status"] = "complete" if not result["reason_codes"] else "incomplete"
+    return result
+
+
 def _prepare(rows: list[dict], names: list[str]):
     means, scales = [], []
     for name in names:
@@ -261,11 +325,18 @@ def evaluate(rows: list[dict]) -> dict:
     rejected_by_reason = {"estimated_or_epoch": 0, "invalid_base": 0, "duplicate_day": 0}
     invalid_base_by_reason = {}
     counter_day_diagnostics = []
+    period_diagnostics = []
     duplicate_days = set()
     for source in rows:
         if source.get("estimate") or source.get("counter_regime") == "epoch":
             rejected_rows += 1
             rejected_by_reason["estimated_or_epoch"] += 1
+            reasons = []
+            if source.get("estimate"):
+                reasons.append("estimated_row")
+            if source.get("counter_regime") == "epoch":
+                reasons.append("counter_epoch")
+            period_diagnostics.append(_period_diagnostic(source, "rejected", reasons))
             continue
         base_rejection = _base_row_rejection_reason(source)
         row = _valid_base_row(source)
@@ -273,6 +344,7 @@ def evaluate(rows: list[dict]) -> dict:
             rejected_rows += 1
             rejected_by_reason["invalid_base"] += 1
             invalid_base_by_reason[base_rejection] = invalid_base_by_reason.get(base_rejection, 0) + 1
+            period_diagnostics.append(_period_diagnostic(source, "rejected", [base_rejection]))
             if base_rejection == "kg_counter_missing_or_invalid" and source.get("counter_diagnostics"):
                 counter_day_diagnostics.append(source["counter_diagnostics"])
             continue
@@ -298,6 +370,13 @@ def evaluate(rows: list[dict]) -> dict:
     duplicate_days = {day for day, count in daily_counts.items() if count > 1}
     duplicate_periods = {stamp for stamp, count in period_counts.items() if count > 1}
     if duplicate_days or duplicate_periods:
+        for row in clean:
+            is_duplicate = (
+                (row.get("source") == "refill_period" and row.get("end") in duplicate_periods)
+                or (row.get("source") != "refill_period" and row.get("day") in duplicate_days)
+            )
+            if is_duplicate:
+                period_diagnostics.append(_period_diagnostic(row, "rejected", ["duplicate_day"]))
         rejected_by_reason["duplicate_day"] = (
             sum(daily_counts[day] for day in duplicate_days)
             + sum(period_counts[stamp] for stamp in duplicate_periods)
@@ -321,6 +400,14 @@ def evaluate(rows: list[dict]) -> dict:
     telemetry_clean = [
         row for row in clean if _valid_telemetry_row(row, telemetry_names)
     ]
+    period_diagnostics.extend(
+        _period_diagnostic(row, "complete" if row in telemetry_clean else "incomplete",
+                           telemetry_names=telemetry_names)
+        for row in clean
+    )
+    period_diagnostics.sort(
+        key=lambda item: (item.get("date") or "", item.get("period_end") or "")
+    )
     telemetry_periods = len(telemetry_clean)
     telemetry_incomplete_periods = total - telemetry_periods
     telemetry_test_count = TELEMETRY_MIN_TEST_PERIODS
@@ -333,7 +420,7 @@ def evaluate(rows: list[dict]) -> dict:
     test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, total // 5))
     train_count = total - test_count
     if train_count < MIN_TRAIN_PERIODS or test_count < MIN_TEST_PERIODS:
-        return {"status": "collecting", "days": total, "periods": total,
+        return {"period_diagnostics": period_diagnostics, "status": "collecting", "days": total, "periods": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
@@ -362,7 +449,7 @@ def evaluate(rows: list[dict]) -> dict:
         baseline = _fit(history, baseline_names)
         candidate = _fit(history, candidate_names)
         if baseline is None or candidate is None:
-            return {"status": "unstable", "days": total, "periods": total,
+            return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                     "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                   "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                                   "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
@@ -408,7 +495,7 @@ def evaluate(rows: list[dict]) -> dict:
     }
     ablation_available = all(score is not None for score in ablation_scores.values())
     if fixed_baseline_score is None or fixed_candidate_score is None:
-        return {"status": "unstable", "days": total, "periods": total,
+        return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
@@ -428,7 +515,7 @@ def evaluate(rows: list[dict]) -> dict:
     selected_names = candidate_names if accepted else baseline_names
     final_model = _fit(clean, selected_names)
     if final_model is None:
-        return {"status": "unstable", "days": total, "periods": total,
+        return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
@@ -555,6 +642,7 @@ def evaluate(rows: list[dict]) -> dict:
     coefficient_stability = _coefficient_stability(train, selected_names)
 
     return {
+        "period_diagnostics": period_diagnostics,
         "status": "shadow_ready",
         "mode": "shadow_only",
         "coefficient_stability": coefficient_stability,
