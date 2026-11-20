@@ -100,3 +100,36 @@ jobs:
       - name: Build API image (no push)
         run: |
           docker buildx build --platform ${{ matrix.platform }} --output=type=oci,dest=/tmp/api.tar -f Dockerfile.api .
+
+  api-image-runtime-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build API image for runtime smoke test
+        run: docker build --pull -t thermoflow-api-smoke -f Dockerfile.api .
+      - name: Start API container without external credentials
+        run: |
+          docker run -d --name thermoflow-api-smoke \
+            -p 127.0.0.1:18000:8000 \
+            -e THINGSPEAK_WRITE_ENABLED=false \
+            thermoflow-api-smoke
+      - name: Verify API health from the running image
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health > /tmp/thermoflow-health.json; then
+              cat /tmp/thermoflow-health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs thermoflow-api-smoke
+          exit 1
+      - name: Verify fuel engine is available inside the image
+        run: |
+          status=$(curl --silent --output /tmp/thermoflow-fuel.json --write-out '%{http_code}' http://127.0.0.1:18000/api/fuel/summary)
+          cat /tmp/thermoflow-fuel.json
+          test "$status" = "200"
+      - name: Stop API container
+        if: always()
+        run: docker rm -f thermoflow-api-smoke || true
