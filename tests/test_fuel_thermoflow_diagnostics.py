@@ -21,6 +21,27 @@ class ThermoFlowDiagnosticsTests(unittest.TestCase):
         self.assertEqual(quality["periods_incomplete"], 1)
         self.assertEqual(quality["missing_by_feature"]["telemetry_return_c"], 1)
         self.assertEqual(quality["missing_by_feature"]["telemetry_pump_floor_h"], 1)
+        self.assertEqual(quality["feature_coverage_periods"]["telemetry_return_c"], 1)
+        self.assertEqual(quality["feature_coverage_periods"]["telemetry_pump_floor_h"], 1)
+        self.assertEqual(quality["feature_coverage_percent"]["telemetry_return_c"], 50.0)
+        self.assertEqual(quality["coverage_basis"], "accepted_refill_period_aggregates")
+        self.assertEqual(quality["missing_by_period"][0]["day"], "2026-01-02")
+
+    def test_actual_missing_values_override_stale_empty_missing_metadata(self):
+        rows = [
+            {name: 1.0 for name in TELEMETRY_FEATURES},
+            {**{name: 1.0 for name in TELEMETRY_FEATURES},
+             "telemetry_floor_c": None, "telemetry_missing_features": []},
+        ]
+        quality = build_diagnostics(rows, {"status": "collecting"})["telemetry_quality"]
+        self.assertEqual(quality["missing_by_feature"]["telemetry_floor_c"], 1)
+        self.assertEqual(quality["feature_coverage_periods"]["telemetry_floor_c"], 1)
+        self.assertEqual(quality["periods_complete"], 1)
+
+    def test_empty_input_has_null_percentages_and_zero_period_coverage(self):
+        quality = build_diagnostics([], {"status": "collecting"})["telemetry_quality"]
+        self.assertEqual(quality["feature_coverage_periods"]["telemetry_floor_c"], 0)
+        self.assertIsNone(quality["feature_coverage_percent"]["telemetry_floor_c"])
 
     def test_exposes_chronological_period_errors_and_model_comparison(self):
         comparison = [{"period_end": "2026-01-03T12:00:00+01:00",
