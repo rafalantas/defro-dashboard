@@ -642,57 +642,42 @@ def _prefetch(days: int = 400):
         list(pool.map(one, wanted))
 
 
+def _summary_runtime_deps():
+    return {
+        "prefetch": _prefetch,
+        "build": _summary_build,
+        "fuel_error": FuelError,
+        "state": _summary_state,
+        "guard": _summary_guard,
+        "thread_factory": threading.Thread,
+        "configured": lambda: bool(TS_CHANNEL_FUEL),
+        "cache": _summary_cache,
+        "monotonic": time.monotonic,
+        "cache_seconds": SUMMARY_CACHE_SECONDS,
+        "wait_seconds": SUMMARY_WAIT_SECONDS,
+    }
+
+
 def _summary_job():
-    """Liczy podsumowanie w tle i zapisuje je w cache (błąd zostaje do odczytu przez _summary)."""
-    try:
-        _prefetch()
-        _summary_build()
-        _summary_state["error"] = None
-    except FuelError as e:
-        _summary_state["error"] = e.message
-    except Exception as e:   # nieoczekiwany błąd nie może zabić wątku po cichu
-        _summary_state["error"] = f"{type(e).__name__}: {e}"[:180]
+    from fuel_summary_runtime import summary_job
+    return summary_job(_summary_runtime_deps())
 
 
 def _summary_kick():
-    with _summary_guard:
-        thread = _summary_state["thread"]
-        if thread is None or not thread.is_alive():
-            thread = threading.Thread(target=_summary_job, name="fuel-summary", daemon=True)
-            _summary_state["thread"] = thread
-            thread.start()
-        return thread
+    from fuel_summary_runtime import summary_kick
+    return summary_kick(_summary_runtime_deps())
 
 
 def warmup():
     """Rozgrzewa cache przy starcie kontenera, zanim dashboard poprosi o kartę."""
-    if TS_CHANNEL_FUEL:
-        _summary_kick()
+    from fuel_summary_runtime import warmup as runtime_warmup
+    return runtime_warmup(_summary_runtime_deps())
 
 
 def _summary() -> dict:
-    """Podsumowanie do karty w dashboardzie. Zawsze odpowiada szybko, ciężkie liczenie idzie w tle.
-
-    Ostatni wynik jest zwracany od razu (po 60 s odświeża się w tle). Przy zimnym starcie
-    czekamy do SUMMARY_WAIT_SECONDS, a potem zwracamy {"warming": true}, żeby nginx (60 s)
-    nie ucinał zapytania, a dashboard ponowił je po chwili.
-    """
-    if not TS_CHANNEL_FUEL:
-        return {"configured": False}
-    cached = _summary_cache["data"]
-    if cached is not None:
-        if time.monotonic() - _summary_cache["at"] >= SUMMARY_CACHE_SECONDS:
-            _summary_kick()
-        return cached
-    thread = _summary_kick()
-    thread.join(timeout=SUMMARY_WAIT_SECONDS)
-    cached = _summary_cache["data"]
-    if cached is not None:
-        return cached
-    if not thread.is_alive() and _summary_state["error"]:
-        raise FuelError(502, _summary_state["error"])
-    return {"configured": True, "warming": True}
-
+    """Zwraca cache od razu, a przy zimnym starcie czeka najwyżej SUMMARY_WAIT_SECONDS."""
+    from fuel_summary_runtime import get_summary
+    return get_summary(_summary_runtime_deps())
 
 
 def _climate_monthly(today: date) -> dict:
