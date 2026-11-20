@@ -132,10 +132,15 @@ def _select_telemetry_features(rows: list[dict], names: list[str], minimum_perio
     ordered = sorted(names, key=lambda name: (-coverage[name], names.index(name)))
     selected = []
     eligible = list(rows)
+    # Keep diagnostics meaningful before the training threshold is reached.
+    # For short histories, use all available rows as the selection floor;
+    # once enough history exists, retain the broadest subset meeting the
+    # configured train + holdout minimum.
+    selection_floor = min(minimum_periods, len(rows))
     for name in ordered:
         candidate = [row for row in eligible
                      if _valid_telemetry_row(row, selected + [name])]
-        if len(candidate) >= minimum_periods:
+        if candidate and len(candidate) >= selection_floor:
             selected.append(name)
             eligible = candidate
     # With no usable telemetry feature, do not treat weather-only rows as telemetry rows.
@@ -586,6 +591,8 @@ def evaluate(rows: list[dict]) -> dict:
             if base_fit is None or extended_fit is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                     "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                                    "selected_features": telemetry_selected_features,
+                                    "feature_coverage_periods": telemetry_feature_coverage,
                                     "message": "Model telemetrii nie przeszedł kontroli stabilności"}
                 break
             base_predictions.append(_predict(base_fit, row))
@@ -600,6 +607,8 @@ def evaluate(rows: list[dict]) -> dict:
             if telemetry_fixed_base is None or telemetry_fixed_extended is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                     "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                                    "selected_features": telemetry_selected_features,
+                                    "feature_coverage_periods": telemetry_feature_coverage,
                                     "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
             else:
                 telemetry_fixed_gain = (
