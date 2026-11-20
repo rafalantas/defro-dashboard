@@ -225,7 +225,9 @@ class FuelAiTests(unittest.TestCase):
             result["counter_day_diagnostics"][0]["reason"],
             "counter_sample_gap_over_15m",
         )
-        self.assertEqual(result["training_days"], 49)
+        self.assertEqual(result["status"], "collecting")
+        self.assertEqual(result["rejected_days"], 1)
+        self.assertEqual(result["invalid_base_by_reason"]["kg_counter_missing_or_invalid"], 1)
 
     def test_duplicate_days_are_excluded_instead_of_double_weighted(self):
         rows = synthetic_rows()
