@@ -79,6 +79,23 @@ def build_summary(deps: dict) -> dict:
     planning = deps["planning_forecast"](model, daily_model, forecast, now, known_temps)
     telemetry = deps["telemetry_state"](daily_rows)
 
+    forecast_rows = []
+    if model:
+        for day, temperature in forecast:
+            weather = deps["weather"](day)
+            forecast_rows.append({
+                "day": day.isoformat(),
+                "t_mean": temperature,
+                "solar_mj": weather.get("solar_mj"),
+                "wind_max_kmh": weather.get("wind_max_kmh"),
+                "kg": round(
+                    deps["rate_for"](
+                        model, daily_model, day, temperature,
+                        known_temps.get(day - timedelta(days=1)),
+                    ), 1
+                ),
+            })
+
     result = {
         "configured": True,
         "telemetry": telemetry,
@@ -89,21 +106,7 @@ def build_summary(deps: dict) -> dict:
         "daily_model": daily_model,
         "ai_shadow": ai_shadow,
         "planning": planning,
-        "forecast": [
-            {
-                "day": day.isoformat(),
-                "t_mean": temperature,
-                "solar_mj": deps["weather"](day).get("solar_mj"),
-                "wind_max_kmh": deps["weather"](day).get("wind_max_kmh"),
-                "kg": round(
-                    deps["rate_for"](
-                        model, daily_model, day, temperature,
-                        known_temps.get(day - timedelta(days=1)),
-                    ), 1
-                ),
-            }
-            for day, temperature in forecast
-        ] if model else [],
+        "forecast": forecast_rows,
         "calibration": calibration,
         "counter_calibration": counter,
         "last7": week,
