@@ -41,7 +41,7 @@ jobs:
       - name: Fuel telemetry provider and analysis regression
         run: python -m unittest tests/test_fuel_telemetry.py tests/test_fuel_telemetry_resilience.py tests/test_fuel_telemetry_provider.py
       - name: Canonical schema and API isolation regression
-        run: python -m unittest tests/test_fuel_schema.py
+        run: python -m unittest tests/test_fuel_schema.py tests/test_fuel_config.py
       - name: Fuel energy module regression
         run: python -m unittest tests/test_fuel_energy.py
       - name: Fuel counter module regression
