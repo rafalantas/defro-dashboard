@@ -252,7 +252,7 @@ def evaluate(rows: list[dict]) -> dict:
                         "training_days_needed": TELEMETRY_MIN_TRAIN_DAYS,
                         "holdout_days_needed": TELEMETRY_MIN_TEST_DAYS,
                         "message": "Model telemetrii czeka na co najmniej 90 dób treningowych i 14 testowych"}
-    if telemetry_train_count >= MIN_TRAIN_DAYS and telemetry_test_count >= MIN_TEST_DAYS:
+    if telemetry_train_count >= TELEMETRY_MIN_TRAIN_DAYS and telemetry_test_count >= TELEMETRY_MIN_TEST_DAYS:
         telemetry_baseline_names = ["hdd_lag", "solar_mj", "wind_hdd_lag"]
         telemetry_candidate_names = telemetry_baseline_names + telemetry_names
         telemetry_test = telemetry_clean[telemetry_train_count:]
