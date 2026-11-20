@@ -32,6 +32,19 @@ class TelemetryAuditServiceTests(unittest.TestCase):
         self.assertEqual(first_kwargs["params"]["api_key"], "key-a")
         self.assertEqual(first_kwargs["timeout"], 12)
 
+
+    def test_optional_fire_channel_is_fetched_and_passed_to_analysis(self):
+        result, request, analyze = self.invoke(
+            channels=["temps", "valve", "fire"],
+        )
+        self.assertEqual(request.call_count, 24)
+        self.assertEqual(analyze.call_args.args[0], [
+            [{"entry_id": 1}] * 8,
+            [{"entry_id": 1}] * 8,
+            [{"entry_id": 1}] * 8,
+        ])
+        self.assertEqual(analyze.call_args.args[1], ["temps", "valve", "fire"])
+
     def test_clamps_to_fourteen_days_and_preserves_local_boundaries(self):
         _, request, _ = self.invoke({"days": ["99"]})
         self.assertEqual(request.call_count, 30)
