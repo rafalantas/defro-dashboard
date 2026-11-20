@@ -334,9 +334,9 @@ def evaluate(rows: list[dict]) -> dict:
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Za mało kompletnych okresów z telemetrią do walidacji"},
-                "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_DAYS,
-                "test_days_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_DAYS,
-                "rejected_days": rejected_rows, "rejected_periods": rejected_rows, "rejected_periods": rejected_rows,
+                "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_DAYS,
+                "test_days_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_DAYS,
+                "rejected_days": rejected_rows, "rejected_periods": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
@@ -360,10 +360,10 @@ def evaluate(rows: list[dict]) -> dict:
                                   "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                                   "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
-                    "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "rejected_days": rejected_rows, "rejected_periods": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                    "telemetry_incomplete_days": telemetry_incomplete_days,
+                    "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                     "message": "Model nie przeszedł kontroli stabilności"}
         baseline_predictions.append(_predict(baseline, row))
         candidate_predictions.append(_predict(candidate, row))
@@ -386,7 +386,7 @@ def evaluate(rows: list[dict]) -> dict:
         return {"status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
-                              "days_needed": telemetry_minimum_days,
+                              "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
@@ -402,7 +402,7 @@ def evaluate(rows: list[dict]) -> dict:
     selected_names = candidate_names if accepted else baseline_names
     final_model = _fit(clean, selected_names)
     if final_model is None:
-        return {"status": "unstable", "days": total,
+        return {"status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
