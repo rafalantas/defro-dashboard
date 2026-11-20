@@ -79,7 +79,7 @@ The next implementation should introduce a dependency container/service boundary
 
 1. **Create an immutable runtime configuration object** from the existing module constants and environment parsing. Test defaults, invalid values, epoch timezone normalization and fixed HDD-base parsing. Do not change defaults.
 2. **Create an explicit cache-state container** that holds the existing dictionaries and locks. Initially pass the same cache objects to the existing providers; do not change TTLs or key formats.
-3. **Extract endpoint workflow services** in this order: stats, daily, summary. Each service receives providers/models/calculators as dependencies and returns the existing payload. Keep HTTP parsing and status mapping in the compatibility facade.
+3. **Extract endpoint workflow services**: stats (`fuel_stats_service.py`), daily (`fuel_daily_service.py`) and summary calculation (`fuel_summary_service.py`) now receive providers/models/calculators as explicit dependencies and return the existing payloads. Keep HTTP parsing, status mapping, summary cache and worker lifecycle in the compatibility facade until their own parity tests are in place.
 4. **Extract refill command service** with the existing validation/auth/void semantics and explicit invalidation callback.
 5. **Implement the new engine adapter** using these services. Initially run it in shadow mode against the legacy engine on identical normalized inputs.
 6. **Build a sanitized historical fixture** from real ThingSpeak history. Remove API keys, channel IDs, account metadata and any unrelated telemetry. Preserve timestamps, nulls, gaps, refill IDs/amounts, feeder epoch and source coverage because they affect the calculations.
@@ -111,3 +111,29 @@ This is intentionally a storage-only extraction:
 The module is packaged in the API image and covered by CI tests for legacy
 initial shapes, instance isolation and lock isolation. This creates a seam for
 the future engine object without changing current module-level callers.
+
+
+## Endpoint service extraction progress
+
+The stats endpoint orchestration now lives in `fuel_stats_service.py`; the
+daily endpoint orchestration lives in `fuel_daily_service.py`; and the
+deterministic summary calculation lives in `fuel_summary_service.py`.
+The `fuel.py` functions remain compatibility wrappers and pass the original
+provider functions, cache objects, constants and shared lock into these
+services.
+
+The daily service preserves the prefetch-before-lock boundary, the lock scope
+around refills/model/row generation, the house-model prediction and residual
+fields, telemetry aggregation and exact response keys. The summary service
+preserves both calculation lock sections, the separate counter/period lock
+callbacks, AI shadow-only failure isolation, all-history calibration versus
+recent display periods, estimate precedence, planning/forecast assembly and
+the final summary-cache update. Summary background-worker lifecycle,
+stale-while-refresh behavior, cold-start wait and cache TTL remain in
+`fuel.py` and are not yet extracted.
+
+New contract tests cover daily validation, payload/prediction behavior,
+prefetch failure propagation, summary payload/cache behavior, unavailable
+daily data and AI failure isolation. Docker and CI include both service modules.
+Historical ThingSpeak replay and old/new parity remain mandatory before any
+runtime cutover.
