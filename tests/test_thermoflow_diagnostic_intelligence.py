@@ -102,7 +102,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
     def test_hydraulic_diagnostics_report_pump_starts_and_stops(self):
         start = 1795161600
         raw = {
-            "thermoflow-valve4d-return": [[start, 56], [start + 60, 54], [start + 120, 55]],
+            "thermoflow-valve4d-return": [[start, 56], [start + 60, 54], [start + 120, 55], [start + 180, 56]],
             "thermoflow-pump-floor": [[start, 0], [start + 60, 1], [start + 120, 0]],
         }
         result = build_thermoflow_intelligence(raw)
