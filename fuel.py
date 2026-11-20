@@ -844,28 +844,20 @@ def _summary_build() -> dict:
 
 
 def _daily(query: dict) -> dict:
-    """Dobowe zużycie z licznika obok temperatury, słońca i wiatru oraz stan modelu dobowego."""
-    try:
-        days = max(1, min(int(query.get("days", ["60"])[0]), MAX_DAYS))
-    except ValueError:
-        raise FuelError(400, "days musi być liczbą") from None
-    _prefetch(days + 2)
-    with _lock:
-        refills = _refills()
-        model = _fit_model(refills)
-        rows, counter = _daily_rows(days)
-        daily_model = _fit_daily_model(rows)
-    for r in rows:
-        if model and r["t_mean"] is not None:
-            r["model_kg"] = round(_predict_kg_per_day(model, r["t_mean"]), 1)
-            if r["kg_counter"] is not None:
-                r["residual_kg"] = round(r["kg_counter"] - r["model_kg"], 1)
-    telemetry_state = build_telemetry_state(rows)
-    return {"model": model, "daily_model": daily_model, "counter_calibration": counter,
-            "telemetry": telemetry_state,
-            "weather_vars": {"solar_mj": "suma promieniowania krótkofalowego, MJ/m²",
-                             "wind_max_kmh": "maksymalna prędkość wiatru na 10 m, km/h"},
-            "days": rows}
+    """Compatibility wrapper for the extracted daily endpoint orchestration."""
+    from fuel_daily_service import build_daily
+    return build_daily(query, {
+        "max_days": MAX_DAYS,
+        "fuel_error": FuelError,
+        "prefetch": _prefetch,
+        "lock": _lock,
+        "refills": _refills,
+        "fit_model": _fit_model,
+        "daily_rows": _daily_rows,
+        "fit_daily_model": _fit_daily_model,
+        "predict_kg_per_day": _predict_kg_per_day,
+        "telemetry_state": build_telemetry_state,
+    })
 
 
 def _add_refill(data: dict) -> dict:
