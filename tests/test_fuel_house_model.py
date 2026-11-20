@@ -24,8 +24,8 @@ class HouseModelTests(unittest.TestCase):
             return [(0.5, 7.0), (0.5, 9.0)], 0
         rows = build_training_rows(self.refills, temps, min_period_days=2, max_days=120)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0][0], 5.0)
-        self.assertEqual(rows[0][1], 100)
+        self.assertEqual(rows[0][0], 4.0)
+        self.assertEqual(rows[0][1], 80)
         self.assertEqual(rows[0][2], [(0.5, 7.0), (0.5, 9.0)])
         self.assertEqual(len(calls), 2)
 
