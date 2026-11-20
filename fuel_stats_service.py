@@ -6,7 +6,7 @@ This keeps source precedence and runtime policy outside the HTTP orchestration.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import date, timedelta
 
 
 def build_stats(query: dict, deps: dict) -> dict:
@@ -49,7 +49,7 @@ def build_stats(query: dict, deps: dict) -> dict:
         if row.get("burner_kwh") is None:
             continue
         day_start = deps["day_bounds"](
-            __import__("datetime").date.fromisoformat(row["day"])
+            date.fromisoformat(row["day"])
         )[0]
         estimate = (
             row["burner_kwh"]
