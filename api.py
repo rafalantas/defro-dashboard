@@ -631,6 +631,62 @@ def _history_query_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=thermoflow_timezone()) if parsed.tzinfo is None else parsed
 
 
+def _read_thermoflow_fire_history(start: datetime, end: datetime, local_tz) -> dict[str, list]:
+    """Fetch the dedicated FIRE channel for ThermoFlow diagnostics.
+
+    FIRE is intentionally optional: its outage must not break the primary
+    temperature/valve history or any existing fuel audit endpoint.
+    """
+    channel_id = os.getenv("THINGSPEAK_FIRE_CHANNEL_ID", "").strip()
+    read_key = os.getenv("THINGSPEAK_FIRE_READ_KEY", "").strip()
+    if not channel_id:
+        return {}
+    params = {
+        "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+        "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+        "timezone": "Europe/Warsaw",
+        "results": 8000,
+    }
+    if read_key:
+        params["api_key"] = read_key
+    request = Request(
+        f"https://api.thingspeak.com/channels/{channel_id}/feeds.json?{urlencode(params)}",
+        headers={"Accept": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
+    except Exception:
+        # Optional FIRE telemetry must never make the core history unavailable.
+        return {}
+    fire_points, brightness_points = [], []
+    for feed in feeds:
+        raw_timestamp = feed.get("created_at")
+        if not raw_timestamp:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(
+                str(raw_timestamp).replace("Z", "+00:00")
+            ).astimezone(local_tz)
+        except ValueError:
+            continue
+        if timestamp < start or timestamp > end:
+            continue
+        unix_ts = int(timestamp.timestamp())
+        detected = _number(feed.get("field1"))
+        brightness = _number(feed.get("field2"))
+        if detected is not None:
+            fire_points.append([unix_ts, detected])
+        if brightness is not None:
+            brightness_points.append([unix_ts, brightness])
+    result = {}
+    if fire_points:
+        result["thermoflow-fire"] = sorted(fire_points)
+    if brightness_points:
+        result["thermoflow-fire-brightness"] = sorted(brightness_points)
+    return result
+
+
 def _read_history(hours: int, requested_series: set[str] | None = None, requested_start: datetime | None = None, requested_end: datetime | None = None, step: int = 0, output_format: str = "compact", with_analysis: bool = True, minimum_opening: float | None = None) -> dict:
     """Return recent ThingSpeak samples as compact [unix_seconds, value] pairs."""
     channel_ids = _thingspeak_settings("THINGSPEAK_CHANNEL_IDS")
@@ -781,6 +837,10 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
         result["analysis"] = {"error": "Analiza wymaga pełnego zestawu serii; pomiń parametr series albo ustaw analysis=0"}
     elif with_analysis:
         try:
+            # FIRE is stored in its own ThingSpeak channel, outside the two
+            # compact history channels. Join it into the same timestamp series
+            # before ThermoFlow runs; never make its availability a dependency.
+            raw_by_id.update(_read_thermoflow_fire_history(start, end, local_tz))
             result["analysis"] = _history_analysis(raw_by_id, minimum_opening)
             try:
                 from thermoflow_diagnostic_intelligence import build_thermoflow_intelligence

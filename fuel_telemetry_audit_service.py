@@ -87,7 +87,13 @@ def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
     for channel_index, channel_id in enumerate(channel_ids):
         if not channel_id:
             continue
-        errors = channel_errors.get(channel_index, [])
+        # Parallel requests may fail in completion order; expose errors in
+        # deterministic chronological order, matching the feed aggregation.
+        errors = sorted(
+            channel_errors.get(channel_index, []),
+            key=lambda item: item["day_offset"],
+            reverse=True,
+        )
         if not errors:
             status = "ok"
         elif len(errors) >= days + 1:

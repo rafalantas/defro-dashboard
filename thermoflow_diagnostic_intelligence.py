@@ -1,5 +1,6 @@
 """Read-only seven-stage ThermoFlow diagnostic pipeline (stdlib only)."""
 from datetime import datetime, timezone
+from math import sqrt, isfinite
 from statistics import median
 
 VERSION = "1.0.0"
@@ -23,16 +24,40 @@ def _points(raw, key):
 
 
 def _quality(raw):
+    """Audit raw series before sorting; never hide malformed or duplicate samples."""
     output = {}
     for key in sorted(raw):
-        points = _points(raw, key)
+        source = raw.get(key, []) or []
+        valid = []
+        malformed = duplicate_timestamps = out_of_order = 0
+        seen = set()
+        previous_ts = None
+        for point in source:
+            try:
+                ts, value = int(point[0]), float(point[1])
+                if ts <= 0 or not isfinite(value):
+                    raise ValueError("invalid sample")
+            except (TypeError, ValueError, IndexError, OverflowError):
+                malformed += 1
+                continue
+            if ts in seen:
+                duplicate_timestamps += 1
+            if previous_ts is not None and ts < previous_ts:
+                out_of_order += 1
+            seen.add(ts)
+            previous_ts = ts
+            valid.append((ts, value))
+        points = sorted(valid)
         gaps = [b[0] - a[0] for a, b in zip(points, points[1:])]
         output[key] = {
-            "samples": len(points),
+            "samples": len(points), "raw_samples": len(source),
+            "malformed_samples": malformed, "duplicate_timestamps": duplicate_timestamps,
+            "out_of_order_samples": out_of_order,
             "first": datetime.fromtimestamp(points[0][0], timezone.utc).isoformat() if points else None,
             "last": datetime.fromtimestamp(points[-1][0], timezone.utc).isoformat() if points else None,
             "gaps_over_5m": sum(gap > MAX_GAP_SECONDS for gap in gaps),
             "max_gap_seconds": max(gaps) if gaps else None,
+            "coverage_status": "review" if malformed or duplicate_timestamps or out_of_order or any(g > MAX_GAP_SECONDS for g in gaps) else ("available" if points else "empty"),
         }
     return output
 
@@ -82,8 +107,26 @@ def _combustion(raw):
         previous = ts
     if current:
         episodes.append(current)
+    fire = _points(raw, "thermoflow-fire")
+    fire_by_episode = []
+    for episode in episodes[-100:]:
+        start_ts, end_ts = episode[0][0], episode[-1][0]
+        nearby = [(ts, value) for ts, value in fire if start_ts - 300 <= ts <= end_ts + 300]
+        nearest = min(nearby, key=lambda item: abs(item[0] - start_ts)) if nearby else None
+        fire_by_episode.append({
+            "flue_start": datetime.fromtimestamp(start_ts, timezone.utc).isoformat(),
+            "fire_samples_within_5m": len(nearby),
+            "nearest_fire_sample": ({
+                "at": datetime.fromtimestamp(nearest[0], timezone.utc).isoformat(),
+                "value": nearest[1],
+            } if nearest else None),
+            "interpretation": "timestamp_overlap_only; FIRE value semantics are not inferred",
+        })
     return {
         "flue_samples": len(flue), "power_samples": len(power),
+        "fire_samples": len(fire),
+        "fire_join_status": "available" if fire else "not_provided",
+        "fire_flue_time_correlations": fire_by_episode,
         "elevated_flue_episodes": [{
             "start": datetime.fromtimestamp(ep[0][0], timezone.utc).isoformat(),
             "end": datetime.fromtimestamp(ep[-1][0], timezone.utc).isoformat(),
@@ -118,23 +161,32 @@ def _ml(complete):
     center = median(values)
     mad = median([abs(v - center) for v in values])
     scale = max(1.0, mad * 1.4826)
-    anomalies = []
+    errors, anomalies = [], []
     for cycle in holdout:
-        value = float(cycle["cold_gap_minutes"])
-        score = abs(value - center) / scale
+        actual = float(cycle["cold_gap_minutes"])
+        error = center - actual
+        errors.append(error)
+        score = abs(actual - center) / scale
         if score >= 3.5:
             anomalies.append({"protection_start": cycle.get("protection_start"),
-                              "cold_gap_minutes": value, "robust_deviation": round(score, 2),
+                              "cold_gap_minutes": actual, "robust_deviation": round(score, 2),
                               "severity": "review"})
-    return {"status": "shadow_validated", "method": "robust_median_mad",
+    mae = sum(abs(error) for error in errors) / len(errors)
+    rmse = sqrt(sum(error * error for error in errors) / len(errors))
+    bias = sum(errors) / len(errors)
+    return {"status": "evaluated", "method": "robust_median_mad",
             "training_cycles": len(train), "holdout_cycles": len(holdout),
             "baseline_cold_gap_minutes": {"median": round(center, 2), "mad": round(mad, 2)},
+            "holdout_metrics": {"mae_minutes": round(mae, 3), "rmse_minutes": round(rmse, 3),
+                                "bias_minutes": round(bias, 3), "observations": len(errors),
+                                "prediction": "training_median_baseline"},
             "holdout_anomalies": anomalies, "promotion": "disabled_shadow_only",
-            "validation": "chronological_last_5_cycles_holdout"}
+            "validation": "chronological_last_5_cycles_holdout",
+            "note": "Metryki opisują naiwną prognozę medianą treningową; nie dowodzą gotowości modelu produkcyjnego."}
 
 
 def _prediction(complete, ml):
-    if ml.get("status") != "shadow_validated":
+    if ml.get("status") != "evaluated":
         return {"status": "unavailable",
                 "reason": "Wymagane co najmniej 20 cykli treningowych i 5 chronologicznych cykli testowych."}
     values = [float(c["cold_gap_minutes"]) for c in complete[:-HOLDOUT_CYCLES]]
@@ -166,9 +218,23 @@ def build_thermoflow_intelligence(raw, base_analysis=None, now=None):
         explanations.append({"code": "incomplete_4d_cycles", "severity": "info",
                              "count": cycles["incomplete"],
                              "message": "Część cykli 4D nie ma zarejestrowanego końca."})
+    if combustion["elevated_flue_episodes"]:
+        explanations.append({"code": "elevated_flue_activity", "severity": "info",
+                             "count": len(combustion["elevated_flue_episodes"]),
+                             "message": "Wykryto epizody podwyższonej temperatury spalin; nie są one samodzielnym potwierdzeniem rozpalenia."})
+    if ml.get("holdout_metrics"):
+        explanations.append({"code": "ml_holdout_evaluated", "severity": "info",
+                             "metrics": ml["holdout_metrics"],
+                             "message": "Baseline medianowy został oceniony na chronologicznym holdoucie; wynik nie oznacza walidacji modelu produkcyjnego."})
+    quality_issues = sum(item.get("malformed_samples", 0) + item.get("duplicate_timestamps", 0)
+                         + item.get("out_of_order_samples", 0) for item in quality.values())
+    if quality_issues:
+        explanations.append({"code": "telemetry_integrity_issues", "severity": "warning",
+                             "count": quality_issues,
+                             "message": "W surowych szeregach wykryto próbki niepoprawne, zduplikowane lub poza kolejnością."})
     ai = {"status": "evidence_available" if explanations else "no_findings",
           "explanations": explanations,
-          "confidence": "limited" if ml["status"] != "shadow_validated" else "moderate",
+          "confidence": "limited" if ml["status"] != "evaluated" else "moderate",
           "note": "Wyjaśnienia wynikają z jawnych reguł i dowodów; brak dowodu nie oznacza braku problemu."}
     return {"version": VERSION, "mode": "read_only", "diagnostic_core": core,
             "cycle_analyzer": cycles, "hydraulic_diagnostics": hydraulics,
