@@ -395,7 +395,7 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                "telemetry_incomplete_days": telemetry_incomplete_days,
+                "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
     gain = ((baseline_score["mae_kg_day"] - candidate_score["mae_kg_day"])
             / baseline_score["mae_kg_day"] if baseline_score["mae_kg_day"] else 0.0)
@@ -489,6 +489,7 @@ def evaluate(rows: list[dict]) -> dict:
                 telemetry_result = {
                     "status": "shadow_ready", "mode": "shadow_only",
                     "complete_days": telemetry_days, "complete_periods": telemetry_periods, "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                    "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                     "training_days": telemetry_train_count, "training_periods": telemetry_train_count,
                     "holdout_days": telemetry_test_count, "holdout_periods": telemetry_test_count,
                     "holdout_from": telemetry_test[0].get("day"),
