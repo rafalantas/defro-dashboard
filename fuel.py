@@ -847,39 +847,20 @@ def _telemetry_history(days: int) -> dict:
 
 
 def _telemetry_audit(query: dict) -> dict:
-    """Pobiera surową telemetrię dwóch kanałów i zwraca audyt jakości oraz cechy dobowe."""
-    try:
-        days = max(1, min(int(query.get("days", ["7"])[0]), 14))
-    except (TypeError, ValueError):
-        raise FuelError(400, "days musi być liczbą") from None
-    channel_ids = [TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE]
-    read_keys = [TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE]
-    if not all(channel_ids):
-        raise FuelError(503, "Audyt wymaga dwóch kanałów THINGSPEAK_CHANNEL_IDS")
-    feeds_by_channel = [[], []]
-    today = datetime.now(TZ).date()
-    # Pobieramy osobno każdą dobę: przy próbkowaniu ~40 s mieści się ona
-    # bezpiecznie w limicie 8000 rekordów ThingSpeak, bez obcinania historii.
-    for channel_index, channel_id in enumerate(channel_ids):
-        for offset in range(days, -1, -1):
-            day = today - timedelta(days=offset)
-            start = datetime.combine(day, datetime.min.time(), tzinfo=TZ)
-            end = start + timedelta(days=1)
-            params = {
-                "start": start.strftime("%Y-%m-%d %H:%M:%S"),
-                "end": end.strftime("%Y-%m-%d %H:%M:%S"),
-                "timezone": "Europe/Warsaw",
-                "results": 8000,
-            }
-            if read_keys[channel_index]:
-                params["api_key"] = read_keys[channel_index]
-            payload = _request_json(
-                f"{TS_API}/channels/{channel_id}/feeds.json", params=params, timeout=12
-            )
-            feeds_by_channel[channel_index].extend(payload.get("feeds", []))
-    result = fuel_telemetry.analyze(feeds_by_channel, channel_ids, days)
-    result["fetched_at"] = datetime.now(timezone.utc).isoformat()
-    return result
+    """Compatibility wrapper for the uncached per-day telemetry audit service."""
+    from fuel_telemetry_audit_service import build_audit
+    return build_audit(
+        query,
+        max_days=MAX_DAYS,
+        channel_ids=[TS_CHANNEL_TEMPS, TS_CHANNEL_VALVE],
+        read_keys=[TS_READ_KEY_TEMPS, TS_READ_KEY_VALVE],
+        today=datetime.now(TZ).date(),
+        tz=TZ,
+        endpoint=TS_API,
+        request_json=_request_json,
+        analyze=fuel_telemetry.analyze,
+        fuel_error=FuelError,
+    )
 
 
 def handle(method: str, path: str, query: dict, headers, body: bytes):
