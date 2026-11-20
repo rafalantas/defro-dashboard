@@ -31,16 +31,23 @@ def build_summary(deps: dict) -> dict:
             daily_model = deps["fit_daily_model"](daily_rows)
     except deps["fuel_error"]:
         daily_rows, daily_model = [], None
-        ai_shadow = {"status": "unavailable", "message": "Brak danych do analizy"}
-    else:
-        try:
-            ai_shadow = deps["ai_evaluate"](daily_rows)
-        except Exception:
-            # Experimental AI must never interrupt or alter production calculations.
-            ai_shadow = {
-                "status": "unavailable",
-                "message": "Model eksperymentalny chwilowo niedostępny",
-            }
+
+    try:
+        # AI target comes from actual refill events and exact elapsed periods.
+        # Daily counter coverage is deliberately not a prerequisite.
+        ai_rows, ai_data = deps["refill_ai_rows"](refills)
+        ai_shadow = deps["ai_evaluate"](ai_rows)
+        ai_shadow["data_source"] = ai_data
+    except Exception:
+        # Experimental AI must never interrupt or alter production calculations.
+        ai_shadow = {
+            "status": "unavailable",
+            "message": "Model eksperymentalny chwilowo niedostępny",
+            "data_source": {
+                "source": "refill_periods",
+                "daily_refills_required": False,
+            },
+        }
 
     def estimate_burner_kg(kwh: float, moment):
         return (
