@@ -427,6 +427,8 @@ def evaluate(rows: list[dict]) -> dict:
                               "message": "Za mało kompletnych okresów z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_PERIODS,
                 "test_days_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_PERIODS,
+                "required_periods": MIN_TRAIN_PERIODS + MIN_TEST_PERIODS,
+                "available_periods": total,
                 "rejected_days": rejected_rows, "rejected_periods": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
@@ -437,7 +439,7 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_by_reason": rejected_by_reason,
                         "telemetry_incomplete_days": telemetry_incomplete_days,
         "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
-                "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
+                "message": "Za mało kompletnych okresów dosypka–dosypka do uczciwego testu"}
 
     train, test = clean[:train_count], clean[train_count:]
     baseline_names = ["hdd_lag"]
