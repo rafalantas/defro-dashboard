@@ -10,9 +10,13 @@ from datetime import date
 from math import isfinite, sqrt
 from statistics import median
 
-MIN_TRAIN_DAYS = 45
-MIN_TEST_DAYS = 7
-MAX_TEST_DAYS = 14
+MIN_TRAIN_PERIODS = 45
+MIN_TEST_PERIODS = 7
+MAX_TEST_PERIODS = 14
+# Backward-compatible aliases for clients/tests that still use the old names.
+MIN_TRAIN_DAYS = MIN_TRAIN_PERIODS
+MIN_TEST_DAYS = MIN_TEST_PERIODS
+MAX_TEST_DAYS = MAX_TEST_PERIODS
 TELEMETRY_MIN_TRAIN_PERIODS = 20
 TELEMETRY_MIN_TEST_PERIODS = 5
 # Backward-compatible constant aliases; values now count refill-period samples.
