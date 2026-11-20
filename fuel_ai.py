@@ -117,6 +117,30 @@ def _valid_telemetry_row(row: dict, names: list[str]) -> bool:
             return False
     return True
 
+
+def _select_telemetry_features(rows: list[dict], names: list[str], minimum_periods: int):
+    """Choose the broadest feature set with enough fully observed periods.
+
+    Selection uses telemetry availability only, never target values. Missing
+    values are not imputed; each selected feature is valid in every retained
+    period.
+    """
+    coverage = {
+        name: sum(_valid_telemetry_row(row, [name]) for row in rows)
+        for name in names
+    }
+    ordered = sorted(names, key=lambda name: (-coverage[name], names.index(name)))
+    selected = []
+    eligible = list(rows)
+    for name in ordered:
+        candidate = [row for row in eligible
+                     if _valid_telemetry_row(row, selected + [name])]
+        if len(candidate) >= minimum_periods:
+            selected.append(name)
+            eligible = candidate
+    return selected, eligible, coverage
+
+
 def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None) -> dict:
     """Explain model eligibility without pretending aggregated features are raw samples."""
     day = row.get("day")
@@ -397,9 +421,12 @@ def evaluate(rows: list[dict]) -> dict:
         "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
         "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
     ]
-    telemetry_clean = [
-        row for row in clean if _valid_telemetry_row(row, telemetry_names)
-    ]
+    telemetry_selected_features, telemetry_clean, telemetry_feature_coverage = (
+        _select_telemetry_features(
+            clean, telemetry_names,
+            TELEMETRY_MIN_TRAIN_PERIODS + TELEMETRY_MIN_TEST_PERIODS,
+        )
+    )
     period_diagnostics.extend(
         _period_diagnostic(row, "complete" if row in telemetry_clean else "incomplete",
                            telemetry_names=telemetry_names)
@@ -531,13 +558,15 @@ def evaluate(rows: list[dict]) -> dict:
 
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                         "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                        "selected_features": telemetry_selected_features,
+                        "feature_coverage_periods": telemetry_feature_coverage,
                         "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                         "training_days_needed": TELEMETRY_MIN_TRAIN_PERIODS, "training_periods_needed": TELEMETRY_MIN_TRAIN_PERIODS,
                         "holdout_days_needed": TELEMETRY_MIN_TEST_PERIODS, "holdout_periods_needed": TELEMETRY_MIN_TEST_PERIODS,
                         "message": "Model telemetrii czeka na 20 kompletnych okresów treningowych i 5 testowych"}
     if telemetry_train_count >= TELEMETRY_MIN_TRAIN_PERIODS and telemetry_test_count >= TELEMETRY_MIN_TEST_PERIODS:
         telemetry_baseline_names = ["hdd_lag", "solar_mj", "wind_hdd_lag"]
-        telemetry_candidate_names = telemetry_baseline_names + telemetry_names
+        telemetry_candidate_names = telemetry_baseline_names + telemetry_selected_features
         telemetry_test = telemetry_clean[telemetry_train_count:]
         telemetry_actual = [float(row["kg_counter"]) for row in telemetry_test]
         base_predictions, extended_predictions = [], []
@@ -572,15 +601,21 @@ def evaluate(rows: list[dict]) -> dict:
                 telemetry_ablation_specs = {
                     "weather_only": telemetry_baseline_names,
                     "weather_plus_temperatures": telemetry_baseline_names + [
-                        "telemetry_co_c", "telemetry_dhw_c",
-                        "telemetry_floor_c", "telemetry_return_c",
+                        name for name in (
+                            "telemetry_co_c", "telemetry_dhw_c",
+                            "telemetry_floor_c", "telemetry_return_c",
+                        ) if name in telemetry_selected_features
                     ],
                     "weather_plus_boiler_and_valve": telemetry_baseline_names + [
-                        "telemetry_boiler_power_kw", "telemetry_valve_opening_pct",
+                        name for name in (
+                            "telemetry_boiler_power_kw", "telemetry_valve_opening_pct",
+                        ) if name in telemetry_selected_features
                     ],
                     "weather_plus_pumps": telemetry_baseline_names + [
-                        "telemetry_pump_floor_h", "telemetry_pump_dhw_h",
-                        "telemetry_pump_circulation_h",
+                        name for name in (
+                            "telemetry_pump_floor_h", "telemetry_pump_dhw_h",
+                            "telemetry_pump_circulation_h",
+                        ) if name in telemetry_selected_features
                     ],
                     "weather_plus_all_telemetry": telemetry_candidate_names,
                 }
