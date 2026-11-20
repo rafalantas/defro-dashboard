@@ -7,6 +7,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         result = build_thermoflow_intelligence({}, {})
         self.assertEqual(result["diagnostic_core"]["status"], "collecting")
         self.assertEqual(result["ml_baseline"]["status"], "collecting")
+        self.assertEqual(result["burner_ml_baseline"]["status"], "collecting")
         self.assertEqual(result["predictive_diagnostics"]["status"], "unavailable")
         self.assertIn("no control", result["safety"])
 
@@ -69,6 +70,66 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(result["ml_baseline"]["status"], "collecting")
         self.assertEqual(result["ml_baseline"]["training_cycles"], 0)
 
+    def test_fire_diagnostics_validate_binary_state_and_keep_brightness_separate(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-fire": [[start, 0], [start + 60, 1], [start + 120, 1], [start + 180, 2]],
+            "thermoflow-fire-brightness": [[start, 0], [start + 60, 42], [start + 120, 51]],
+        }
+        result = build_thermoflow_intelligence(raw)
+        fire = result["fire_diagnostics"]
+        self.assertEqual(fire["flame_state"]["valid_binary_samples"], 3)
+        self.assertEqual(fire["flame_state"]["invalid_samples"], 1)
+        self.assertEqual(fire["brightness"]["max"], 51)
+        self.assertEqual(fire["quality"]["status"], "review")
+
+    def test_burner_cycles_use_debounced_fire_and_cross_check_other_series(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-fire": [[start, 0], [start + 60, 1], [start + 120, 1],
+                                [start + 600, 0], [start + 660, 0]],
+            "thermoflow-flue": [[start + 120, 80]],
+            "thermoflow-boiler-power": [[start + 120, 15]],
+        }
+        result = build_thermoflow_intelligence(raw)
+        burner = result["burner_cycle_analyzer"]
+        self.assertEqual(burner["complete"], 1)
+        self.assertEqual(burner["cycles"][0]["status"], "confirmed_by_fire_state")
+        self.assertEqual(burner["cycles"][0]["duration_minutes"], 9.0)
+        self.assertEqual(result["cycle_analyzer"]["source"],
+                         "existing_timestamped_4d_protection_cycle_analysis")
+
+    def test_hydraulic_diagnostics_report_pump_starts_and_stops(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start, 56], [start + 60, 54], [start + 120, 55], [start + 180, 56]],
+            "thermoflow-pump-floor": [[start, 0], [start + 60, 1], [start + 120, 0]],
+        }
+        result = build_thermoflow_intelligence(raw)
+        pump = result["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["starts"], 1)
+        self.assertEqual(pump["stops"], 1)
+        self.assertEqual(pump["paired_events"], 2)
+
+    def test_burner_baseline_uses_chronological_burner_cycles(self):
+        start = 1795161600
+        fire = []
+        for index in range(25):
+            base = start + index * 3600
+            fire.extend([[base, 1], [base + 60, 1], [base + 600, 0], [base + 660, 0]])
+        result = build_thermoflow_intelligence({"thermoflow-fire": fire})
+        model = result["burner_ml_baseline"]
+        self.assertEqual(model["status"], "evaluated")
+        self.assertEqual(model["training_cycles"], 20)
+        self.assertEqual(model["holdout_cycles"], 5)
+        self.assertEqual(model["validation"], "chronological_last_5_burner_cycles_holdout")
+
+    def test_ai_exposes_evidence_and_is_explicitly_rule_based(self):
+        result = build_thermoflow_intelligence({"thermoflow-fire": [[1795161600, 1]]})
+        self.assertIn("evidence", result["thermoflow_ai"])
+        self.assertIn("nie LLM", result["thermoflow_ai"]["note"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
