@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
+TELEMETRY_FEATURE_MIN_COVERAGE = 0.90
+
 TELEMETRY_FEATURES = (
     "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
     "telemetry_return_c", "telemetry_boiler_power_kw",
@@ -51,8 +53,7 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             continue
         totals = {"hdd_lag": 0.0, "solar_mj": 0.0, "wind_hdd_lag": 0.0}
         telemetry_totals = {name: 0.0 for name in TELEMETRY_FEATURES}
-        telemetry_complete = True
-        telemetry_missing_features = set()
+        telemetry_covered = {name: 0.0 for name in TELEMETRY_FEATURES}
         covered = 0.0
         valid = True
         for item in slices:
@@ -76,15 +77,15 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             for name in TELEMETRY_FEATURES:
                 value = item.get(name)
                 if value is None:
-                    telemetry_complete = False
-                    telemetry_missing_features.add(name)
-                else:
-                    try:
-                        numeric_value = float(value)
-                        telemetry_totals[name] += numeric_value * fraction
-                    except (TypeError, ValueError, OverflowError):
-                        telemetry_complete = False
-                        telemetry_missing_features.add(name)
+                    continue
+                try:
+                    numeric_value = float(value)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if not (numeric_value == numeric_value and abs(numeric_value) != float("inf")):
+                    continue
+                telemetry_totals[name] += numeric_value * fraction
+                telemetry_covered[name] += fraction
         if not valid or covered < elapsed_days - (2.0 / 86400.0):
             rejected["missing_features"] += 1
             continue
@@ -113,14 +114,20 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             "consumed_kg": round(consumed_kg, 3),
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "telemetry_complete": telemetry_complete,
-            "telemetry_missing_features": sorted(telemetry_missing_features),
+            "telemetry_feature_coverage": {
+                name: round(min(1.0, coverage / elapsed_days), 4)
+                for name, coverage in telemetry_covered.items()
+            },
         }
-        if telemetry_complete:
-            row.update({
-                name: value / elapsed_days
-                for name, value in telemetry_totals.items()
-            })
+        telemetry_missing_features = []
+        for name in TELEMETRY_FEATURES:
+            coverage = telemetry_covered[name] / elapsed_days
+            if coverage >= TELEMETRY_FEATURE_MIN_COVERAGE:
+                row[name] = telemetry_totals[name] / telemetry_covered[name]
+            else:
+                telemetry_missing_features.append(name)
+        row["telemetry_missing_features"] = telemetry_missing_features
+        row["telemetry_complete"] = not telemetry_missing_features
         rows.append(row)
     return rows, {
         "source": "refill_periods",

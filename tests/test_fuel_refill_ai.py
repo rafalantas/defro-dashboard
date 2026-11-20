@@ -62,6 +62,48 @@ class RefillPeriodAiTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["telemetry_return_c"], 52)
         self.assertAlmostEqual(rows[0]["telemetry_pump_floor_h"], 12)
 
+    def test_partial_telemetry_keeps_independently_covered_features(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        refills = [
+            {"ts": datetime(2026, 1, 1, 8, tzinfo=tz).isoformat(), "kg": 30},
+            {"ts": datetime(2026, 1, 3, 8, tzinfo=tz).isoformat(), "kg": 24},
+        ]
+
+        def features(start, end):
+            base = {"fraction": 1.0, "hdd_lag": 8, "solar_mj": 2,
+                    "wind_max_kmh": 10}
+            first = dict(base, telemetry_return_c=50, telemetry_pump_floor_h=10)
+            second = dict(base, telemetry_return_c=None, telemetry_pump_floor_h=14)
+            return [first, second]
+
+        rows, _ = build_refill_period_rows(refills, features, max_days=120)
+        row = rows[0]
+        self.assertAlmostEqual(row["telemetry_pump_floor_h"], 12)
+        self.assertNotIn("telemetry_return_c", row)
+        self.assertAlmostEqual(row["telemetry_feature_coverage"]["telemetry_return_c"], 0.5)
+        self.assertAlmostEqual(row["telemetry_feature_coverage"]["telemetry_pump_floor_h"], 1.0)
+        self.assertIn("telemetry_return_c", row["telemetry_missing_features"])
+        self.assertNotIn("telemetry_pump_floor_h", row["telemetry_missing_features"])
+        self.assertFalse(row["telemetry_complete"])
+
+    def test_telemetry_feature_with_at_least_90_percent_coverage_is_retained(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        refills = [
+            {"ts": datetime(2026, 1, 1, 8, tzinfo=tz).isoformat(), "kg": 30},
+            {"ts": datetime(2026, 1, 2, 8, tzinfo=tz).isoformat(), "kg": 12},
+        ]
+        def features(start, end):
+            common = {"hdd_lag": 8, "solar_mj": 2, "wind_max_kmh": 10,
+                      "telemetry_pump_floor_h": 10}
+            return [
+                dict(common, fraction=0.9, telemetry_return_c=55),
+                dict(common, fraction=0.1, telemetry_return_c=None),
+            ]
+        rows, _ = build_refill_period_rows(refills, features, max_days=120)
+        self.assertAlmostEqual(rows[0]["telemetry_return_c"], 55)
+        self.assertAlmostEqual(rows[0]["telemetry_feature_coverage"]["telemetry_return_c"], 0.9)
+        self.assertTrue(rows[0]["telemetry_complete"])
+
     def test_missing_weather_rejects_period_without_imputation(self):
         tz = ZoneInfo("Europe/Warsaw")
         refills = [
