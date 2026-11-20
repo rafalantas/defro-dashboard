@@ -52,6 +52,7 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
         totals = {"hdd_lag": 0.0, "solar_mj": 0.0, "wind_hdd_lag": 0.0}
         telemetry_totals = {name: 0.0 for name in TELEMETRY_FEATURES}
         telemetry_complete = True
+        telemetry_missing_features = set()
         covered = 0.0
         valid = True
         for item in slices:
@@ -76,11 +77,14 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
                 value = item.get(name)
                 if value is None:
                     telemetry_complete = False
+                    telemetry_missing_features.add(name)
                 else:
                     try:
-                        telemetry_totals[name] += float(value) * fraction
+                        numeric_value = float(value)
+                        telemetry_totals[name] += numeric_value * fraction
                     except (TypeError, ValueError, OverflowError):
                         telemetry_complete = False
+                        telemetry_missing_features.add(name)
         if not valid or covered < elapsed_days - (2.0 / 86400.0):
             rejected["missing_features"] += 1
             continue
@@ -109,6 +113,8 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             "consumed_kg": round(consumed_kg, 3),
             "start": start.isoformat(),
             "end": end.isoformat(),
+            "telemetry_complete": telemetry_complete,
+            "telemetry_missing_features": sorted(telemetry_missing_features),
         }
         if telemetry_complete:
             row.update({

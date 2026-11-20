@@ -378,6 +378,23 @@ def evaluate(rows: list[dict]) -> dict:
 
     baseline_score = _metrics(actual, baseline_predictions)
     candidate_score = _metrics(actual, candidate_predictions)
+    period_comparisons = []
+    for row, actual_rate, baseline_rate, candidate_rate in zip(
+            test, actual, baseline_predictions, candidate_predictions):
+        duration = _number(row.get("period_days"))
+        period_comparisons.append({
+            "period_start": row.get("start"),
+            "period_end": row.get("end"),
+            "period_days": duration,
+            "actual_kg_day": round(actual_rate, 3),
+            "baseline_predicted_kg_day": round(baseline_rate, 3),
+            "candidate_predicted_kg_day": round(candidate_rate, 3),
+            "baseline_error_kg_day": round(baseline_rate - actual_rate, 3),
+            "candidate_error_kg_day": round(candidate_rate - actual_rate, 3),
+            "actual_period_kg": round(actual_rate * duration, 2) if duration else None,
+            "baseline_predicted_period_kg": round(baseline_rate * duration, 2) if duration else None,
+            "candidate_predicted_period_kg": round(candidate_rate * duration, 2) if duration else None,
+        })
     fixed_baseline_score = _fixed_holdout_metrics(train, test, baseline_names)
     fixed_candidate_score = _fixed_holdout_metrics(train, test, candidate_names)
     ablation_specs = {
@@ -505,6 +522,21 @@ def evaluate(rows: list[dict]) -> dict:
                         "walk_forward": {"baseline": base_score, "candidate": extended_score},
                         "fixed_holdout": {"baseline": telemetry_fixed_base,
                                           "candidate": telemetry_fixed_extended},
+                        "periods": [
+                            {
+                                "period_start": row.get("start"),
+                                "period_end": row.get("end"),
+                                "period_days": _number(row.get("period_days")),
+                                "actual_kg_day": round(actual_rate, 3),
+                                "baseline_predicted_kg_day": round(base_rate, 3),
+                                "candidate_predicted_kg_day": round(extended_rate, 3),
+                                "baseline_error_kg_day": round(base_rate - actual_rate, 3),
+                                "candidate_error_kg_day": round(extended_rate - actual_rate, 3),
+                            }
+                            for row, actual_rate, base_rate, extended_rate in zip(
+                                telemetry_test, telemetry_actual, base_predictions, extended_predictions
+                            )
+                        ],
                     },
                     "mae_gain_percent": round(telemetry_gain * 100, 1),
                     "fixed_holdout_mae_gain_percent": round(telemetry_fixed_gain * 100, 1),
@@ -552,6 +584,7 @@ def evaluate(rows: list[dict]) -> dict:
             "protocol": "walk_forward_expanding_window",
             "independence_note": "walk-forward and fixed holdout score the same terminal dates; metrics are complementary, not independent evidence",
             "walk_forward": {"baseline": baseline_score, "candidate": candidate_score},
+            "periods": period_comparisons,
             "fixed_holdout": {
                 "training_from": train[0].get("day"),
                 "training_to": train[-1].get("day"),

@@ -38,6 +38,16 @@ def build_summary(deps: dict) -> dict:
         ai_rows, ai_data = deps["refill_ai_rows"](refills)
         ai_shadow = deps["ai_evaluate"](ai_rows)
         ai_shadow["data_source"] = ai_data
+        try:
+            from fuel_thermoflow_diagnostics import build_diagnostics
+            ai_shadow["diagnostics"] = build_diagnostics(ai_rows, ai_shadow)
+        except Exception as diagnostic_error:
+            # Diagnostics are optional and must never interrupt production estimates.
+            ai_shadow["diagnostics"] = {
+                "status": "unavailable",
+                "error": type(diagnostic_error).__name__,
+                "mode": "shadow_only",
+            }
     except Exception:
         # Experimental AI must never interrupt or alter production calculations.
         ai_shadow = {
