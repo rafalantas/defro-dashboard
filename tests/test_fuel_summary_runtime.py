@@ -76,6 +76,9 @@ class SummaryRuntimeTests(unittest.TestCase):
 
     def test_kick_reuses_live_thread_and_creates_daemon_worker(self):
         deps, _, threads = self.deps()
+        deps["thread_factory"] = lambda **kwargs: (
+            threads.append(FakeThread(**kwargs, run_on_start=False, alive_after_start=True)) or threads[-1]
+        )
         first = summary_kick(deps)
         second = summary_kick(deps)
         self.assertIs(first, second)
@@ -93,7 +96,7 @@ class SummaryRuntimeTests(unittest.TestCase):
         self.assertEqual(threads, [])
 
     def test_stale_cache_is_returned_while_refresh_starts(self):
-        deps, calls, threads = self.deps()
+        deps, calls, threads = self.deps(monotonic=lambda: 100.0)
         deps["cache"].update(at=0.0, data={"stale": True})
         self.assertEqual(get_summary(deps), {"stale": True})
         self.assertEqual(len(threads), 1)
