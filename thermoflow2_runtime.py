@@ -345,23 +345,23 @@ def _counter_day_diagnostic(day: date, counter: dict):
         previous = _counter_points(day - timedelta(days=1))
         samples = _counter_sample_points(day)
         previous_samples = _counter_sample_points(day - timedelta(days=1))
+        next_samples = _counter_sample_points(day + timedelta(days=1))
     except FuelError:
         return finish("thingspeak_fetch_error")
 
-    combined = sorted(previous_samples + samples)
+    combined = sorted(previous_samples + samples + next_samples)
     diagnostic["sample_count"] = len(samples)
-    if combined:
-        diagnostic["first_sample_at"] = datetime.fromtimestamp(combined[0][0], TZ).isoformat()
-        diagnostic["first_sample_pct"] = combined[0][1]
-        diagnostic["last_sample_at"] = datetime.fromtimestamp(combined[-1][0], TZ).isoformat()
-        diagnostic["last_sample_pct"] = combined[-1][1]
     if samples:
-        diagnostic["start_counter_pct"] = next(
-            (value for stamp, value in reversed(previous_samples + samples) if stamp <= start.timestamp()), None
-        )
-        diagnostic["end_counter_pct"] = next(
-            (value for stamp, value in reversed(samples) if stamp <= end.timestamp()), None
-        )
+        diagnostic["first_sample_at"] = datetime.fromtimestamp(samples[0][0], TZ).isoformat()
+        diagnostic["first_sample_pct"] = samples[0][1]
+        diagnostic["last_sample_at"] = datetime.fromtimestamp(samples[-1][0], TZ).isoformat()
+        diagnostic["last_sample_pct"] = samples[-1][1]
+    diagnostic["start_counter_pct"] = next(
+        (value for stamp, value in reversed(combined) if stamp <= start.timestamp()), None
+    )
+    diagnostic["end_counter_pct"] = next(
+        (value for stamp, value in reversed(combined) if stamp <= end.timestamp()), None
+    )
 
     if not points:
         return finish("no_counter_changes_during_day")
