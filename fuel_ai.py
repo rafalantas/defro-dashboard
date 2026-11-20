@@ -344,7 +344,8 @@ def evaluate(rows: list[dict]) -> dict:
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-        "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
+        "telemetry_incomplete_days": telemetry_incomplete_days,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "rejected_by_reason": rejected_by_reason,
                         "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
