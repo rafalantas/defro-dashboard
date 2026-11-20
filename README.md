@@ -207,6 +207,6 @@ Dedykowany kanał `THINGSPEAK_FIRE_CHANNEL_ID` zapisuje wyłącznie:
 - Field 1: `fire_detected` (0/1),
 - Field 2: jasność płomienia.
 
-Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktualna zadana CO i histereza kotła są pobierane bezpośrednio z bieżącego snapshotu API eModul i nie są dublowane w ThingSpeak. Audyt stosuje bieżące nastawy do historycznych próbek CO; jeśli nastawy zmieniały się w analizowanym okresie, ich historyczne wartości nie są znane i diagnostyka jawnie raportuje to ograniczenie.
+Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktualna zadana CO i histereza kotła są pobierane bezpośrednio z bieżącego snapshotu API eModul i nie są dublowane w ThingSpeak. Ponieważ zadana i histereza są stałymi nastawami instalacji, audyt stosuje ich bieżące wartości do historycznych próbek CO. Nie zapisujemy ich cyklicznie w ThingSpeak; odpowiedź audytu oznacza to jawnie jako założenie stałości nastaw.
 
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
