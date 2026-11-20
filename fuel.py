@@ -41,6 +41,7 @@ from fuel_counter_provider import fetch_counter_points
 from fuel_estimates import select_usage_estimate
 from fuel_summary_metrics import build_refills_based, telemetry_state as build_telemetry_state
 from fuel_summary_estimates import build_last7_estimate, build_last_refill_and_hopper
+from fuel_house_model import fit_from_refills as fit_house_model_from_refills, active_balance_temperature
 from fuel_period_analysis import build_periods as build_refill_periods
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -493,10 +494,9 @@ def _fit_daily_model(rows: list):
 
 def _active_base() -> float:
     """Temperatura bazowa stopniodni: stała (FUEL_HDD_BASE_FIXED) albo dopasowana do modelu."""
-    if HDD_BASE_FIXED is not None:
-        return HDD_BASE_FIXED
-    model = _model_cache["data"]
-    return model["balance_temp"] if model else HDD_BASE
+    return active_balance_temperature(
+        _model_cache["data"], fixed_base=HDD_BASE_FIXED, fallback_base=HDD_BASE
+    )
 
 
 def _get_daily(day: date, base: float | None = None) -> dict:
@@ -539,26 +539,12 @@ def _fit_model(refills: list[dict]):
     key = (len(refills), refills[-1]["id"] if refills else None, _om_offset()["offset"], HDD_BASE_FIXED)
     if _model_cache["key"] == key:
         return _model_cache["data"]
-    rows = []
-    for prev, cur in zip(refills, refills[1:]):
-        start, end = datetime.fromisoformat(prev["ts"]), datetime.fromisoformat(cur["ts"])
-        days = (end - start).total_seconds() / 86400
-        if not MIN_PERIOD_DAYS <= days <= MAX_DAYS:
-            continue
-        temps, missing = _period_temps(start, end)
-        if missing or not temps:
-            continue
-        rows.append((days, cur["kg"], temps))
-    model = None
-    if len(rows) >= MIN_MODEL_PERIODS:
-        fits = [fit for fit in (_fit_at(rows, base) for base in MODEL_BASES) if fit]
-        best = min(fits, key=lambda fit: fit["_sse"]) if fits else None
-        chosen = _fit_at(rows, HDD_BASE_FIXED) if HDD_BASE_FIXED is not None else best
-        if chosen:
-            model = {k: v for k, v in chosen.items() if k != "_sse"}
-            model["base_fixed"] = HDD_BASE_FIXED is not None
-            model["best_fit_balance_temp"] = best["balance_temp"] if best else None
-            model["best_fit_r2"] = best["r2"] if best else None
+    model = fit_house_model_from_refills(
+        refills, _period_temps,
+        min_period_days=MIN_PERIOD_DAYS, max_days=MAX_DAYS,
+        min_model_periods=MIN_MODEL_PERIODS, model_bases=MODEL_BASES,
+        hdd_base_fixed=HDD_BASE_FIXED, fit_at=_fit_at,
+    )
     _model_cache.update(key=key, data=model)
     return model
 
