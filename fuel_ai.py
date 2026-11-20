@@ -196,8 +196,8 @@ def _coefficient_stability(rows: list[dict], names: list[str]) -> dict:
     """Describe standardized coefficient drift across expanding training windows."""
     count = len(rows)
     window_sizes = sorted({
-        max(MIN_TRAIN_DAYS, int(count * 0.6 + 0.999999)),
-        max(MIN_TRAIN_DAYS, int(count * 0.8 + 0.999999)),
+        max(MIN_TRAIN_PERIODS, int(count * 0.6 + 0.999999)),
+        max(MIN_TRAIN_PERIODS, int(count * 0.8 + 0.999999)),
         count,
     })
     if len(window_sizes) < 3 or window_sizes[0] > count:
@@ -332,14 +332,14 @@ def evaluate(rows: list[dict]) -> dict:
     telemetry_minimum_days = telemetry_minimum_periods
     test_count = min(MAX_TEST_DAYS, max(MIN_TEST_DAYS, total // 5))
     train_count = total - test_count
-    if train_count < MIN_TRAIN_DAYS or test_count < MIN_TEST_DAYS:
+    if train_count < MIN_TRAIN_PERIODS or test_count < MIN_TEST_PERIODS:
         return {"status": "collecting", "days": total, "periods": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Za mało kompletnych okresów z telemetrią do walidacji"},
-                "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_DAYS,
-                "test_days_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_DAYS,
+                "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_PERIODS,
+                "test_days_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_PERIODS,
                 "rejected_days": rejected_rows, "rejected_periods": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
