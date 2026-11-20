@@ -76,6 +76,7 @@ THINGSPEAK_COMPACT_CHANNEL_FIELDS = api_channel_fields()
 
 THINGSPEAK_LAST_WRITES = [0.0] * len(THINGSPEAK_COMPACT_CHANNEL_FIELDS)
 THINGSPEAK_WRITE_LOCK = threading.Lock()
+THINGSPEAK_FIRE_LAST_WRITE = 0.0
 THINGSPEAK_WRITE_INTERVAL_SECONDS = max(0, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
 
 
@@ -149,6 +150,57 @@ def _thingspeak_write(payload: dict) -> None:
             except Exception:
                 # Live telemetry stays usable when remote history is unreachable.
                 continue
+
+
+def _thingspeak_write_fire(payload: dict) -> None:
+    """Write the eModul flame sensor snapshot to its optional dedicated channel."""
+    global THINGSPEAK_FIRE_LAST_WRITE
+    channel_id = os.getenv("THINGSPEAK_FIRE_CHANNEL_ID", "").strip()
+    write_key = os.getenv("THINGSPEAK_FIRE_WRITE_KEY", "").strip()
+    if not channel_id or not write_key:
+        return
+    if os.getenv("THINGSPEAK_WRITE_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return
+
+    data = payload.get("data") or {}
+    raw_fire = data.get("fire")
+    if isinstance(raw_fire, bool):
+        fire_detected = int(raw_fire)
+    elif isinstance(raw_fire, (int, float)) and not isinstance(raw_fire, bool):
+        fire_detected = int(raw_fire >= 0.5)
+    else:
+        fire_detected = None
+    brightness = _number(data.get("fire_brightness"))
+    if fire_detected is None and brightness is None:
+        return
+
+    now = time.monotonic()
+    with THINGSPEAK_WRITE_LOCK:
+        if now - THINGSPEAK_FIRE_LAST_WRITE < THINGSPEAK_WRITE_INTERVAL_SECONDS:
+            return
+        try:
+            created_at = datetime.fromisoformat(payload["fetched_at"]).astimezone(timezone.utc).isoformat()
+        except (KeyError, TypeError, ValueError):
+            created_at = datetime.now(timezone.utc).isoformat()
+        form = {"api_key": write_key, "created_at": created_at}
+        if fire_detected is not None:
+            form["field1"] = str(fire_detected)
+        if brightness is not None:
+            form["field2"] = str(brightness)
+        request = Request(
+            f"https://api.thingspeak.com/update.json?{urlencode({'api_key': write_key})}",
+            data=urlencode({key: value for key, value in form.items() if key != "api_key"}).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=4) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            if result and result.get("entry_id"):
+                THINGSPEAK_FIRE_LAST_WRITE = now
+        except Exception:
+            # A flame-channel outage must never interrupt live eModul telemetry.
+            return
 
 
 def _thingspeak_history(period: str, year: int, month: int) -> tuple[list[dict], list[dict]]:
@@ -1246,6 +1298,7 @@ def snapshot() -> dict:
             payload = _read_snapshot()
             if payload.get("connected"):
                 _thingspeak_write(payload)
+                _thingspeak_write_fire(payload)
         except HTTPError as error:
             payload = {
                 "configured": True,
