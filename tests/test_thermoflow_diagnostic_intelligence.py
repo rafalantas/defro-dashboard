@@ -30,10 +30,34 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         cycles = [{"complete": True, "cold_gap_minutes": 10 + i % 4,
                    "protection_start": str(i)} for i in range(25)]
         result = build_thermoflow_intelligence({}, {"protection_cycles": cycles})
-        self.assertEqual(result["ml_baseline"]["status"], "shadow_validated")
+        self.assertEqual(result["ml_baseline"]["status"], "evaluated")
         self.assertEqual(result["ml_baseline"]["training_cycles"], 20)
         self.assertEqual(result["ml_baseline"]["holdout_cycles"], 5)
+        self.assertEqual(result["ml_baseline"]["holdout_metrics"]["observations"], 5)
+        self.assertGreaterEqual(result["ml_baseline"]["holdout_metrics"]["mae_minutes"], 0)
+        self.assertIn("rmse_minutes", result["ml_baseline"]["holdout_metrics"])
+        self.assertIn("bias_minutes", result["ml_baseline"]["holdout_metrics"])
         self.assertEqual(result["predictive_diagnostics"]["status"], "experimental")
+
+    def test_core_reports_duplicate_malformed_and_out_of_order_samples(self):
+        start = 1795161600
+        raw = {"thermoflow-flue": [[start + 60, 80], [start, 75],
+                                   [start, 76], [start + 120, "bad"]]}
+        quality = build_thermoflow_intelligence(raw)["diagnostic_core"]["series"]["thermoflow-flue"]
+        self.assertEqual(quality["duplicate_timestamps"], 1)
+        self.assertEqual(quality["out_of_order_samples"], 1)
+        self.assertEqual(quality["malformed_samples"], 1)
+        self.assertEqual(quality["coverage_status"], "review")
+
+    def test_fire_samples_are_joined_by_time_without_inventing_semantics(self):
+        start = 1795161600
+        raw = {"thermoflow-flue": [[start, 75], [start + 60, 82]],
+               "thermoflow-fire": [[start + 30, 1]]}
+        combustion = build_thermoflow_intelligence(raw)["combustion_diagnostics"]
+        self.assertEqual(combustion["fire_join_status"], "available")
+        self.assertEqual(combustion["fire_flue_time_correlations"][0]["fire_samples_within_5m"], 1)
+        self.assertIn("semantics are not inferred",
+                      combustion["fire_flue_time_correlations"][0]["interpretation"])
 
     def test_insufficient_cycles_do_not_train(self):
         cycles = [{"complete": True, "cold_gap_minutes": 10} for _ in range(24)]
