@@ -345,11 +345,9 @@ def evaluate(rows: list[dict]) -> dict:
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-        "period_spacing": [{"from": previous.get("end", previous["day"]), "to": current.get("end", current["day"]), "elapsed_days": round((date.fromisoformat(current["day"]) - date.fromisoformat(previous["day"])).days, 2)} for previous, current in zip(clean, clean[1:])],
         "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "rejected_by_reason": rejected_by_reason,
-                "missing_day_gaps": day_gaps,
-                "telemetry_incomplete_days": telemetry_incomplete_days,
+                        "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
 
     train, test = clean[:train_count], clean[train_count:]
@@ -362,15 +360,14 @@ def evaluate(rows: list[dict]) -> dict:
         baseline = _fit(history, baseline_names)
         candidate = _fit(history, candidate_names)
         if baseline is None or candidate is None:
-            return {"status": "unstable", "days": total,
+            return {"status": "unstable", "days": total, "periods": total,
                     "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                   "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
-                                  "days_needed": telemetry_minimum_days,
+                                  "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                     "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                    "missing_day_gaps": day_gaps,
                     "telemetry_incomplete_days": telemetry_incomplete_days,
                     "message": "Model nie przeszedł kontroli stabilności"}
         baseline_predictions.append(_predict(baseline, row))
@@ -392,8 +389,8 @@ def evaluate(rows: list[dict]) -> dict:
     ablation_available = all(score is not None for score in ablation_scores.values())
     if fixed_baseline_score is None or fixed_candidate_score is None:
         return {"status": "unstable", "days": total,
-                "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days,
-                              "incomplete_days": telemetry_incomplete_days,
+                "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
+                              "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                               "days_needed": telemetry_minimum_days,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
@@ -440,7 +437,7 @@ def evaluate(rows: list[dict]) -> dict:
             base_fit = _fit(history, telemetry_baseline_names)
             extended_fit = _fit(history, telemetry_candidate_names)
             if base_fit is None or extended_fit is None:
-                telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
+                telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods, "complete_periods": telemetry_periods,
                                     "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                                     "message": "Model telemetrii nie przeszedł kontroli stabilności"}
                 break
@@ -454,8 +451,8 @@ def evaluate(rows: list[dict]) -> dict:
             telemetry_fixed_extended = _fixed_holdout_metrics(
                 telemetry_clean[:telemetry_train_count], telemetry_test, telemetry_candidate_names)
             if telemetry_fixed_base is None or telemetry_fixed_extended is None:
-                telemetry_result = {"status": "unstable", "complete_days": telemetry_days,
-                                    "incomplete_days": telemetry_incomplete_days,
+                telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
+                                    "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
                                     "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
             else:
                 telemetry_fixed_gain = (
@@ -533,7 +530,7 @@ def evaluate(rows: list[dict]) -> dict:
         "selected": "weather_aware" if accepted else "temperature_only",
         "accepted_weather_gain": accepted,
         "fixed_holdout_mae_gain_percent": round(fixed_gain * 100, 1),
-        "rejected_days": rejected_rows,
+        "rejected_days": rejected_rows, "rejected_periods": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
