@@ -81,6 +81,22 @@ class SummaryServiceTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "hopper_inputs")
         self.assertEqual(calls[0][1], (5.0, 2.0, True, False, 3.0))
 
+
+    def test_forecast_weather_is_loaded_once_per_day(self):
+        from datetime import date, timedelta
+        deps, _, _ = self.dependencies()
+        day = date(2026, 11, 21)
+        weather_calls = []
+        deps["forecast"] = lambda: [(day, 4.5), (day + timedelta(days=1), 3.0)]
+        deps["weather"] = lambda current: (
+            weather_calls.append(current) or {"solar_mj": 2.0, "wind_max_kmh": 8.0}
+        )
+        result = build_summary(deps)
+        self.assertEqual(weather_calls, [day, day + timedelta(days=1)])
+        self.assertEqual(len(result["forecast"]), 2)
+        self.assertEqual(result["forecast"][0]["solar_mj"], 2.0)
+        self.assertEqual(result["forecast"][1]["wind_max_kmh"], 8.0)
+
     def test_daily_rows_fuel_error_keeps_summary_available_without_ai(self):
         def fail():
             raise FuelError(503, "telemetry unavailable")
