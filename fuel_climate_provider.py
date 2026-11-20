@@ -1,6 +1,8 @@
 """Five-year Open-Meteo monthly climate normals used by planning forecasts."""
 from __future__ import annotations
 
+from datetime import timedelta
+
 
 def climate_monthly(*, today, years, latitude, longitude, timezone,
                     archive_url, cache, cache_seconds, request_json,
@@ -9,7 +11,7 @@ def climate_monthly(*, today, years, latitude, longitude, timezone,
     if cached and monotonic() - cache["at"] < cache_seconds:
         return cached
 
-    end = today - __import__("datetime").timedelta(days=1)
+    end = today - timedelta(days=1)
     start = end.replace(year=end.year - years)
     params = {
         "latitude": latitude,
