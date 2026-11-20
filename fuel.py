@@ -23,7 +23,6 @@ from __future__ import annotations
 import hmac
 import fuel_ai
 import fuel_telemetry
-import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -885,35 +884,25 @@ def _telemetry_audit(query: dict) -> dict:
     )
 
 
+def create_engine():
+    """Construct the service-driven runtime behind the legacy module facade."""
+    from fuel_engine import ThermoFlowEngine
+    return ThermoFlowEngine(
+        handlers={
+            "stats": _stats,
+            "summary": _summary,
+            "daily": _daily,
+            "telemetry_audit": _telemetry_audit,
+            "refills": _refills,
+            "add_refill": _add_refill,
+            "void_refill": _void_refill,
+        },
+        check_token=_check_token,
+        fuel_error=FuelError,
+        warmup=warmup,
+    )
+
+
 def handle(method: str, path: str, query: dict, headers, body: bytes):
-    """Zwraca (status, payload) dla ścieżek /api/fuel/..., w innym przypadku None."""
-    if not path.startswith("/api/fuel/"):
-        return None
-    if path != "/api/fuel/" and path.endswith("/"):
-        path = path.rstrip("/")
-    try:
-        if method == "GET" and path == "/api/fuel/stats":
-            return 200, _stats(query)
-        if method == "GET" and path.rstrip("/") == "/api/fuel/summary":
-            return 200, _summary()
-        if method == "GET" and path == "/api/fuel/daily":
-            return 200, _daily(query)
-        if method == "GET" and path == "/api/fuel/telemetry-audit":
-            return 200, _telemetry_audit(query)
-        if method == "GET" and path == "/api/fuel/refills":
-            return 200, {"refills": _refills()}
-        if method == "POST" and path == "/api/fuel/refill":
-            _check_token(headers)
-            try:
-                data = json.loads(body.decode("utf-8") or "{}")
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                raise FuelError(400, "Treść musi być poprawnym JSON") from None
-            return 201, _add_refill(data if isinstance(data, dict) else {})
-        if method == "DELETE" and path.startswith("/api/fuel/refill/"):
-            _check_token(headers)
-            return 200, _void_refill(path.rsplit("/", 1)[1])
-        if method == "GET" and path == "/api/fuel/refill":
-            return 405, {"error": "Dosypki dodaje się metodą POST; listę zwraca /api/fuel/refills"}
-        return 404, {"error": "Nie znaleziono"}
-    except FuelError as e:
-        return e.status, {"error": e.message}
+    """Compatibility entry point; runtime routing lives in ThermoFlowEngine."""
+    return create_engine().handle(method, path, query, headers, body)

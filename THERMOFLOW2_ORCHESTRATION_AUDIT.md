@@ -22,7 +22,7 @@ The next implementation should introduce a dependency container/service boundary
 | Summary workflow | `_summary_build`, `_summary_calibration_inputs`, `_summary_job`, `_summary_kick`, `_summary`, `warmup` | Background worker lifecycle, stale-while-refresh behavior, 60-second cache, 25-second cold wait, calibration windows, forecast/planning, AI shadow isolation. |
 | Daily workflow | `_daily` | Prefetch order, lock boundary, house model and daily model fitting, residuals and telemetry state. |
 | Refill commands and auth | `_add_refill`, `_void_refill`, `_check_token`, `_invalidate_caches`, `_ts_write` | Input validation, ISO timestamps, bag-to-kg conversion, API token comparison, void audit record, exact HTTP statuses and cache invalidation. |
-| Public API routing | `handle` | Exact route/method matching, query defaults and bounds, payload compatibility, `FuelError` mapping. |
+| Public API routing | `ThermoFlowEngine.handle` (`fuel_engine.py`) | Exact route/method matching, query defaults and bounds, payload compatibility, authentication order and `FuelError` mapping. `fuel.handle` remains a compatibility delegate. |
 | Telemetry audit | `_telemetry_fetch_windows`, `_telemetry_history`, `_telemetry_audit` | Separate cached feature history vs uncached public audit, two-channel requirements, 14-day public bound, per-day 8000-feed request limit. |
 
 ## Endpoint dependency graph
@@ -122,7 +122,8 @@ daily endpoint orchestration lives in `fuel_daily_service.py`; and the
 deterministic summary calculation lives in `fuel_summary_service.py`.
 The `fuel.py` functions remain compatibility wrappers and pass the original
 provider functions, cache objects, constants and shared lock into these
-services.
+services. `ThermoFlowEngine` now dispatches public routes to those service
+wrappers; `fuel.handle` remains available for existing imports.
 
 The daily service preserves the prefetch-before-lock boundary, the lock scope
 around refills/model/row generation, the house-model prediction and residual

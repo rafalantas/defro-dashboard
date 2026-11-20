@@ -309,17 +309,15 @@ selection or make any shadow output production-visible.
 
 ### Stable engine interface
 
-`fuel_engine.py` now defines the runtime contract consumed by `api.py`
-(`handle()` and `warmup()`) and a `LegacyFuelEngine` adapter around the
-current `fuel.py` implementation. API route dispatch now depends on this
-interface rather than importing the legacy implementation directly. Loading
-remains lazy: importing the core API or the interface does not import
-`fuel.py`; a legacy import failure is still translated into the existing
-fuel-subsystem-unavailable response. The adapter contract is covered by
-dedicated tests, and the module is included in the API image and CI.
-
-This is the stable replacement seam, not a cutover: the adapter still delegates
-all production calculations to the existing legacy implementation.
+`fuel_engine.py` now owns public fuel-route dispatch, JSON body decoding,
+authentication ordering and `FuelError` mapping. `fuel.py` keeps `handle()` as
+a compatibility entry point, while its `create_engine()` factory injects the
+already extracted endpoint services into `ThermoFlowEngine`. The API loader
+prefers that factory and retains `LegacyFuelEngine` only as a compatibility
+fallback. Loading remains lazy, and the engine interface tests cover route
+payloads, error statuses, authentication and warmup. Domain calculations and
+data providers continue to be supplied by the extracted modules through the
+compatibility facade; cache state and TTL policy remain unchanged.
 
 ## Recommended ThermoFlow 2.0 sequence
 
