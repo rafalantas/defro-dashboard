@@ -297,6 +297,34 @@ def _ml(complete):
             "note": "Metryki opisują naiwną prognozę medianą treningową; nie dowodzą gotowości modelu produkcyjnego."}
 
 
+
+def _burner_ml(burner_cycles):
+    """Chronological descriptive baseline for validated burner on-duration cycles."""
+    complete = [cycle for cycle in (burner_cycles or {}).get("cycles", [])
+                if cycle.get("complete") and isinstance(cycle.get("duration_minutes"), (int, float))]
+    if len(complete) < MIN_TRAIN_CYCLES + HOLDOUT_CYCLES:
+        return {"status": "collecting", "method": "training_median_baseline",
+                "complete_burner_cycles": len(complete),
+                "required_cycles": MIN_TRAIN_CYCLES + HOLDOUT_CYCLES,
+                "training_cycles": 0, "holdout_cycles": 0,
+                "reason": "Za mało kompletnych cykli palnika do chronologicznej walidacji baseline."}
+    train, holdout = complete[:-HOLDOUT_CYCLES], complete[-HOLDOUT_CYCLES:]
+    values = [float(cycle["duration_minutes"]) for cycle in train]
+    center = median(values)
+    errors = [center - float(cycle["duration_minutes"]) for cycle in holdout]
+    mae = sum(abs(error) for error in errors) / len(errors)
+    rmse = sqrt(sum(error * error for error in errors) / len(errors))
+    bias = sum(errors) / len(errors)
+    return {"status": "evaluated", "method": "training_median_baseline",
+            "training_cycles": len(train), "holdout_cycles": len(holdout),
+            "baseline_duration_minutes": round(center, 2),
+            "holdout_metrics": {"mae_minutes": round(mae, 3), "rmse_minutes": round(rmse, 3),
+                                "bias_minutes": round(bias, 3), "observations": len(errors)},
+            "validation": "chronological_last_5_burner_cycles_holdout",
+            "promotion": "disabled_shadow_only",
+            "note": "Naiwny baseline medianowy czasu pracy palnika, nie wytrenowany model ML."}
+
+
 def _prediction(complete, ml):
     if ml.get("status") != "evaluated":
         return {"status": "unavailable",
@@ -321,7 +349,8 @@ def build_thermoflow_intelligence(raw, base_analysis=None, now=None):
     burner_cycles = _burner_cycles(raw, fire_diagnostics)
     cycles, complete = _cycle_stage(base_analysis, burner_cycles)
     hydraulics, combustion = _hydraulics(raw), _combustion(raw, fire_diagnostics)
-    ml, prediction = _ml(complete), None
+    ml = _ml(complete)
+    burner_ml = _burner_ml(burner_cycles)
     prediction = _prediction(complete, ml)
     explanations = []
     if hydraulics["return_below_54c_samples"]:
@@ -364,6 +393,7 @@ def build_thermoflow_intelligence(raw, base_analysis=None, now=None):
           "note": "Warstwowy silnik regułowy, nie LLM. Pewność jest jakościowa, nie skalibrowana; brak dowodu nie oznacza braku problemu."}
     return {"version": VERSION, "mode": "read_only", "diagnostic_core": core,
             "cycle_analyzer": cycles, "burner_cycle_analyzer": burner_cycles,
+            "burner_ml_baseline": burner_ml,
             "fire_diagnostics": fire_diagnostics,
             "hydraulic_diagnostics": hydraulics,
             "combustion_diagnostics": combustion, "ml_baseline": ml,
