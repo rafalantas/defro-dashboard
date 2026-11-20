@@ -16,11 +16,21 @@ def _points(raw, key):
     for point in raw.get(key, []) or []:
         try:
             ts, value = int(point[0]), float(point[1])
-        except (TypeError, ValueError, IndexError):
+            if ts <= 0 or not isfinite(value):
+                continue
+        except (TypeError, ValueError, IndexError, OverflowError):
             continue
-        if ts > 0:
-            result.append((ts, value))
+        result.append((ts, value))
     return sorted(result)
+
+
+def _unambiguous_points(raw, key):
+    """Discard all samples at duplicate timestamps for event correlation."""
+    points = _points(raw, key)
+    counts = {}
+    for ts, _value in points:
+        counts[ts] = counts.get(ts, 0) + 1
+    return [(ts, value) for ts, value in points if counts[ts] == 1]
 
 
 def _quality(raw):
@@ -64,13 +74,14 @@ def _quality(raw):
 
 def _hydraulics(raw):
     """Detect pump starts/stops and bounded return-temperature associations."""
-    returns = _points(raw, "thermoflow-valve4d-return")
-    opening = _points(raw, "thermoflow-valve4d-opening")
+    returns = _unambiguous_points(raw, "thermoflow-valve4d-return")
+    opening = _unambiguous_points(raw, "thermoflow-valve4d-opening")
     pumps = {}
     pump_keys = ("thermoflow-pump-floor", "thermoflow-pump-dhw",
                  "thermoflow-pump-valve4d", "thermoflow-pump-circulation")
     for key in pump_keys:
-        samples, events = _points(raw, key), []
+        samples, events = _unambiguous_points(raw, key), []
+        used_return_samples = set()
         for (old_ts, old), (ts, value) in zip(samples, samples[1:]):
             if ts - old_ts > MAX_GAP_SECONDS:
                 continue
@@ -78,16 +89,28 @@ def _hydraulics(raw):
             if old_on == new_on:
                 continue
             event_type = "start" if new_on else "stop"
-            before = next((v for t, v in reversed(returns) if t <= ts and ts - t <= 600), None)
-            after = next((v for t, v in returns if ts < t <= ts + 600), None)
+            before_point = next(((t, v) for t, v in reversed(returns)
+                                  if t <= ts and ts - t <= MAX_GAP_SECONDS
+                                  and t not in used_return_samples), None)
+            after_point = next(((t, v) for t, v in returns
+                                 if t > ts and t - ts <= MAX_GAP_SECONDS
+                                 and t not in used_return_samples), None)
+            before = before_point[1] if before_point else None
+            after = after_point[1] if after_point else None
+            paired = bool(before_point and after_point
+                          and after_point[0] - before_point[0] <= MAX_GAP_SECONDS)
+            if paired:
+                used_return_samples.update((before_point[0], after_point[0]))
             events.append({
                 "event": event_type,
                 "at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
-                "return_before_c": before, "return_after_c": after,
-                "return_delta_c": round(after - before, 2)
-                    if before is not None and after is not None else None,
-                "association_window_seconds": 600,
-                "association_status": "paired" if before is not None and after is not None else "insufficient_return_samples",
+                "return_before_c": before if paired else None,
+                "return_after_c": after if paired else None,
+                "return_delta_c": round(after - before, 2) if paired else None,
+                "return_before_at": datetime.fromtimestamp(before_point[0], timezone.utc).isoformat() if paired else None,
+                "return_after_at": datetime.fromtimestamp(after_point[0], timezone.utc).isoformat() if paired else None,
+                "association_window_seconds": MAX_GAP_SECONDS,
+                "association_status": "paired" if paired else "insufficient_unique_contiguous_return_samples",
             })
         paired = [event["return_delta_c"] for event in events if event["return_delta_c"] is not None]
         pumps[key] = {

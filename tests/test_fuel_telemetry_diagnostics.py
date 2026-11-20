@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from fuel_telemetry_diagnostics import build_raw_diagnostics
+from fuel_telemetry_diagnostics import build_raw_diagnostics, _ignition_cycles
 
 
 class RawTelemetryDiagnosticsTests(unittest.TestCase):
@@ -104,15 +104,12 @@ class RawTelemetryDiagnosticsTests(unittest.TestCase):
         start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
         points = {
             "boiler_temp_c": [
-                (start, 65.0), (start + timedelta(minutes=1), 63.5),
-                (start + timedelta(minutes=2), 64.0), (start + timedelta(minutes=10), 70.0),
+                (start + timedelta(minutes=i), value)
+                for i, value in enumerate([65.0, 63.5, 64.0, 64.5, 65.0, 66.0,
+                                           67.0, 68.0, 69.0, 70.0, 70.0])
             ],
-            "boiler_setpoint_c": [(ts, 70.0) for ts in (
-                start, start + timedelta(minutes=1), start + timedelta(minutes=2),
-                start + timedelta(minutes=10))],
-            "boiler_hysteresis_c": [(ts, 6.0) for ts in (
-                start, start + timedelta(minutes=1), start + timedelta(minutes=2),
-                start + timedelta(minutes=10))],
+            "boiler_setpoint_c": [(start + timedelta(minutes=i), 70.0) for i in range(11)],
+            "boiler_hysteresis_c": [(start + timedelta(minutes=i), 6.0) for i in range(11)],
             "fire_detected": [
                 (start, 0), (start + timedelta(minutes=2), 1),
                 (start + timedelta(minutes=3), 1), (start + timedelta(minutes=4), 0),
@@ -138,6 +135,36 @@ class RawTelemetryDiagnosticsTests(unittest.TestCase):
         }
         result = build_raw_diagnostics(points, start)
         self.assertEqual(result["ignition_activity"]["requests_count"], 0)
+
+
+    def test_ignition_events_are_not_reused_by_later_requests(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        requests = [{"at": start.isoformat()}, {"at": (start + timedelta(minutes=2)).isoformat()}]
+        flame_events = [{"start": (start + timedelta(minutes=3)).isoformat()}]
+        flue_events = [{"start": (start + timedelta(minutes=4)).isoformat()}]
+        cycles = _ignition_cycles({}, flame_events, flue_events, requests)
+        self.assertTrue(cycles[0]["flame_presence_observed"])
+        self.assertFalse(cycles[1]["flame_presence_observed"])
+        self.assertFalse(cycles[1]["flue_activity_observed"])
+
+    def test_ignition_response_outside_30_minutes_is_not_correlated(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        requests = [{"at": start.isoformat()}]
+        flame_events = [{"start": (start + timedelta(minutes=31)).isoformat()}]
+        cycles = _ignition_cycles({}, flame_events, [], requests)
+        self.assertFalse(cycles[0]["flame_presence_observed"])
+
+    def test_temperature_recovery_is_not_attributed_across_telemetry_gap(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        request_at = start + timedelta(minutes=1)
+        normalized = {
+            "boiler_temp_c": [(start + timedelta(minutes=2), 63.0),
+                              (start + timedelta(minutes=10), 70.0)],
+            "boiler_setpoint_c": [(start + timedelta(minutes=2), 70.0),
+                                  (start + timedelta(minutes=10), 70.0)],
+        }
+        cycles = _ignition_cycles(normalized, [], [], [{"at": request_at.isoformat()}])
+        self.assertFalse(cycles[0]["temperature_recovery_observed"])
 
     def test_empty_data_is_safe(self):
         result = build_raw_diagnostics({}, datetime.now(timezone.utc))
