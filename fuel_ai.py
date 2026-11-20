@@ -51,25 +51,42 @@ def _number(value) -> float | None:
     return number if isfinite(number) else None
 
 
-def _valid_base_row(source: dict) -> dict | None:
-    """Validate target and weather features before they enter training."""
-    target = _number(source.get("kg_counter"))
-    hdd_lag = _number(source.get("hdd_lag"))
-    solar = _number(source.get("solar_mj"))
-    wind = _number(source.get("wind_max_kmh"))
+def _base_row_rejection_reason(source: dict) -> str | None:
+    """Return the first failed required base field without weakening validation."""
+    checks = (
+        ("kg_counter", "kg_counter_missing_or_invalid", "kg_counter_negative"),
+        ("hdd_lag", "hdd_lag_missing_or_invalid", "hdd_lag_negative"),
+        ("solar_mj", "solar_mj_missing_or_invalid", "solar_mj_negative"),
+        ("wind_max_kmh", "wind_max_kmh_missing_or_invalid", "wind_max_kmh_negative"),
+    )
+    for field, invalid_reason, negative_reason in checks:
+        value = _number(source.get(field))
+        if value is None:
+            return invalid_reason
+        if value < 0:
+            return negative_reason
     day = source.get("day")
-    if (target is None or target < 0 or hdd_lag is None or hdd_lag < 0
-            or solar is None or solar < 0 or wind is None or wind < 0
-            or not isinstance(day, str) or len(day) != 10):
-        return None
+    if not isinstance(day, str) or len(day) != 10:
+        return "day_missing_or_invalid"
     try:
         if date.fromisoformat(day).isoformat() != day:
-            return None
+            return "day_missing_or_invalid"
     except (TypeError, ValueError):
+        return "day_missing_or_invalid"
+    return None
+
+
+def _valid_base_row(source: dict) -> dict | None:
+    """Validate target and weather features before they enter training."""
+    if _base_row_rejection_reason(source) is not None:
         return None
     row = dict(source)
-    row.update(kg_counter=target, hdd_lag=hdd_lag, solar_mj=solar,
-               wind_max_kmh=wind)
+    row.update(
+        kg_counter=_number(source.get("kg_counter")),
+        hdd_lag=_number(source.get("hdd_lag")),
+        solar_mj=_number(source.get("solar_mj")),
+        wind_max_kmh=_number(source.get("wind_max_kmh")),
+    )
     return row
 
 
@@ -235,16 +252,19 @@ def evaluate(rows: list[dict]) -> dict:
     clean = []
     rejected_rows = 0
     rejected_by_reason = {"estimated_or_epoch": 0, "invalid_base": 0, "duplicate_day": 0}
+    invalid_base_by_reason = {}
     duplicate_days = set()
     for source in rows:
         if source.get("estimate") or source.get("counter_regime") == "epoch":
             rejected_rows += 1
             rejected_by_reason["estimated_or_epoch"] += 1
             continue
+        base_rejection = _base_row_rejection_reason(source)
         row = _valid_base_row(source)
         if row is None:
             rejected_rows += 1
             rejected_by_reason["invalid_base"] += 1
+            invalid_base_by_reason[base_rejection] = invalid_base_by_reason.get(base_rejection, 0) + 1
             continue
         # Room temperature is not a model feature; invalid values are discarded.
         for room_key in ("room_c", "room_temp", "room_temperature_c"):
@@ -295,6 +315,7 @@ def evaluate(rows: list[dict]) -> dict:
                 "test_days_needed": MIN_TEST_DAYS,
                 "rejected_days": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
+        "invalid_base_by_reason": invalid_base_by_reason,
         "missing_day_gaps": day_gaps,
         "telemetry_incomplete_days": telemetry_incomplete_days,
                 "rejected_by_reason": rejected_by_reason,
@@ -318,6 +339,7 @@ def evaluate(rows: list[dict]) -> dict:
                                   "days_needed": telemetry_minimum_days,
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                     "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "invalid_base_by_reason": invalid_base_by_reason,
                     "missing_day_gaps": day_gaps,
                     "telemetry_incomplete_days": telemetry_incomplete_days,
                     "message": "Model nie przeszedł kontroli stabilności"}
@@ -345,6 +367,7 @@ def evaluate(rows: list[dict]) -> dict:
                               "days_needed": telemetry_minimum_days,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "invalid_base_by_reason": invalid_base_by_reason,
                 "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
@@ -363,6 +386,7 @@ def evaluate(rows: list[dict]) -> dict:
                               "days_needed": telemetry_minimum_days,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "invalid_base_by_reason": invalid_base_by_reason,
                 "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Nie udało się dopasować modelu końcowego"}
@@ -479,6 +503,7 @@ def evaluate(rows: list[dict]) -> dict:
         "fixed_holdout_mae_gain_percent": round(fixed_gain * 100, 1),
         "rejected_days": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
+        "invalid_base_by_reason": invalid_base_by_reason,
         "missing_day_gaps": day_gaps,
         "telemetry_incomplete_days": telemetry_incomplete_days,
         "mae_gain_percent": round(gain * 100, 1),
