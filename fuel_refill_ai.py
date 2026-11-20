@@ -9,6 +9,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
+TELEMETRY_FEATURES = (
+    "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
+    "telemetry_return_c", "telemetry_boiler_power_kw",
+    "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
+    "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
+)
+
 
 def build_refill_period_rows(refills: list[dict], period_features: Callable,
                              *, max_days: int) -> tuple[list[dict], dict]:
@@ -43,6 +50,8 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             rejected["missing_features"] += 1
             continue
         totals = {"hdd_lag": 0.0, "solar_mj": 0.0, "wind_hdd_lag": 0.0}
+        telemetry_totals = {name: 0.0 for name in TELEMETRY_FEATURES}
+        telemetry_complete = True
         covered = 0.0
         valid = True
         for item in slices:
@@ -63,6 +72,15 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             totals["hdd_lag"] += hdd * fraction
             totals["solar_mj"] += solar * fraction
             totals["wind_hdd_lag"] += wind * hdd * fraction / 100.0
+            for name in TELEMETRY_FEATURES:
+                value = item.get(name)
+                if value is None:
+                    telemetry_complete = False
+                else:
+                    try:
+                        telemetry_totals[name] += float(value) * fraction
+                    except (TypeError, ValueError, OverflowError):
+                        telemetry_complete = False
         if not valid or covered < elapsed_days - (2.0 / 86400.0):
             rejected["missing_features"] += 1
             continue
@@ -75,7 +93,7 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             rejected["missing_features"] += 1
             continue
         average_hdd = totals["hdd_lag"] / elapsed_days
-        rows.append({
+        row = {
             "day": end.date().isoformat(),
             "kg_counter": consumed_kg / elapsed_days,
             "hdd_lag": average_hdd,
@@ -91,7 +109,13 @@ def build_refill_period_rows(refills: list[dict], period_features: Callable,
             "consumed_kg": round(consumed_kg, 3),
             "start": start.isoformat(),
             "end": end.isoformat(),
-        })
+        }
+        if telemetry_complete:
+            row.update({
+                name: value / elapsed_days
+                for name, value in telemetry_totals.items()
+            })
+        rows.append(row)
     return rows, {
         "source": "refill_periods",
         "periods_available": max(0, len(refills) - 1),
