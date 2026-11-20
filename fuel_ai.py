@@ -6,6 +6,7 @@ holdout score. It never changes the production fuel estimate.
 """
 from __future__ import annotations
 
+from datetime import date
 from math import isfinite, sqrt
 from statistics import median
 
@@ -60,6 +61,11 @@ def _valid_base_row(source: dict) -> dict | None:
     if (target is None or target < 0 or hdd_lag is None or hdd_lag < 0
             or solar is None or solar < 0 or wind is None or wind < 0
             or not isinstance(day, str) or len(day) != 10):
+        return None
+    try:
+        if date.fromisoformat(day).isoformat() != day:
+            return None
+    except (TypeError, ValueError):
         return None
     row = dict(source)
     row.update(kg_counter=target, hdd_lag=hdd_lag, solar_mj=solar,
@@ -170,13 +176,17 @@ def evaluate(rows: list[dict]) -> dict:
     """
     clean = []
     rejected_rows = 0
+    rejected_by_reason = {"estimated_or_epoch": 0, "invalid_base": 0, "duplicate_day": 0}
+    duplicate_days = set()
     for source in rows:
         if source.get("estimate") or source.get("counter_regime") == "epoch":
             rejected_rows += 1
+            rejected_by_reason["estimated_or_epoch"] += 1
             continue
         row = _valid_base_row(source)
         if row is None:
             rejected_rows += 1
+            rejected_by_reason["invalid_base"] += 1
             continue
         # Room temperature is not a model feature; invalid values are discarded.
         for room_key in ("room_c", "room_temp", "room_temperature_c"):
@@ -186,8 +196,21 @@ def evaluate(rows: list[dict]) -> dict:
                 row.pop(room_key, None)
         row["wind_hdd_lag"] = row["wind_max_kmh"] * row["hdd_lag"] / 100.0
         clean.append(row)
+    day_counts = {}
+    for row in clean:
+        day_counts[row["day"]] = day_counts.get(row["day"], 0) + 1
+    duplicate_days = {day for day, count in day_counts.items() if count > 1}
+    if duplicate_days:
+        rejected_by_reason["duplicate_day"] = sum(day_counts[day] for day in duplicate_days)
+        rejected_rows += rejected_by_reason["duplicate_day"]
+        clean = [row for row in clean if row["day"] not in duplicate_days]
     clean.sort(key=lambda row: row.get("day", ""))
     total = len(clean)
+    day_gaps = []
+    for previous, current in zip(clean, clean[1:]):
+        gap = (date.fromisoformat(current["day"]) - date.fromisoformat(previous["day"])).days
+        if gap > 1:
+            day_gaps.append({"from": previous["day"], "to": current["day"], "missing_days": gap - 1})
     telemetry_names = [
         "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
         "telemetry_return_c", "telemetry_boiler_power_kw",
@@ -198,6 +221,7 @@ def evaluate(rows: list[dict]) -> dict:
         row for row in clean if _valid_telemetry_row(row, telemetry_names)
     ]
     telemetry_days = len(telemetry_clean)
+    telemetry_incomplete_days = total - telemetry_days
     telemetry_test_count = min(MAX_TEST_DAYS, max(TELEMETRY_MIN_TEST_DAYS, telemetry_days // 5))
     telemetry_train_count = telemetry_days - telemetry_test_count
     telemetry_minimum_days = TELEMETRY_MIN_TRAIN_DAYS + TELEMETRY_MIN_TEST_DAYS
@@ -206,11 +230,18 @@ def evaluate(rows: list[dict]) -> dict:
     if train_count < MIN_TRAIN_DAYS or test_count < MIN_TEST_DAYS:
         return {"status": "collecting", "days": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days,
+                              "incomplete_days": telemetry_incomplete_days,
                               "days_needed": telemetry_minimum_days,
                               "message": "Za mało kompletnych dób z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS,
                 "test_days_needed": MIN_TEST_DAYS,
                 "rejected_days": rejected_rows,
+        "rejected_by_reason": rejected_by_reason,
+        "missing_day_gaps": day_gaps,
+        "telemetry_incomplete_days": telemetry_incomplete_days,
+                "rejected_by_reason": rejected_by_reason,
+                "missing_day_gaps": day_gaps,
+                "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
 
     train, test = clean[:train_count], clean[train_count:]
@@ -248,6 +279,7 @@ def evaluate(rows: list[dict]) -> dict:
                 "message": "Nie udało się dopasować modelu końcowego"}
 
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days,
+                        "incomplete_days": telemetry_incomplete_days,
                         "days_needed": telemetry_minimum_days,
                         "training_days_needed": TELEMETRY_MIN_TRAIN_DAYS,
                         "holdout_days_needed": TELEMETRY_MIN_TEST_DAYS,
@@ -308,6 +340,7 @@ def evaluate(rows: list[dict]) -> dict:
                     "selected": "telemetry_enhanced" if telemetry_accepted else "weather_only",
                     "features": telemetry_candidate_names if telemetry_accepted else telemetry_baseline_names,
                     "safety": "shadow_only; production estimates are unchanged",
+                    "validation_note": "walk-forward and fixed holdout currently score the same terminal dates; treat as complementary protocols, not independent samples",
                 }
 
     return {
@@ -327,6 +360,7 @@ def evaluate(rows: list[dict]) -> dict:
         "candidate": candidate_score,
         "validation": {
             "protocol": "walk_forward_expanding_window",
+            "independence_note": "walk-forward and fixed holdout score the same terminal dates; metrics are complementary, not independent evidence",
             "walk_forward": {"baseline": baseline_score, "candidate": candidate_score},
             "fixed_holdout": {
                 "training_from": train[0].get("day"),
