@@ -60,9 +60,8 @@ class SummaryEstimateTests(unittest.TestCase):
             "calibration": {"calibrated": False, "days": 2},
             "model": None, "recent_periods": [{"kg_per_day": 4}],
             "week": {"kg_per_day": 5}, "forecast": [], "daily_model": None,
-            "known_temps": {}, "period_sums": lambda *_: (3, 0, 0, True),
-            "counter_kg": lambda *_: (10, True, False),
-            "burner_kg": lambda *_: 7, "counter_method": lambda *_: "licznik",
+            "known_temps": {}, "period_inputs": lambda *_: (3, 10, True, False, 7),
+            "counter_method": lambda *_: "licznik",
             "select_estimate": lambda **kw: (kw["counter_kg"], "licznik"),
             "days_until": lambda *_: None, "capacity": 100, "reserve_percent": 15,
         }
@@ -98,8 +97,7 @@ class SummaryEstimateTests(unittest.TestCase):
         self.assertEqual(hopper["remaining_percent"], 10)
         self.assertEqual(build_last_refill_and_hopper(
             datetime.now(timezone.utc), [], {}, {}, None, [], None, [], None, {},
-            lambda *_: (0, 0, 0, True), lambda *_: (None, False, False),
-            lambda *_: None, lambda *_: "", lambda **_: (None, None),
+            lambda *_: (0, None, False, False, None), lambda *_: "", lambda **_: (None, None),
             lambda *_: None, 100, 15,
         ), (None, None))
 
