@@ -72,7 +72,7 @@ def build_last_refill_and_hopper(
     now: datetime, refills: list[dict], counter: dict, calibration: dict,
     model: dict | None, recent_periods: list[dict], week: dict | None,
     forecast: list, daily_model: dict | None, known_temps: dict,
-    period_sums, counter_kg, burner_kg, counter_method, select_estimate,
+    period_inputs, counter_method, select_estimate,
     days_until, capacity: float, reserve_percent: float,
 ) -> tuple[dict | None, dict | None]:
     """Build legacy last-refill metadata and hopper/reserve estimate."""
@@ -88,12 +88,7 @@ def build_last_refill_and_hopper(
         "hours_ago": round(hours, 1),
     }
 
-    hdd_since, kwh, _hm, kwh_missing = period_sums(last_ts, now)
-    kg_since, drop_ok, drop_floor = counter_kg(last_ts, now, counter)
-    burner_since = (
-        burner_kg(last_ts, now, calibration)
-        if not kwh_missing and calibration["calibrated"] else None
-    )
+    hdd_since, kg_since, drop_ok, drop_floor, burner_since = period_inputs(last_ts, now, counter, calibration)
     used_counter = kg_since if drop_ok and not drop_floor else None
     used_burner = burner_since
     used_model = (
