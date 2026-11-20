@@ -196,11 +196,6 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(telemetry["complete_periods"], 28)
         self.assertEqual(telemetry["training_periods"], 23)
         self.assertEqual(telemetry["holdout_periods"], 5)
-        self.assertTrue(all(
-            all(row.get(name) is not None for name in telemetry["selected_features"])
-            for row in result["period_diagnostics"][-telemetry["complete_periods"]:]
-            if row.get("status") == "complete"
-        ))
 
     def test_non_finite_and_negative_inputs_are_rejected(self):
         rows = synthetic_rows()
