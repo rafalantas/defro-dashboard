@@ -39,6 +39,7 @@ class SummaryServiceTests(unittest.TestCase):
             "fit_daily_model": lambda rows: {"status": "ready"},
             "fuel_error": FuelError,
             "ai_evaluate": lambda rows: {"status": "shadow"},
+            "refill_ai_rows": lambda refills: ([], {"source": "refill_periods", "daily_refills_required": False}),
             "pellet_kwh_per_kg": 4.8,
             "boiler_eff": 0.88,
             "burner_factor": lambda calibration, moment: 1.0,
@@ -129,14 +130,23 @@ class SummaryServiceTests(unittest.TestCase):
         self.assertEqual(result["forecast"][0]["solar_mj"], 2.0)
         self.assertEqual(result["forecast"][1]["wind_max_kmh"], 8.0)
 
-    def test_daily_rows_fuel_error_keeps_summary_available_without_ai(self):
+    def test_daily_counter_failure_does_not_block_refill_period_ai(self):
         def fail():
-            raise FuelError(503, "telemetry unavailable")
-        deps, _, _ = self.dependencies(daily_rows=fail)
+            raise FuelError(503, "daily counter telemetry unavailable")
+        ai_calls = []
+        deps, _, _ = self.dependencies(
+            daily_rows=fail,
+            refill_ai_rows=lambda refills: (
+                [{"day": "2026-11-19", "kg_counter": 2.0}],
+                {"source": "refill_periods", "periods_accepted": 1,
+                 "daily_refills_required": False},
+            ),
+            ai_evaluate=lambda rows: (ai_calls.append(rows) or {"status": "shadow"}),
+        )
         result = build_summary(deps)
-        self.assertEqual(result["ai_shadow"], {
-            "status": "unavailable", "message": "Brak danych do analizy"
-        })
+        self.assertEqual(result["ai_shadow"]["status"], "shadow")
+        self.assertEqual(result["ai_shadow"]["data_source"]["periods_accepted"], 1)
+        self.assertEqual(len(ai_calls[0]), 1)
         self.assertIsNone(result["daily_model"])
         self.assertEqual(result["telemetry"], {"status": "available"})
 
