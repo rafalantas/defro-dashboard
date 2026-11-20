@@ -170,7 +170,7 @@ def fake(url, params=None, form=None, payload=None, timeout=10):
 
 
 fuel._request_json = fake
-fuel._counter_day_kg = lambda day, counter: round(kg_of_day(day), 2)   # licznik podajnika zastąpiony prawdziwym zużyciem doby
+fuel._counter_day_diagnostic = lambda day, counter: (round(kg_of_day(day), 2), {"day": day.isoformat(), "reason": None})   # licznik podajnika zastąpiony prawdziwym zużyciem doby
 
 rows, _counter = fuel._daily_rows(70)
 assert len(rows) >= 60 and rows[0]["t_lag"] is not None
