@@ -136,5 +136,29 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["training_days"], 88)
 
 
+    def test_invalid_calendar_dates_are_rejected(self):
+        rows = synthetic_rows()
+        rows[0]["day"] = "2026-02-30"
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["rejected_by_reason"]["invalid_base"], 1)
+        self.assertEqual(result["training_days"], 89)
+
+    def test_duplicate_days_are_excluded_instead_of_double_weighted(self):
+        rows = synthetic_rows()
+        duplicate = dict(rows[10])
+        rows.append(duplicate)
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["rejected_by_reason"]["duplicate_day"], 2)
+        self.assertEqual(result["training_days"], 89)
+
+    def test_incomplete_telemetry_days_are_reported_separately(self):
+        rows = add_telemetry(synthetic_rows(130))
+        rows[0].pop("telemetry_return_c")
+        rows[1].pop("telemetry_pump_floor_h")
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["telemetry_incomplete_days"], 2)
+        self.assertEqual(result["telemetry"]["incomplete_days"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
