@@ -347,7 +347,8 @@ def evaluate(rows: list[dict]) -> dict:
                 )
                 telemetry_result = {
                     "status": "shadow_ready", "mode": "shadow_only",
-                    "complete_days": telemetry_days, "training_days": telemetry_train_count,
+                    "complete_days": telemetry_days, "incomplete_days": telemetry_incomplete_days,
+                    "training_days": telemetry_train_count,
                     "holdout_days": telemetry_test_count,
                     "holdout_from": telemetry_test[0].get("day"),
                     "holdout_to": telemetry_test[-1].get("day"),
