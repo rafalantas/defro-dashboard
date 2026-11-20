@@ -40,6 +40,7 @@ from fuel_daily_provider import get_daily_raw as get_daily_raw_impl
 from fuel_counter_provider import fetch_counter_points
 from fuel_estimates import select_usage_estimate
 from fuel_summary_metrics import build_refills_based, telemetry_state as build_telemetry_state
+from fuel_summary_estimates import build_last7_estimate, build_last_refill_and_hopper
 from fuel_period_analysis import build_periods as build_refill_periods
 from fuel_refills import merge_close_refills as _merge_close_refills_impl, normalize_refill_feeds
 from fuel_counter import (
@@ -914,100 +915,37 @@ def _summary_build() -> dict:
             # Eksperyment AI nigdy nie może przerwać ani zmienić obliczeń produkcyjnych.
             ai_shadow = {"status": "unavailable", "message": "Model eksperymentalny chwilowo niedostępny"}
 
-    def est_kg(kwh: float, moment: datetime) -> float:
+    # 1) ostatnie 7 pełnych dób i 2) zużycie od ostatniej dosypki / zasobnik.
+    def estimate_burner_kg(kwh: float, moment: datetime) -> float:
         return kwh / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, moment)
 
-    # 1) ostatnie 7 pełnych dób: szacunek z mocy palnika (skalibrowany)
-    with_burner = [d for d in last7 if d.get("burner_kwh") is not None and d.get("hdd") is not None]
-    if with_burner:   # pomijamy niepełne doby (np. dzień uruchomienia kanału)
-        full = max(d.get("samples", 0) for d in with_burner)
-        with_burner = [d for d in with_burner if d.get("samples", 0) >= 0.7 * full]
-    week = None
-    if with_burner:
-        kg = sum(est_kg(d["burner_kwh"], _day_bounds(date.fromisoformat(d["day"]))[0]) for d in with_burner)
-        first, last_day = _day_bounds(date.fromisoformat(with_burner[0]["day"]))[0], _day_bounds(date.fromisoformat(with_burner[-1]["day"]))[1]
-        after_epoch = last_day > COUNTER_EPOCH
-        source = "moc palnika (szacunek)" if after_epoch and calib["new"].get("provisional") else "moc palnika"
+    def counter_kg_locked(start: datetime, end: datetime, current_counter: dict):
         with _lock:
-            counter_kg, ok, floor_hit = _counter_kg(first, last_day, counter)
-        if ok and not floor_hit and counter_kg:
-            kg = counter_kg
-            source = "licznik podajnika (szacunek)" if after_epoch and counter["collecting"] else "licznik podajnika"
-        hdd = sum(d["hdd"] for d in with_burner)
-        week = {
-            "days": len(with_burner),
-            "kg": round(kg, 1),
-            "kg_per_day": round(kg / len(with_burner), 1),
-            "hdd": round(hdd, 1),
-            "kg_per_hdd": round(kg / hdd, 2) if hdd > 0 else None,
-            "t_mean": round(sum(d["t_mean"] for d in with_burner) / len(with_burner), 1),
-            "source": source,
-        }
-        if model:
-            week["model_kg"] = round(sum(_predict_kg_per_day(model, d["t_mean"]) for d in with_burner), 1)
-            heat = kg - model["base_kg_per_day"] * len(with_burner)
-            week["heating_kg_per_hdd"] = round(heat / hdd, 2) if hdd >= 5 else None
+            return _counter_kg(start, end, current_counter)
 
-    # 2) kg na stopniodzień z rzeczywistych dosypek (ostatnie 4 okresy grzewcze)
+    week = build_last7_estimate(
+        last7, model, calib, counter, COUNTER_EPOCH, _day_bounds,
+        estimate_burner_kg, counter_kg_locked, _predict_kg_per_day,
+    )
+
+    # 3) kg na stopniodzień z rzeczywistych dosypek (ostatnie 4 okresy grzewcze)
     refills_based = build_refills_based(recent_periods, model)
-    # 3) od ostatniej dosypki i 4) szacowany stan zasobnika
-    last = None
-    hopper = None
-    if refills:
-        lr = refills[-1]
-        last_ts = datetime.fromisoformat(lr["ts"])
-        hours = (now - last_ts).total_seconds() / 3600
-        last = {"ts": lr["ts"], "kg": lr["kg"], "hours_ago": round(hours, 1)}
 
+    def hopper_period_inputs(start: datetime, end: datetime, current_counter: dict, current_calibration: dict):
         with _lock:
-            hdd_since, kwh, _hm, kwh_missing = _period_sums(last_ts, now)
-            kg_since, drop_ok, drop_floor = _counter_kg(last_ts, now, counter)
-            burner_since = _burner_kg(last_ts, now, calib) if not kwh_missing and calib["calibrated"] else None
-        used_counter = kg_since if drop_ok and not drop_floor else None
-        used_burner = burner_since
-        used_model = (model["base_kg_per_day"] * hours / 24 + model["kg_per_hdd"] * hdd_since) if model else None
-        fallback_kg = recent_periods[-1]["kg_per_day"] * hours / 24 if recent_periods else None
-        used, method = select_usage_estimate(
-            counter_kg=used_counter,
-            counter_collecting=counter["collecting"],
-            counter_method=_counter_method(counter),
-            burner_kg=used_burner,
-            burner_calibration_days=calib["days"],
-            model_kg=used_model,
-            fallback_kg=fallback_kg,
-        )
+            hdd_value, _kwh, _hm, kwh_missing = _period_sums(start, end)
+            counter_value, drop_ok, drop_floor = _counter_kg(start, end, current_counter)
+            burner_value = (
+                _burner_kg(start, end, current_calibration)
+                if not kwh_missing and current_calibration["calibrated"] else None
+            )
+        return hdd_value, counter_value, drop_ok, drop_floor, burner_value
 
-        capacity = HOPPER_KG
-        reserve = capacity * HOPPER_RESERVE_PERCENT / 100
-        if used is not None:
-            remaining = max(0.0, capacity - used)
-            to_reserve = max(0.0, remaining - reserve)
-            days_to_reserve, rate_source = None, None
-            if model and forecast:
-                days_to_reserve = _days_until(to_reserve, model, forecast, now, daily_model, known_temps)
-                rate_source = "prognoza pogody i model domu"
-            if days_to_reserve is None:
-                rate = (week or {}).get("kg_per_day") or (recent_periods[-1]["kg_per_day"] if recent_periods else None)
-                days_to_reserve = round(to_reserve / rate, 1) if rate else None
-                rate_source = "średnie zużycie z ostatnich dni"
-            hopper = {
-                "capacity_kg": capacity,
-                "reserve_kg": round(reserve, 1),
-                "used_kg": round(used, 1),
-                "used_kg_counter": round(used_counter, 1) if used_counter is not None else None,
-                "counter_note": counter["message"],
-                "counter_provisional": used_counter is not None and counter["collecting"],
-                "used_kg_model": round(used_model, 1) if used_model is not None else None,
-                "used_kg_burner": round(used_burner, 1) if used_burner is not None else None,
-                "remaining_kg": round(remaining, 1),
-                "remaining_percent": round(100 * remaining / capacity) if capacity else None,
-                "to_reserve_kg": round(to_reserve, 1),
-                "below_reserve": remaining <= reserve,
-                # czas do rezerwy 15 % (zalecane minimum z instrukcji kotła)
-                "days_to_reserve": days_to_reserve,
-                "days_source": rate_source,
-                "method": method,
-            }
+    last, hopper = build_last_refill_and_hopper(
+        now, refills, counter, calib, model, recent_periods, week, forecast,
+        daily_model, known_temps, hopper_period_inputs, _counter_method,
+        select_usage_estimate, _days_until, HOPPER_KG, HOPPER_RESERVE_PERCENT,
+    )
 
     planning = _planning_forecast(model, daily_model, forecast, now, known_temps)
 
