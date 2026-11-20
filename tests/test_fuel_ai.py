@@ -111,7 +111,13 @@ class FuelAiTests(unittest.TestCase):
 
     def test_partial_telemetry_coverage_is_reported_before_25_periods(self):
         rows = add_telemetry(synthetic_rows(19))
-        rows[7].pop("telemetry_return_c")
+        for name in (
+            "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
+            "telemetry_return_c", "telemetry_boiler_power_kw",
+            "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
+            "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
+        ):
+            rows[7].pop(name)
 
         result = fuel_ai.evaluate(rows)
         telemetry = result["telemetry"]
