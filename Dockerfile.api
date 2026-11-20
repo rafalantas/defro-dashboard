@@ -4,6 +4,7 @@ COPY api.py /app/api.py
 COPY fuel.py /app/fuel.py
 COPY fuel_engine.py /app/fuel_engine.py
 COPY fuel_runtime.py /app/fuel_runtime.py
+COPY fuel_config.py /app/fuel_config.py
 COPY fuel_errors.py /app/fuel_errors.py
 COPY fuel_http.py /app/fuel_http.py
 COPY fuel_estimates.py /app/fuel_estimates.py
