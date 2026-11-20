@@ -1,0 +1,94 @@
+# ThermoFlow 2.0 — remaining orchestration audit
+
+**Branch:** `audit/thermoflow2-engine-readiness`  
+**Baseline:** `a897a9bc5f281bd6e2d4b3cf9ee0ae7df91689c0`  
+**Purpose:** map the remaining production orchestration before moving it out of `fuel.py`. This document makes no runtime changes.
+
+## Decision
+
+Do not replace `fuel.py` in one pass and do not create a second monolith named `fuel_engine_v2.py`. The extracted modules now cover most deterministic domain calculations and external providers. The remaining hard part is the orchestration that combines them, owns shared cache state, and produces the public API payloads.
+
+The next implementation should introduce a dependency container/service boundary, then move one endpoint workflow at a time behind it. The compatibility facade must continue to expose `handle()`, `warmup()` and the existing private wrappers until parity is demonstrated.
+
+## Remaining responsibilities in `fuel.py`
+
+| Responsibility | Current functions / state | Dependencies and contract |
+|---|---|---|
+| Runtime configuration | module constants, `_csv_env`, `_parse_hdd_base_fixed`, `_parse_epoch` | Environment variables, canonical schema/timezone, physical constants, feeder epoch. Configuration must be immutable for one engine instance. |
+| Shared cache state | `_daily_cache`, `_om_cache`, `_weather_cache`, `_weather_fetched`, `_refills_cache`, `_model_cache`, `_counter_cache`, `_daily_model_cache`, `_telemetry_history_cache`, offset/forecast/climate/summary caches | Existing TTLs, cache keys, invalidation, partial-result rules and process lifetime are observable behavior. |
+| Local time and source composition | `_day_bounds`, `_get_daily`, `_period_temps`, `_period_sums`, `_om_offset`, `_forecast`, `_climate_monthly` | Warsaw local-day boundaries, DST, ThingSpeak/Open-Meteo arbitration, HDD-base correction, weather fallback. |
+| Counter daily feature construction | `_counter_drop`, `_counter_day_kg`, `_daily_rows` | Counter epoch, previous-day boundary points, complete-day test, 20-hour pump coverage and 1000-sample analog threshold. Telemetry remains optional. |
+| Statistics workflow | `_stats` | Parallel prefetch, lock boundary, refill/model/period calibration order, burner estimate enrichment, totals and exact response keys. |
+| Summary workflow | `_summary_build`, `_summary_calibration_inputs`, `_summary_job`, `_summary_kick`, `_summary`, `warmup` | Background worker lifecycle, stale-while-refresh behavior, 60-second cache, 25-second cold wait, calibration windows, forecast/planning, AI shadow isolation. |
+| Daily workflow | `_daily` | Prefetch order, lock boundary, house model and daily model fitting, residuals and telemetry state. |
+| Refill commands and auth | `_add_refill`, `_void_refill`, `_check_token`, `_invalidate_caches`, `_ts_write` | Input validation, ISO timestamps, bag-to-kg conversion, API token comparison, void audit record, exact HTTP statuses and cache invalidation. |
+| Public API routing | `handle` | Exact route/method matching, query defaults and bounds, payload compatibility, `FuelError` mapping. |
+| Telemetry audit | `_telemetry_fetch_windows`, `_telemetry_history`, `_telemetry_audit` | Separate cached feature history vs uncached public audit, two-channel requirements, 14-day public bound, per-day 8000-feed request limit. |
+
+## Endpoint dependency graph
+
+### `GET /api/fuel/stats`
+
+1. Validate and clamp `days` (default 30, max 120).
+2. Prefetch requested daily source records concurrently.
+3. Under the shared lock: load refills, fit house model, build refill periods, then read daily rows.
+4. Outside the lock: calculate burner calibration, enrich daily rows with burner-derived kg and HDD ratios, and aggregate totals.
+5. Return model, offset, config, both calibration states, summary, refill count, periods, daily rows and errors.
+
+**Parity-sensitive details:** model fitting precedes period construction because the fitted HDD base affects HDD values; a failed refill/model stage produces empty refill/period collections and an error entry while daily data is still attempted.
+
+### `GET /api/fuel/daily`
+
+1. Validate and clamp `days` (default 60, max 120).
+2. Prefetch `days + 2`.
+3. Under the shared lock: load refills, fit house model, build counter/telemetry daily rows and fit the daily weather model.
+4. Enrich rows with house-model prediction and counter residual where available.
+5. Return both models, counter calibration, telemetry state, weather units and daily rows.
+
+**Parity-sensitive details:** the daily model is trained from the same rows returned by the provider; do not include incomplete, epoch-transition or provisional rows differently during migration.
+
+### `GET /api/fuel/summary`
+
+1. Return `configured:false` when the refill channel is absent.
+2. Return cached summary immediately; kick background refresh when stale.
+3. On cold start, start one background job and wait at most 25 seconds.
+4. Background job prefetches, loads all refills, fits the house model, builds all-history calibration plus separate recent display periods, and fetches the last seven complete days.
+5. It then builds daily rows/model, evaluates AI in shadow-only mode, calculates weekly and hopper estimates, forecast and planning, and finally stores the complete response.
+6. If the cold worker finishes with a recorded error, return HTTP 502 through `FuelError`; otherwise preserve the `warming:true` response.
+
+**Parity-sensitive details:** never let AI evaluation failure invalidate deterministic estimates; do not replace the all-history calibration with the recent seven-refill display window; keep the existing counter/burner/model/recent-period precedence.
+
+### Refill writes
+
+- POST accepts either `kg` or `bags`; bag conversion uses configured bag mass.
+- `ts` accepts ISO 8601 and naive values are interpreted in the configured local timezone.
+- `note` is truncated to 255 characters.
+- DELETE voids one raw source entry by writing its ID to field 3; merged refill events are recomputed from raw records.
+- A successful write invalidates refill, house-model and summary caches; it does not invalidate immutable historical daily/counter/weather data.
+
+## Concurrency and cache risks
+
+1. The module-level `_lock` currently protects selected multi-step workflows, not every provider read. Do not assume it is a universal cache lock.
+2. Summary background state has its own `_summary_guard`; it prevents duplicate workers and is separate from the calculation lock.
+3. The summary cache stores a complete assembled payload. Moving calculations to a service must not accidentally cache partial/warming payloads as completed results.
+4. The house model cache key includes refill count, latest refill ID, Open-Meteo offset and fixed HDD base. Daily model cache has its own key and dependency set.
+5. Successful refill writes must preserve the exact invalidation set. Broad cache flushing would increase upstream requests and change cold-start behavior.
+6. Partial telemetry history has a shorter cache TTL than complete history. The public telemetry audit is a separate request path and should not be silently routed through the cached daily-feature provider.
+
+## Recommended extraction order
+
+1. **Create an immutable runtime configuration object** from the existing module constants and environment parsing. Test defaults, invalid values, epoch timezone normalization and fixed HDD-base parsing. Do not change defaults.
+2. **Create an explicit cache-state container** that holds the existing dictionaries and locks. Initially pass the same cache objects to the existing providers; do not change TTLs or key formats.
+3. **Extract endpoint workflow services** in this order: stats, daily, summary. Each service receives providers/models/calculators as dependencies and returns the existing payload. Keep HTTP parsing and status mapping in the compatibility facade.
+4. **Extract refill command service** with the existing validation/auth/void semantics and explicit invalidation callback.
+5. **Implement the new engine adapter** using these services. Initially run it in shadow mode against the legacy engine on identical normalized inputs.
+6. **Build a sanitized historical fixture** from real ThingSpeak history. Remove API keys, channel IDs, account metadata and any unrelated telemetry. Preserve timestamps, nulls, gaps, refill IDs/amounts, feeder epoch and source coverage because they affect the calculations.
+7. **Compare source-by-source outputs**: refill periods, house HDD base/model, counter calibration and epoch regime, burner calibration, daily model, source selection, weekly estimate, last-refill estimate, hopper reserve, forecast and planning. Define tolerances per numeric field and exact comparison for statuses, provenance, units, nulls and keys.
+8. Only after the fixture and live shadow run show stable parity should the new engine become selectable. Keep the legacy engine as rollback until an explicitly approved cutover.
+
+## Safety and release gates
+
+- This is read-only fuel estimation/dashboard work. Do not add controller writes or control logic.
+- Preserve the return-protection target at **55 °C**; do not alter boiler, burner, feeder, valve or pump settings.
+- Do not merge the PR, deploy, or switch production engine without explicit approval.
+- A passing synthetic unit suite is necessary but not sufficient. The inactive legacy `fuel.py` requires a representative historical-data replay and then a live shadow comparison before cutover.
