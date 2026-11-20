@@ -11,6 +11,7 @@ from statistics import median
 from zoneinfo import ZoneInfo
 
 from fuel_schema import telemetry_channels, timezone
+from fuel_telemetry_diagnostics import build_raw_diagnostics
 
 TZ = timezone()
 MAX_SAMPLE_GAP_SECONDS = 300
@@ -72,6 +73,7 @@ def analyze(feeds_by_channel, channel_ids, days, now=None):
             "last_sample": max(channel_times).isoformat() if channel_times else None,
         })
 
+    raw_diagnostics = build_raw_diagnostics(points, now)
     series_audit = []
     daily_values = defaultdict(lambda: defaultdict(list))
     daily_states = defaultdict(lambda: defaultdict(list))
@@ -148,6 +150,7 @@ def analyze(feeds_by_channel, channel_ids, days, now=None):
         "channels": channel_audit,
         "series": series_audit,
         "daily": daily,
+        "raw_diagnostics": raw_diagnostics,
         "quality": {
             "series_count": len(series_audit),
             "available_series": sum(not item["missing"] for item in series_audit),
