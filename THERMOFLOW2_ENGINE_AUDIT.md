@@ -360,3 +360,20 @@ Both `/api/fuel/summary` and `/api/fuel/daily` now use the same telemetry
 status helper. The legacy selection order and payload shapes are unchanged.
 Tests cover the four-period window, heating-load subtraction, empty windows,
 partial/unavailable precedence and available-day counting.
+
+
+### Weekly and hopper summary calculation extraction
+
+The seven-complete-day burner/counter estimate and the last-refill/hopper
+reserve calculation now live in `fuel_summary_estimates.py`. The module
+receives the daily rows, calibration and counter state, model/forecast inputs,
+and the calculation callbacks it needs. The facade retains ThingSpeak/weather
+access, cache ownership and locking; the hopper period inputs are collected
+under the existing lock in one injected operation.
+
+The extraction preserves the 70% daily sample-coverage filter, feeder-epoch
+source labels, counter-floor rejection, existing estimate-source precedence,
+15% configurable reserve calculation, weather-based days-to-reserve first and
+recent-consumption fallback second. Legacy summary payload keys and rounding
+are retained. Dedicated tests cover partial-day filtering, counter selection,
+floor behavior, provisional labels, reserve arithmetic and forecast fallback.
