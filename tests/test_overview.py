@@ -26,6 +26,8 @@ assert "/api/fuel/summary" in FUEL
 assert "daily_model" in OVERVIEW and "days_needed" in OVERVIEW
 assert "periods_used" in OVERVIEW and "kg_per_hdd" in OVERVIEW
 assert "v.return" in OVERVIEW
+assert "v.set_correction" in OVERVIEW and "korekta regulatora" in OVERVIEW
+assert "v.set_after_correction" in OVERVIEW and "po korekcie" in OVERVIEW
 assert 'id="diagnosticsIntro"' in HTML
 assert "STB pozostaje bez odczytu" in HTML
 assert "POST" not in OVERVIEW and "DELETE" not in OVERVIEW
