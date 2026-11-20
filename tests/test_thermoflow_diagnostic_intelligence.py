@@ -116,7 +116,8 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         fire = []
         for index in range(25):
             base = start + index * 3600
-            fire.extend([[base, 1], [base + 60, 1], [base + 600, 0], [base + 660, 0]])
+            fire.extend([[base, 0], [base + 60, 1], [base + 120, 1],
+                         [base + 660, 0], [base + 720, 0]])
         result = build_thermoflow_intelligence({"thermoflow-fire": fire})
         model = result["burner_ml_baseline"]
         self.assertEqual(model["status"], "evaluated")
