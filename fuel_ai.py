@@ -396,7 +396,6 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
     gain = ((baseline_score["mae_kg_day"] - candidate_score["mae_kg_day"])
@@ -416,7 +415,6 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Nie udało się dopasować modelu końcowego"}
 
@@ -534,7 +532,6 @@ def evaluate(rows: list[dict]) -> dict:
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-        "missing_day_gaps": day_gaps,
         "telemetry_incomplete_days": telemetry_incomplete_days,
         "mae_gain_percent": round(gain * 100, 1),
         "baseline": baseline_score,
