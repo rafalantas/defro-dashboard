@@ -43,3 +43,13 @@ assert audit.schematic, "Original inline installation SVG must remain present"
 for asset in audit.assets:
     assert (ROOT / asset).is_file(), f"Missing frontend asset: {asset}"
 print(f"Frontend assets: {len(audit.assets)} paths, {len(audit.ids)} stable IDs, inline SVG: OK")
+
+
+def test_refill_history_does_not_render_notes():
+    """Refill history shows timestamp and weight only; notes are not used by the operator."""
+    source = (ROOT / "assets/js/fuel-panel.js").read_text(encoding="utf-8")
+    render = source.split("function renderRefills(){", 1)[1].split("function renderModel(){", 1)[0]
+    assert "r.note" not in render
+    assert "Bez notatki" not in render
+    assert "date(r.ts)" in render
+    assert "n(r.kg,1)+' kg'" in render

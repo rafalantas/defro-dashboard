@@ -30,7 +30,7 @@
   function renderRefills(){
     const el=$('fuelRefillHistory'); if(!el)return;
     const rows=refillData.slice().reverse().slice(0,12);
-    el.innerHTML=rows.length?rows.map(r=>'<div class="fuel-refill-row"><div><strong>'+esc(date(r.ts))+'</strong><small>'+esc(r.note||'Bez notatki')+'</small></div><b>'+n(r.kg,1)+' kg</b></div>').join(''):'<div class="fuel-empty">Brak zapisanych dosypek.</div>';
+    el.innerHTML=rows.length?rows.map(r=>'<div class="fuel-refill-row"><strong>'+esc(date(r.ts))+'</strong><b>'+n(r.kg,1)+' kg</b></div>').join(''):'<div class="fuel-empty">Brak zapisanych dosypek.</div>';
     const count=$('fuelRefillCount');if(count)count.textContent=refillData.length+' wpisów';
   }
   function renderModel(){
