@@ -46,6 +46,22 @@ class RefillPeriodAiTests(unittest.TestCase):
         self.assertEqual(result["rejected_by_reason"]["duplicate_day"], 0)
         self.assertEqual(result["rejected_days"], 0)
 
+    def test_optional_telemetry_is_time_weighted_over_the_refill_period(self):
+        tz = ZoneInfo("Europe/Warsaw")
+        refills = [
+            {"ts": datetime(2026, 1, 1, 8, tzinfo=tz).isoformat(), "kg": 30},
+            {"ts": datetime(2026, 1, 3, 8, tzinfo=tz).isoformat(), "kg": 24},
+        ]
+        def features(start, end):
+            base = {"fraction": 1.0, "hdd_lag": 8, "solar_mj": 2,
+                    "wind_max_kmh": 10}
+            first = dict(base, telemetry_return_c=50, telemetry_pump_floor_h=10)
+            second = dict(base, telemetry_return_c=54, telemetry_pump_floor_h=14)
+            return [first, second]
+        rows, _ = build_refill_period_rows(refills, features, max_days=120)
+        self.assertAlmostEqual(rows[0]["telemetry_return_c"], 52)
+        self.assertAlmostEqual(rows[0]["telemetry_pump_floor_h"], 12)
+
     def test_missing_weather_rejects_period_without_imputation(self):
         tz = ZoneInfo("Europe/Warsaw")
         refills = [
