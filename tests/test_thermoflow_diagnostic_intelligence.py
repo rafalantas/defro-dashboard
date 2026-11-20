@@ -24,7 +24,8 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         result = build_thermoflow_intelligence({"thermoflow-flue": [[1795161600, 85]]})
         c = result["combustion_diagnostics"]
         self.assertFalse(c["elevated_flue_episodes"][0]["ignition_confirmed"])
-        self.assertEqual(c["fire_sensor"]["status"], "separate_fuel_telemetry_audit")
+        self.assertEqual(c["fire_sensor"]["status"], "not_available_in_history_window")
+        self.assertIn("Brak próbek FIRE", c["fire_sensor"]["note"])
 
     def test_ml_uses_last_five_cycles_as_chronological_holdout(self):
         cycles = [{"complete": True, "cold_gap_minutes": 10 + i % 4,
@@ -58,6 +59,9 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(combustion["fire_flue_time_correlations"][0]["fire_samples_within_5m"], 1)
         self.assertIn("semantics are not inferred",
                       combustion["fire_flue_time_correlations"][0]["interpretation"])
+        self.assertEqual(combustion["fire_sensor"]["status"], "available_in_thermoflow_history")
+        self.assertEqual(combustion["fire_sensor"]["fields"]["field1"], "flame_state")
+        self.assertEqual(combustion["fire_sensor"]["fields"]["field2"], "brightness")
 
     def test_insufficient_cycles_do_not_train(self):
         cycles = [{"complete": True, "cold_gap_minutes": 10} for _ in range(24)]
