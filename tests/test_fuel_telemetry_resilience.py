@@ -52,9 +52,10 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
         ):
             self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
 
-    def test_counter_drop_rejects_long_telemetry_gap(self):
+    def test_counter_drop_does_not_mistake_suppressed_unchanged_values_for_gaps(self):
         start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
         end = start + timedelta(minutes=30)
+        # The provider emits change points, not every unchanged feed sample.
         points = [
             (start.timestamp() - 60, 100.0),
             (start.timestamp() + 60, 99.0),
@@ -63,7 +64,7 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
         with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
             fuel, "_counter_points", return_value=points
         ):
-            self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
+            self.assertEqual(fuel._counter_drop(start, end), (2.0, True, False))
 
     def test_counter_drop_accepts_complete_interval_with_regular_samples(self):
         start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
