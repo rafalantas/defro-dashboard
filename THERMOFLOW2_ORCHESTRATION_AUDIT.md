@@ -2,15 +2,22 @@
 
 **Branch:** `audit/thermoflow2-engine-readiness`  
 **Baseline:** `a897a9bc5f281bd6e2d4b3cf9ee0ae7df91689c0`  
-**Purpose:** map the remaining production orchestration before moving it out of `fuel.py`. This document makes no runtime changes.
+**Purpose:** record orchestration boundaries and remaining work. The implementation status below reflects later runtime changes.
+
+**Current status (2026-11-20):** `ThermoFlowEngine` is the API runtime and
+dispatches to extracted endpoint services. Its composition root is
+`thermoflow2_runtime.py`; `fuel.py` is retained as an import-compatible alias.
+The recent CSV replay was local and is not an independent old/new comparison.
+The AI evaluator is integrated as a shadow output only; its minimum training
+and holdout history is not available in the supplied short CSV window.
 
 ## Decision
 
-Do not replace `fuel.py` in one pass and do not create a second monolith named `fuel_engine_v2.py`. The extracted modules now cover most deterministic domain calculations and external providers. The remaining hard part is the orchestration that combines them, owns shared cache state, and produces the public API payloads.
+The extracted modules cover most deterministic domain calculations and external providers. The composition root now lives in `thermoflow2_runtime.py`, with shared cache state in `fuel_runtime.py`, public route handling in `fuel_engine.py`, and endpoint workflows in dedicated service modules. The remaining work is proving operational behavior and deciding whether AI should ever be promoted beyond shadow mode.
 
-The next implementation should introduce a dependency container/service boundary, then move one endpoint workflow at a time behind it. The compatibility facade must continue to expose `handle()`, `warmup()` and the existing private wrappers until parity is demonstrated.
+`fuel.py` is retained as a compatibility import alias. Keep its existing callers working while further extraction proceeds; production requests already load `ThermoFlowEngine`.
 
-## Remaining responsibilities in `fuel.py`
+## Responsibilities remaining in the runtime composition root
 
 | Responsibility | Current functions / state | Dependencies and contract |
 |---|---|---|
@@ -93,18 +100,18 @@ Refill writes
 - This is read-only fuel estimation/dashboard work. Do not add controller writes or control logic.
 - Preserve the return-protection target at **55 °C**; do not alter boiler, burner, feeder, valve or pump settings.
 - Do not merge the PR, deploy, or switch production engine without explicit approval.
-- A passing synthetic unit suite is necessary but not sufficient. The inactive legacy `fuel.py` requires a representative historical-data replay and then a live shadow comparison before cutover.
+- A passing synthetic suite and local replay are evidence, not proof of independent old/new parity. The current branch has no independently executable legacy engine for live shadow comparison; validate the current runtime against documented contracts and keep AI shadow-only until sufficient history is available.
 
 
 ## First runtime-state extraction
 
 The existing cache dictionaries and two synchronization locks have been grouped
-in `fuel_runtime.FuelCacheState`. The legacy facade now creates one state
-instance and aliases its original module-level names to the same objects.
+in `fuel_runtime.FuelCacheState`. The runtime composition root creates one
+state instance and aliases its module-level names to the same objects.
 This is intentionally a storage-only extraction:
 
 - cache dictionary keys and initial shapes are unchanged;
-- all TTL constants remain in `fuel.py`;
+- all TTL constants remain in `thermoflow2_runtime.py` and `fuel_config.py`;
 - provider cache policies remain unchanged;
 - successful refill invalidation still clears exactly the same three caches;
 - no cache persistence, eviction, or cross-process sharing was introduced;
@@ -120,7 +127,7 @@ the future engine object without changing current module-level callers.
 The stats endpoint orchestration now lives in `fuel_stats_service.py`; the
 daily endpoint orchestration lives in `fuel_daily_service.py`; and the
 deterministic summary calculation lives in `fuel_summary_service.py`.
-The `fuel.py` functions remain compatibility wrappers and pass the original
+The runtime composition functions pass the original
 provider functions, cache objects, constants and shared lock into these
 services. `ThermoFlowEngine` now dispatches public routes to those service
 wrappers; `fuel.handle` remains available for existing imports.
@@ -133,7 +140,7 @@ callbacks, AI shadow-only failure isolation, latest-seven-refill calibration
 versus all-history house-model fitting, estimate precedence, planning/forecast assembly and
 the final summary-cache update. Summary background-worker lifecycle,
 stale-while-refresh behavior, cold-start wait and cache TTL remain in
-`fuel.py` and are not yet extracted.
+`thermoflow2_runtime.py` and are not yet extracted.
 
 New contract tests cover daily validation, payload/prediction behavior,
 prefetch failure propagation, summary payload/cache behavior, unavailable

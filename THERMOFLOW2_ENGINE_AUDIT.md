@@ -12,7 +12,7 @@ uncertainty. Dedicated unit tests cover all three states.
 
 **Audited revision:** `main` at `3392c3e39acab3436c6182c00cf6502778cf476e`  
 **Scope:** `fuel.py`, `fuel_ai.py`, `fuel_telemetry.py`, API integration in `api.py`, current tests and `Dockerfile.api`.  
-**Purpose:** identify migration blockers and behavioral contracts before replacing the legacy fuel engine. This is an audit only; no production runtime code is changed.
+**Purpose:** track migration blockers and behavioral contracts. This file began as a baseline audit; see the implementation status below for changes since that baseline.
 
 ## Executive assessment
 
@@ -31,6 +31,22 @@ ThermoFlow 2.0 must preserve these as distinguishable sources. It must never sil
 **No production changes are recommended as part of this audit.** The dashboard must not gain boiler-control behavior. The 4D valve, pumps, controller settings and especially the 55 °C return-protection target remain outside the migration scope.
 
 ## Implementation progress on this branch
+
+**Current runtime status (2026-11-20):** `api.py` loads `ThermoFlowEngine`; fuel
+route dispatch is owned by `fuel_engine.py`. The production composition,
+provider bindings, and remaining orchestration now live in
+`thermoflow2_runtime.py`. `fuel.py` is a compatibility import alias to that
+module so existing callers and tests retain their imports and monkeypatch
+behavior. Domain and endpoint calculations are delegated to extracted modules.
+This is the ThermoFlow 2.0 runtime path, not a dual-run against an independent
+legacy implementation.
+
+AI remains an isolated shadow evaluator: it is included in the summary
+workflow and reports its validation, but it does not choose production fuel
+estimates. The supplied recent CSV history does not meet the evaluator's
+minimum of 45 training days plus 7 holdout days, so this evidence cannot
+support promoting ML output. Keep deterministic estimates authoritative until
+that validation gate is met.
 
 The first refactor stage has now addressed several audit findings without replacing production calculations:
 
@@ -51,11 +67,14 @@ The first refactor stage has now addressed several audit findings without replac
 - `fuel.py` re-exports these operations through compatibility wrappers, so existing callers and tests keep their names and payload behavior.
 - Docker packaging and CI include all extracted modules, plus focused regression tests.
 
-These are branch changes only. They do not constitute a production cutover; `fuel.py` remains the production calculation path, and AI remains shadow-only. CI must pass on the latest branch head before this stage is considered validated.
+The current branch routes production fuel requests through ThermoFlow 2.0.
+This does not promote AI output, and it does not establish old/new parity
+against a second independently executable legacy engine. Keep that limitation
+visible in release decisions.
 
 ## Module inventory
 
-### `fuel.py` — legacy production engine
+### `thermoflow2_runtime.py` — ThermoFlow 2.0 composition root
 
 Approximately 1,779 lines. Responsibilities currently include:
 
@@ -69,7 +88,9 @@ Approximately 1,779 lines. Responsibilities currently include:
 - telemetry-history fetching and telemetry audit orchestration;
 - background warmup and HTTP route dispatch.
 
-This module is both domain logic and infrastructure/API adapter. It should be decomposed by responsibility, not mechanically renamed.
+This module binds environment configuration, caches, providers and extracted
+services. `fuel.py` remains a compatibility import alias. Continue extracting
+cohesive responsibilities instead of adding new domain calculations here.
 
 ### `fuel_ai.py` — experimental shadow model
 

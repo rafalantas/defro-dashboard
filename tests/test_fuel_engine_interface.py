@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 
 import fuel_engine
+import fuel
+import thermoflow2_runtime
 from fuel_errors import FuelError
 
 
@@ -19,6 +21,10 @@ class FakeImplementation:
 
 
 class FuelEngineInterfaceTests(unittest.TestCase):
+    def test_legacy_import_name_is_the_thermoflow_runtime_module(self):
+        self.assertIs(fuel, thermoflow2_runtime)
+        self.assertIsInstance(fuel_engine.load(), fuel_engine.ThermoFlowEngine)
+
     def test_adapter_preserves_handle_arguments_and_result(self):
         implementation = FakeImplementation()
         engine = fuel_engine.LegacyFuelEngine(implementation)
