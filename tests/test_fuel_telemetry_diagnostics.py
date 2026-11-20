@@ -99,6 +99,46 @@ class RawTelemetryDiagnosticsTests(unittest.TestCase):
         result = build_raw_diagnostics({}, datetime.now(timezone.utc))
         self.assertEqual(result["fire_activity"]["episodes_count"], 0)
 
+
+    def test_hysteresis_crossing_starts_a_correlated_ignition_cycle(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        points = {
+            "boiler_temp_c": [
+                (start, 65.0), (start + timedelta(minutes=1), 63.5),
+                (start + timedelta(minutes=2), 64.0), (start + timedelta(minutes=10), 70.0),
+            ],
+            "boiler_setpoint_c": [(ts, 70.0) for ts in (
+                start, start + timedelta(minutes=1), start + timedelta(minutes=2),
+                start + timedelta(minutes=10))],
+            "boiler_hysteresis_c": [(ts, 6.0) for ts in (
+                start, start + timedelta(minutes=1), start + timedelta(minutes=2),
+                start + timedelta(minutes=10))],
+            "fire_detected": [
+                (start, 0), (start + timedelta(minutes=2), 1),
+                (start + timedelta(minutes=3), 1), (start + timedelta(minutes=4), 0),
+            ],
+            "fire_brightness": [(start + timedelta(minutes=2), 220)],
+            "flue_c": [(start, 40), (start + timedelta(minutes=3), 85)],
+        }
+        result = build_raw_diagnostics(points, start)
+        ignition = result["ignition_activity"]
+        self.assertEqual(ignition["requests_count"], 1)
+        self.assertEqual(ignition["requests"][0]["ignition_threshold_c"], 64.0)
+        cycle = ignition["cycles"][0]
+        self.assertEqual(cycle["minutes_to_flame"], 1.0)
+        self.assertEqual(cycle["minutes_to_flue_activity"], 2.0)
+        self.assertEqual(cycle["minutes_to_temperature_recovery"], 9.0)
+
+    def test_hysteresis_crossing_does_not_bridge_long_telemetry_gap(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        points = {
+            "boiler_temp_c": [(start, 65), (start + timedelta(minutes=10), 63)],
+            "boiler_setpoint_c": [(start, 70), (start + timedelta(minutes=10), 70)],
+            "boiler_hysteresis_c": [(start, 6), (start + timedelta(minutes=10), 6)],
+        }
+        result = build_raw_diagnostics(points, start)
+        self.assertEqual(result["ignition_activity"]["requests_count"], 0)
+
     def test_empty_data_is_safe(self):
         result = build_raw_diagnostics({}, datetime.now(timezone.utc))
         self.assertEqual(result["firing_activity"]["episodes_count"], 0)
