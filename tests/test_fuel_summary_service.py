@@ -155,10 +155,14 @@ class SummaryServiceTests(unittest.TestCase):
             raise RuntimeError("experimental model failure")
         deps, _, _ = self.dependencies(ai_evaluate=fail)
         result = build_summary(deps)
-        self.assertEqual(result["ai_shadow"], {
-            "status": "unavailable",
-            "message": "Model eksperymentalny chwilowo niedostępny",
-        })
+        self.assertEqual(result["ai_shadow"]["status"], "unavailable")
+        self.assertEqual(
+            result["ai_shadow"]["message"],
+            "Model eksperymentalny chwilowo niedostępny",
+        )
+        self.assertEqual(
+            result["ai_shadow"]["data_source"]["source"], "refill_periods"
+        )
         self.assertEqual(result["last7"], {"kg": 7.0})
 
 
