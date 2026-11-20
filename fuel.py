@@ -676,39 +676,21 @@ def _summary() -> dict:
 
 
 def _climate_monthly(today: date) -> dict:
-    """Pięcioletnie średnie miesięczne dla lokalizacji kotła (Open-Meteo Archive)."""
-    cached = _climate_cache["data"]
-    if cached and time.monotonic() - _climate_cache["at"] < CLIMATE_CACHE_SECONDS:
-        return cached
-    end = today - timedelta(days=1)
-    start = end.replace(year=end.year - CLIMATE_YEARS)
-    params = {
-        "latitude": FUEL_LAT, "longitude": FUEL_LON,
-        "daily": "temperature_2m_mean,shortwave_radiation_sum,wind_speed_10m_max",
-        "timezone": str(TZ), "start_date": start.isoformat(), "end_date": end.isoformat(),
-    }
-    daily = _request_json(OM_ARCHIVE, params).get("daily", {})
-    fields = ("temperature_2m_mean", "shortwave_radiation_sum", "wind_speed_10m_max")
-    buckets = {}
-    for i, day_text in enumerate(daily.get("time", [])):
-        bucket = buckets.setdefault(int(day_text[5:7]), {name: [] for name in fields})
-        for name in fields:
-            values = daily.get(name, [])
-            value = values[i] if i < len(values) else None
-            if value is not None:
-                bucket[name].append(float(value))
-    result = {}
-    for month, values in buckets.items():
-        result[month] = {
-            "t_mean": sum(values[fields[0]]) / len(values[fields[0]]) if values[fields[0]] else None,
-            "solar_mj": sum(values[fields[1]]) / len(values[fields[1]]) if values[fields[1]] else None,
-            "wind_max_kmh": sum(values[fields[2]]) / len(values[fields[2]]) if values[fields[2]] else None,
-            "samples": len(values[fields[0]]),
-        }
-    if not result:
-        raise FuelError(502, "Brak danych klimatycznych Open-Meteo dla lokalizacji")
-    _climate_cache.update(at=time.monotonic(), data=result)
-    return result
+    """Compatibility wrapper for five-year Open-Meteo climate normals."""
+    from fuel_climate_provider import climate_monthly
+    return climate_monthly(
+        today=today,
+        years=CLIMATE_YEARS,
+        latitude=FUEL_LAT,
+        longitude=FUEL_LON,
+        timezone=TZ,
+        archive_url=OM_ARCHIVE,
+        cache=_climate_cache,
+        cache_seconds=CLIMATE_CACHE_SECONDS,
+        request_json=_request_json,
+        fuel_error=FuelError,
+        monotonic=time.monotonic,
+    )
 
 
 def _planning_forecast(model: dict | None, daily_model: dict | None,
