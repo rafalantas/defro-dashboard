@@ -270,6 +270,16 @@ def evaluate(rows: list[dict]) -> dict:
     candidate_score = _metrics(actual, candidate_predictions)
     fixed_baseline_score = _fixed_holdout_metrics(train, test, baseline_names)
     fixed_candidate_score = _fixed_holdout_metrics(train, test, candidate_names)
+    ablation_specs = {
+        "hdd_only": baseline_names,
+        "hdd_plus_solar": ["hdd_lag", "solar_mj"],
+        "hdd_solar_wind_interaction": candidate_names,
+    }
+    ablation_scores = {
+        label: _fixed_holdout_metrics(train, test, names)
+        for label, names in ablation_specs.items()
+    }
+    ablation_available = all(score is not None for score in ablation_scores.values())
     if fixed_baseline_score is None or fixed_candidate_score is None:
         return {"status": "unstable", "days": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days,
@@ -385,6 +395,11 @@ def evaluate(rows: list[dict]) -> dict:
         "mae_gain_percent": round(gain * 100, 1),
         "baseline": baseline_score,
         "candidate": candidate_score,
+        "ablation": {
+            "method": "same chronological fixed holdout; descriptive comparison, not independent evidence",
+            "available": ablation_available,
+            "fixed_holdout": ablation_scores,
+        },
         "validation": {
             "protocol": "walk_forward_expanding_window",
             "independence_note": "walk-forward and fixed holdout score the same terminal dates; metrics are complementary, not independent evidence",
