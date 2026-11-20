@@ -107,6 +107,7 @@ def _fire_events(normalized):
     brightness_by_time = {ts: value for ts, value in brightness}
     events = []
     current = []
+    current_appearance_transition = False
     previous_state = None
     previous_ts = None
 
@@ -124,7 +125,7 @@ def _fire_events(normalized):
             "brightness": _stats(values),
             "flame_presence_observed": True,
             "flame_appearance_transition_observed": (
-                previous_state is False and previous_ts is not None
+                current_appearance_transition
             ),
             "flame_disappearance_transition_observed": end_confirmed,
             "ended_by": ended_by,
@@ -140,6 +141,7 @@ def _fire_events(normalized):
             previous_state = None
         if state:
             if not current:
+                current_appearance_transition = previous_state is False and previous_ts is not None
                 current.append((ts, value))
             else:
                 current.append((ts, value))
