@@ -181,7 +181,8 @@ def evaluate(rows: list[dict]) -> dict:
         # Room temperature is not a model feature; invalid values are discarded.
         for room_key in ("room_c", "room_temp", "room_temperature_c"):
             value = row.get(room_key)
-            if value is not None and _number(value) is None:
+            room_value = _number(value)
+            if value is not None and (room_value is None or room_value <= 0):
                 row.pop(room_key, None)
         row["wind_hdd_lag"] = row["wind_max_kmh"] * row["hdd_lag"] / 100.0
         clean.append(row)
