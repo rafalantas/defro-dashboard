@@ -95,6 +95,7 @@ from fuel_config import (
 
 
 # Cache storage is grouped in FuelCacheState; TTL/key/invalidation policy remains in fuel_config.
+from fuel_stats_service import build_stats
 from fuel_runtime import FuelCacheState
 
 _cache_state = FuelCacheState()
@@ -596,70 +597,28 @@ def _burner_kg(start: datetime, end: datetime, calib: dict):
 
 
 def _stats(query: dict) -> dict:
-    try:
-        days = max(1, min(int(query.get("days", ["30"])[0]), MAX_DAYS))
-    except ValueError:
-        raise FuelError(400, "days musi być liczbą") from None
-
-    today = datetime.now(TZ).date()
-    errors = []
-
-    def prefetch(d: date):
-        try:
-            _get_daily_raw(d)
-        except FuelError:
-            pass
-
-    def safe_daily(d: date) -> dict:
-        try:
-            return _get_daily(d)
-        except FuelError as e:
-            return {"day": d.isoformat(), "error": e.message}
-
-    with _lock:
-        wanted = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
-        # pierwsze wywołanie: niezapamiętane doby pobieramy równolegle (limit nginx to 60 s)
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(prefetch, wanted))
-        try:
-            refills = _refills()
-            model = _fit_model(refills)      # najpierw model: ustala temperaturę bazową stopniodni
-            periods = _periods(refills)
-        except FuelError as e:
-            refills, periods, model = [], [], None
-            errors.append(e.message)
-        daily = [safe_daily(d) for d in wanted]
-
-    calib = _calibration(periods)
-    for r in daily:
-        if r.get("burner_kwh") is None:
-            continue
-        day_start = _day_bounds(date.fromisoformat(r["day"]))[0]
-        est = r["burner_kwh"] / (PELLET_KWH_PER_KG * BOILER_EFF) * _burner_factor(calib, day_start)
-        r["est_kg"] = round(est, 1)
-        r["est_provisional"] = day_start >= COUNTER_EPOCH and bool(calib["new"].get("provisional"))
-        r["est_kg_per_hdd"] = round(est / r["hdd"], 3) if r.get("hdd") else None
-        if model and r.get("hdd") and r["hdd"] >= 2:
-            r["heating_kg_per_hdd"] = round((est - model["base_kg_per_day"]) / r["hdd"], 2)
-
-    valid = [r for r in daily if r.get("hdd") is not None and "est_kg" in r]
-    tot_hdd = sum(r["hdd"] for r in valid)
-    tot_kg = sum(r["est_kg"] for r in valid)
-    return {
-        "model": model,
-        "om_offset": _om_offset(),
-        "config": {"hdd_base": _active_base(), "hdd_base_default": HDD_BASE, "hdd_base_fixed": HDD_BASE_FIXED, "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
-                   "boiler_eff": BOILER_EFF, "bag_kg": BAG_KG},
-        "calibration": calib,
-        "counter_calibration": _counter_calibration(refills) if refills else None,
-        "summary": {"days_with_burner_data": len(valid), "hdd": round(tot_hdd, 1),
-                    "est_kg": round(tot_kg, 1),
-                    "est_kg_per_hdd": round(tot_kg / tot_hdd, 3) if tot_hdd > 0 else None},
-        "refills_count": len(refills),
-        "periods": periods,
-        "daily": daily,
-        "errors": errors,
-    }
+    return build_stats(query, {
+        "max_days": MAX_DAYS,
+        "now": lambda: datetime.now(TZ),
+        "lock": _lock,
+        "prefetch_daily": _get_daily_raw,
+        "get_daily": _get_daily,
+        "refills": _refills,
+        "fit_model": _fit_model,
+        "periods": _periods,
+        "calibration": _calibration,
+        "day_bounds": _day_bounds,
+        "pellet_kwh_per_kg": PELLET_KWH_PER_KG,
+        "boiler_eff": BOILER_EFF,
+        "burner_factor": _burner_factor,
+        "om_offset": _om_offset,
+        "active_base": _active_base,
+        "hdd_base": HDD_BASE,
+        "hdd_base_fixed": HDD_BASE_FIXED,
+        "bag_kg": BAG_KG,
+        "counter_calibration": _counter_calibration,
+        "fuel_error": FuelError,
+    })
 
 
 def _prefetch(days: int = 400):
