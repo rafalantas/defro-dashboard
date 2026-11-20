@@ -26,7 +26,11 @@ TS_READ_KEY_TEMPS = (_csv_env("THINGSPEAK_READ_KEYS") or [""])[0]
 TS_CHANNEL_VALVE = (_csv_env("THINGSPEAK_CHANNEL_IDS") + ["", ""])[1]
 TS_READ_KEY_VALVE = (_csv_env("THINGSPEAK_READ_KEYS") + ["", ""])[1]
 TS_CHANNEL_FIRE = os.getenv("THINGSPEAK_FIRE_CHANNEL_ID", "").strip()
-TS_READ_KEY_FIRE = os.getenv("THINGSPEAK_FIRE_READ_KEY", "").strip()
+# Prefer the canonical name; keep the earlier FIRE_READ_KEY name as a backwards-compatible alias.
+TS_READ_KEY_FIRE = (
+    os.getenv("THINGSPEAK_READ_KEY_FIRE")
+    or os.getenv("THINGSPEAK_FIRE_READ_KEY", "")
+).strip()
 FIELD_COUNTER = field_number("fuel_percent", "valve_pumps_fuel")
 FIELD_OUTDOOR = field_number("outdoor_c", "temperatures_power")
 FIELD_POWER = field_number("boiler_power_kw", "temperatures_power")
