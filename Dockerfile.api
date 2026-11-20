@@ -15,6 +15,7 @@ COPY fuel_daily_model.py /app/fuel_daily_model.py
 COPY fuel_summary_metrics.py /app/fuel_summary_metrics.py
 COPY fuel_refills.py /app/fuel_refills.py
 COPY fuel_refill_provider.py /app/fuel_refill_provider.py
+COPY fuel_refill_service.py /app/fuel_refill_service.py
 COPY fuel_counter.py /app/fuel_counter.py
 COPY fuel_counter_provider.py /app/fuel_counter_provider.py
 COPY fuel_energy.py /app/fuel_energy.py
