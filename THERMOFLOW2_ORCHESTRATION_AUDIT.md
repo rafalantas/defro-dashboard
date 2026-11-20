@@ -58,7 +58,9 @@ The next implementation should introduce a dependency container/service boundary
 
 **Parity-sensitive details:** never let AI evaluation failure invalidate deterministic estimates; do not replace the all-history calibration with the recent seven-refill display window; keep the existing counter/burner/model/recent-period precedence.
 
-### Refill writes
+### Refill command validation and orchestration now lives in `fuel_refill_service.py`; `fuel.py` retains the HTTP body decoding and token check, and injects the existing ThingSpeak writer/raw-refill reader into the service. The command service preserves kg-versus-bags conversion, the 0–1000 kg range, ISO timestamp parsing and Warsaw timezone for naive timestamps, 255-character note truncation, single-raw-entry void semantics, and existing 400/404 errors. The existing ThingSpeak writer remains responsible for UTC `created_at`, 503/429 handling and the exact three-cache invalidation set.
+
+Refill writes
 
 - POST accepts either `kg` or `bags`; bag conversion uses configured bag mass.
 - `ts` accepts ISO 8601 and naive values are interpreted in the configured local timezone.
@@ -137,3 +139,15 @@ prefetch failure propagation, summary payload/cache behavior, unavailable
 daily data and AI failure isolation. Docker and CI include both service modules.
 Historical ThingSpeak replay and old/new parity remain mandatory before any
 runtime cutover.
+
+
+## Refill command service extraction
+
+`fuel_refill_service.py` now owns add-refill and void-refill validation and
+orchestration. The public API facade still owns token authentication and JSON
+decoding; the service receives the original writer, raw refill reader, timezone,
+bag size and error type as dependencies. Regression coverage includes kg and
+bag input, naive local timestamps, note truncation, invalid ranges/formats,
+voiding one raw entry and the 400/404 contract. The module is included in the
+API Docker image and ThermoFlow CI. No refill writes were performed during
+this refactor.
