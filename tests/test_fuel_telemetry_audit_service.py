@@ -5,7 +5,10 @@ from zoneinfo import ZoneInfo
 from unittest.mock import Mock
 
 from fuel_errors import FuelError
-from fuel_telemetry_audit_service import build_audit
+from fuel_telemetry_audit_service import (
+    AUDIT_REQUEST_TIMEOUT_SECONDS,
+    build_audit,
+)
 
 
 class TelemetryAuditServiceTests(unittest.TestCase):
@@ -15,7 +18,7 @@ class TelemetryAuditServiceTests(unittest.TestCase):
         result = build_audit(
             query or {}, max_days=120,
             channel_ids=channels or ["temps", "valve"],
-            read_keys=["key-a", ""], today=date(2026, 11, 20),
+            read_keys=["key-a", "", "fire-key"], today=date(2026, 11, 20),
             tz=ZoneInfo("Europe/Warsaw"), endpoint="https://example.invalid",
             request_json=request, analyze=analyze, fuel_error=FuelError,
         )
@@ -26,12 +29,16 @@ class TelemetryAuditServiceTests(unittest.TestCase):
         self.assertEqual(request.call_count, 16)
         self.assertEqual(result["daily"], [{"day": "2026-11-19"}])
         self.assertEqual(analyze.call_args.args[1:], (["temps", "valve"], 7))
-        first_url, first_kwargs = request.call_args_list[0].args[0], request.call_args_list[0].kwargs
-        self.assertIn("/channels/temps/", first_url)
-        self.assertEqual(first_kwargs["params"]["results"], 8000)
-        self.assertEqual(first_kwargs["params"]["api_key"], "key-a")
-        self.assertEqual(first_kwargs["timeout"], 12)
-
+        self.assertTrue(all(
+            call.kwargs["timeout"] == AUDIT_REQUEST_TIMEOUT_SECONDS
+            for call in request.call_args_list
+        ))
+        temps_call = next(
+            call for call in request.call_args_list
+            if "/channels/temps/" in call.args[0]
+        )
+        self.assertEqual(temps_call.kwargs["params"]["results"], 8000)
+        self.assertEqual(temps_call.kwargs["params"]["api_key"], "key-a")
 
     def test_optional_fire_channel_is_fetched_and_passed_to_analysis(self):
         result, request, analyze = self.invoke(
@@ -48,8 +55,11 @@ class TelemetryAuditServiceTests(unittest.TestCase):
     def test_clamps_to_fourteen_days_and_preserves_local_boundaries(self):
         _, request, _ = self.invoke({"days": ["99"]})
         self.assertEqual(request.call_count, 30)
-        params = request.call_args_list[0].kwargs["params"]
-        self.assertEqual(params["start"], "2026-11-06 00:00:00")
+        params = next(
+            call.kwargs["params"] for call in request.call_args_list
+            if "/channels/temps/" in call.args[0]
+            and call.kwargs["params"]["start"] == "2026-11-06 00:00:00"
+        )
         self.assertEqual(params["end"], "2026-11-07 00:00:00")
         self.assertEqual(params["timezone"], "Europe/Warsaw")
 
