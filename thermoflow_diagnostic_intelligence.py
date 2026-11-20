@@ -134,8 +134,14 @@ def _combustion(raw):
             "flue_min_c": min(v for _, v in ep), "flue_max_c": max(v for _, v in ep),
             "classification": "elevated_flue_activity", "ignition_confirmed": False,
         } for ep in episodes[-100:]],
-        "fire_sensor": {"status": "separate_fuel_telemetry_audit",
-                        "note": "FIRE jest dostępny w /api/fuel/telemetry-audit, nie w dwukanałowym /api/history."},
+        "fire_sensor": {
+            "status": "available_in_thermoflow_history" if fire else "not_available_in_history_window",
+            "source": "dedicated_thingspeak_fire_channel",
+            "fields": {"field1": "flame_state", "field2": "brightness"},
+            "note": ("FIRE został dołączony do historii ThermoFlow z osobnego kanału ThingSpeak."
+                     if fire else
+                     "Brak próbek FIRE w tym zakresie historii; odczyt kanału jest opcjonalny i może być nie skonfigurowany lub chwilowo niedostępny."),
+        },
         "note": "Podwyższona temperatura spalin jest kandydatem do korelacji, nie potwierdzeniem rozpalenia.",
     }
 
