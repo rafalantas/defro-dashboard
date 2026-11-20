@@ -182,6 +182,19 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(burner["complete"], 1)
         self.assertEqual(burner["timeline_segments"], 1)
 
+
+    def test_burner_cycles_discard_duplicate_fire_timestamps(self):
+        start = 1795161600
+        raw = {"thermoflow-fire": [
+            [start, 0], [start + 60, 1], [start + 60, 0],
+            [start + 120, 1], [start + 180, 1],
+            [start + 600, 0], [start + 660, 0],
+        ]}
+        burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
+        self.assertEqual(burner["duplicate_timestamp_samples"], 2)
+        self.assertEqual(burner["complete"], 1)
+        self.assertEqual(burner["cycles"][0]["duration_minutes"], 8.0)
+
     def test_ai_exposes_evidence_and_is_explicitly_rule_based(self):
         result = build_thermoflow_intelligence({"thermoflow-fire": [[1795161600, 1]]})
         self.assertIn("evidence", result["thermoflow_ai"])
