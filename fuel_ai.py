@@ -138,7 +138,8 @@ def _select_telemetry_features(rows: list[dict], names: list[str], minimum_perio
         if len(candidate) >= minimum_periods:
             selected.append(name)
             eligible = candidate
-    return selected, eligible, coverage
+    # With no usable telemetry feature, do not treat weather-only rows as telemetry rows.
+    return selected, (eligible if selected else []), coverage
 
 
 def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None) -> dict:
@@ -483,6 +484,8 @@ def evaluate(rows: list[dict]) -> dict:
             return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                     "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                   "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                                  "selected_features": telemetry_selected_features,
+                                  "feature_coverage_periods": telemetry_feature_coverage,
                                   "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                     "rejected_days": rejected_rows, "rejected_periods": rejected_rows, "rejected_by_reason": rejected_by_reason,
@@ -529,6 +532,8 @@ def evaluate(rows: list[dict]) -> dict:
         return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                              "selected_features": telemetry_selected_features,
+                              "feature_coverage_periods": telemetry_feature_coverage,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
@@ -549,6 +554,8 @@ def evaluate(rows: list[dict]) -> dict:
         return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                              "selected_features": telemetry_selected_features,
+                              "feature_coverage_periods": telemetry_feature_coverage,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
