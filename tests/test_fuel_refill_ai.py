@@ -93,13 +93,15 @@ class RefillPeriodAiTests(unittest.TestCase):
             {"ts": datetime(2026, 1, 2, 8, tzinfo=tz).isoformat(), "kg": 12},
         ]
         def features(start, end):
-            return [{
-                "fraction": 1.0, "hdd_lag": 8, "solar_mj": 2, "wind_max_kmh": 10,
-                "telemetry_return_c": 55, "telemetry_pump_floor_h": 10,
-            }]
+            common = {"hdd_lag": 8, "solar_mj": 2, "wind_max_kmh": 10,
+                      "telemetry_pump_floor_h": 10}
+            return [
+                dict(common, fraction=0.9, telemetry_return_c=55),
+                dict(common, fraction=0.1, telemetry_return_c=None),
+            ]
         rows, _ = build_refill_period_rows(refills, features, max_days=120)
         self.assertAlmostEqual(rows[0]["telemetry_return_c"], 55)
-        self.assertAlmostEqual(rows[0]["telemetry_feature_coverage"]["telemetry_return_c"], 1.0)
+        self.assertAlmostEqual(rows[0]["telemetry_feature_coverage"]["telemetry_return_c"], 0.9)
         self.assertTrue(rows[0]["telemetry_complete"])
 
     def test_missing_weather_rejects_period_without_imputation(self):
