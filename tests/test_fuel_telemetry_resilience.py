@@ -43,6 +43,41 @@ class FuelTelemetryResilienceTests(unittest.TestCase):
         self.assertEqual(state["fetch_windows"]["failed"], 1)
         self.assertIn("HTTP 429", state["error"])
 
+    def test_counter_drop_rejects_interval_without_a_baseline_sample(self):
+        start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
+        end = start + timedelta(minutes=10)
+        points = [(start.timestamp() + 60, 99.0), (start.timestamp() + 120, 98.0)]
+        with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
+            fuel, "_counter_points", return_value=points
+        ):
+            self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
+
+    def test_counter_drop_rejects_long_telemetry_gap(self):
+        start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
+        end = start + timedelta(minutes=30)
+        points = [
+            (start.timestamp() - 60, 100.0),
+            (start.timestamp() + 60, 99.0),
+            (start.timestamp() + 20 * 60, 98.0),
+        ]
+        with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
+            fuel, "_counter_points", return_value=points
+        ):
+            self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
+
+    def test_counter_drop_accepts_complete_interval_with_regular_samples(self):
+        start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
+        end = start + timedelta(minutes=10)
+        points = [
+            (start.timestamp() - 60, 100.0),
+            (start.timestamp() + 60, 99.0),
+            (start.timestamp() + 9 * 60, 98.0),
+        ]
+        with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
+            fuel, "_counter_points", return_value=points
+        ):
+            self.assertEqual(fuel._counter_drop(start, end), (2.0, True, False))
+
     def test_successful_telemetry_preserves_daily_aggregates_and_fetch_time(self):
         audit = {
             "daily": [{"day": "2026-11-18", "co_c_mean": 65.0}],
