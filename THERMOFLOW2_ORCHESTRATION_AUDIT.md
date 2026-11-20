@@ -151,3 +151,26 @@ bag input, naive local timestamps, note truncation, invalid ranges/formats,
 voiding one raw entry and the 400/404 contract. The module is included in the
 API Docker image and ThermoFlow CI. No refill writes were performed during
 this refactor.
+
+
+## Summary runtime and refill command service extraction
+
+The summary worker lifecycle now lives in `fuel_summary_runtime.py`. The
+compatibility facade supplies the same shared worker state, guard, summary
+cache, prefetch/build callbacks, thread factory, monotonic clock and existing
+60-second cache / 25-second cold-start limits. The extracted runtime preserves
+single-worker behavior, stale-while-refresh responses, cold-start warming
+payloads, HTTP 502 mapping for completed worker failures, and warmup only when
+the refill channel is configured.
+
+Refill command validation and orchestration lives in `fuel_refill_service.py`.
+The facade continues to own HTTP authentication and JSON decoding; the service
+preserves kg/bag conversion, accepted range, ISO timestamps, Warsaw timezone
+for naive values, note truncation and single raw-entry void semantics. The
+ThingSpeak writer remains responsible for UTC write timestamps, 503/429
+translation and the existing cache invalidation set.
+
+Both modules are packaged in the API image and covered by CI. The latest
+validation run for the preceding code head passed Python regression, frontend
+regression and Docker builds for linux/amd64 and linux/arm64. No merge,
+deployment, controller write or production engine switch was performed.
