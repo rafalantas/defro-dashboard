@@ -135,10 +135,10 @@ def _select_telemetry_features(rows: list[dict], names: list[str], minimum_perio
     if best_count < selection_floor:
         return [], [], coverage
 
-    selected = []
+    selected = [ordered[0]]
     eligible = [
         row for row in rows
-        if _valid_telemetry_row(row, [ordered[0]])
+        if _valid_telemetry_row(row, selected)
     ]
     for name in ordered[1:]:
         candidate = [
@@ -150,7 +150,6 @@ def _select_telemetry_features(rows: list[dict], names: list[str], minimum_perio
         if len(candidate) == best_count:
             selected.append(name)
             eligible = candidate
-    selected.insert(0, ordered[0])
     # With no usable telemetry feature, do not treat weather-only rows as telemetry rows.
     return selected, eligible, coverage
 
