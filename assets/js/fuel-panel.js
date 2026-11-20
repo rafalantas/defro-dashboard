@@ -41,9 +41,9 @@
     const rows=[
       ['Fuel Intelligence',aiLabel],
       ['AI MAE / bazowy',ai.status==='shadow_ready'?n(candidate.mae_kg_day,2)+' / '+n(base.mae_kg_day,2)+' kg/d':'—'],
-      ['AI test chronologiczny',ai.status==='shadow_ready'?(ai.holdout_from+' – '+ai.holdout_to+' · '+ai.holdout_days+' dni'):'wymaga więcej danych'],
+      ['AI test chronologiczny',ai.status==='shadow_ready'?(ai.holdout_from+' – '+ai.holdout_to+' · '+ai.holdout_days+' okresów'):(ai.available_periods!=null?'zbiera dane · '+ai.available_periods+'/'+(ai.required_periods||((ai.train_periods_needed||0)+(ai.test_periods_needed||0)))+' okresów':'wymaga więcej danych')],
       ['AI fixed holdout',ai.status==='shadow_ready'?n(ai.fixed_holdout_mae_gain_percent,1)+'% poprawy MAE · wymagane ≥ 3%':'—'],
-      ['AI telemetria',ai.telemetry?.status==='shadow_ready'?(ai.telemetry.accepted?'rozszerzony model zaakceptowany':'model bazowy zachowany'):(ai.telemetry?.message||'zbieranie danych')],
+      ['AI telemetria',ai.telemetry?.status==='shadow_ready'?(ai.telemetry.accepted?'rozszerzony model zaakceptowany':'model bazowy zachowany'):(ai.telemetry?.complete_periods!=null?'zbiera dane · '+ai.telemetry.complete_periods+'/'+(ai.telemetry.periods_needed||25)+' kompletnych okresów'+(ai.telemetry.incomplete_periods?' · '+ai.telemetry.incomplete_periods+' niekompletnych':''):(ai.telemetry?.message||'zbieranie danych'))],
       ['AI telemetria · MAE',ai.telemetry?.status==='shadow_ready'?n(ai.telemetry.candidate?.mae_kg_day,2)+' / '+n(ai.telemetry.baseline?.mae_kg_day,2)+' kg/d':'—'],
       ['AI telemetria · fixed holdout',ai.telemetry?.status==='shadow_ready'?n(ai.telemetry.fixed_holdout_mae_gain_percent,1)+'% poprawy MAE · wymagane ≥ 3%':'—'],
       ['Model domu',m.periods_used!=null?m.periods_used+' okresów · R² '+n(m.r2,2):'za mało okresów'],
