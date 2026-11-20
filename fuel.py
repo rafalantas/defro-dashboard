@@ -817,34 +817,25 @@ def _daily(query: dict) -> dict:
 
 
 def _add_refill(data: dict) -> dict:
-    try:
-        kg = float(data["kg"]) if "kg" in data else float(data["bags"]) * BAG_KG
-    except (KeyError, TypeError, ValueError):
-        raise FuelError(400, "Podaj 'kg' albo 'bags'") from None
-    if not 0 < kg <= 1000:
-        raise FuelError(400, "kg poza zakresem")
-    dt = None
-    if data.get("ts"):
-        try:
-            dt = datetime.fromisoformat(str(data["ts"]))
-        except ValueError:
-            raise FuelError(400, "Nieprawidłowy format ts (ISO 8601)") from None
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=TZ)
-    fields = {"field1": kg}
-    if data.get("note"):
-        fields["field2"] = str(data["note"])[:255]
-    entry_id = _ts_write(fields, dt)
-    return {"id": entry_id, "ts": (dt or datetime.now(TZ)).isoformat(), "kg": kg}
+    """Compatibility wrapper for the extracted refill command service."""
+    from fuel_refill_service import add_refill
+    return add_refill(data, {
+        "bag_kg": BAG_KG,
+        "fuel_error": FuelError,
+        "tz": TZ,
+        "write": _ts_write,
+        "now": lambda: datetime.now(TZ),
+    })
 
 
 def _void_refill(raw_id: str) -> dict:
-    try:        refill_id = int(raw_id)
-    except ValueError:
-        raise FuelError(400, "Nieprawidłowe id") from None
-    if refill_id not in {r["id"] for r in _refills_raw()}:   # anulujemy pojedynczy wpis, scalenie liczy się od nowa
-        raise FuelError(404, "Nie ma takiej dosypki")
-    return {"voided": refill_id, "void_entry": _ts_write({"field3": refill_id})}
+    """Compatibility wrapper for refill void/audit command."""
+    from fuel_refill_service import void_refill
+    return void_refill(raw_id, {
+        "fuel_error": FuelError,
+        "refills_raw": _refills_raw,
+        "write": _ts_write,
+    })
 
 
 def _check_token(headers):
