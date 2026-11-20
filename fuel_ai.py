@@ -296,6 +296,7 @@ def evaluate(rows: list[dict]) -> dict:
             extended_fit = _fit(history, telemetry_candidate_names)
             if base_fit is None or extended_fit is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days,
+                                    "incomplete_days": telemetry_incomplete_days,
                                     "message": "Model telemetrii nie przeszedł kontroli stabilności"}
                 break
             base_predictions.append(_predict(base_fit, row))
@@ -309,6 +310,7 @@ def evaluate(rows: list[dict]) -> dict:
                 telemetry_clean[:telemetry_train_count], telemetry_test, telemetry_candidate_names)
             if telemetry_fixed_base is None or telemetry_fixed_extended is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days,
+                                    "incomplete_days": telemetry_incomplete_days,
                                     "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
             else:
                 telemetry_fixed_gain = (
