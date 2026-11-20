@@ -206,7 +206,7 @@ def evaluate(rows: list[dict]) -> dict:
     if train_count < MIN_TRAIN_DAYS or test_count < MIN_TEST_DAYS:
         return {"status": "collecting", "days": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days,
-                              "days_needed": max(telemetry_required_days, telemetry_minimum_days),
+                              "days_needed": telemetry_minimum_days,
                               "message": "Za mało kompletnych dób z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS,
                 "test_days_needed": MIN_TEST_DAYS,
