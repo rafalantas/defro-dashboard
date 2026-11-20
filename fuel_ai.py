@@ -130,9 +130,11 @@ def _select_telemetry_features(rows: list[dict], names: list[str], minimum_perio
         for name in names
     }
     ordered = sorted(names, key=lambda name: (-coverage[name], names.index(name)))
-    selection_floor = min(minimum_periods, len(rows))
     best_count = max(coverage.values(), default=0)
-    if best_count < selection_floor:
+    # Report the best available feature coverage while history is still
+    # accumulating. The 20+5 requirement is enforced by evaluate() before
+    # training; it must not hide partial progress in the meantime.
+    if best_count == 0:
         return [], [], coverage
 
     selected = [ordered[0]]
