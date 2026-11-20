@@ -277,15 +277,33 @@ def evaluate(rows: list[dict]) -> dict:
                 row.pop(room_key, None)
         row["wind_hdd_lag"] = row["wind_max_kmh"] * row["hdd_lag"] / 100.0
         clean.append(row)
-    day_counts = {}
+    # Daily observations must be unique by calendar day. Refill-period
+    # observations are event intervals: multiple legitimate refills can close
+    # on the same date, so their exact end timestamp is the sample identity.
+    daily_counts = {}
+    period_counts = {}
     for row in clean:
-        day_counts[row["day"]] = day_counts.get(row["day"], 0) + 1
-    duplicate_days = {day for day, count in day_counts.items() if count > 1}
-    if duplicate_days:
-        rejected_by_reason["duplicate_day"] = sum(day_counts[day] for day in duplicate_days)
+        if row.get("source") == "refill_period":
+            identity = row.get("end")
+            period_counts[identity] = period_counts.get(identity, 0) + 1
+        else:
+            daily_counts[row["day"]] = daily_counts.get(row["day"], 0) + 1
+    duplicate_days = {day for day, count in daily_counts.items() if count > 1}
+    duplicate_periods = {stamp for stamp, count in period_counts.items() if count > 1}
+    if duplicate_days or duplicate_periods:
+        rejected_by_reason["duplicate_day"] = (
+            sum(daily_counts[day] for day in duplicate_days)
+            + sum(period_counts[stamp] for stamp in duplicate_periods)
+        )
         rejected_rows += rejected_by_reason["duplicate_day"]
-        clean = [row for row in clean if row["day"] not in duplicate_days]
-    clean.sort(key=lambda row: row.get("day", ""))
+        clean = [
+            row for row in clean
+            if (row.get("source") == "refill_period"
+                and row.get("end") not in duplicate_periods)
+            or (row.get("source") != "refill_period"
+                and row["day"] not in duplicate_days)
+        ]
+    clean.sort(key=lambda row: (row.get("day", ""), row.get("end", "")))
     total = len(clean)
     day_gaps = []
     for previous, current in zip(clean, clean[1:]):
