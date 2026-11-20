@@ -44,7 +44,7 @@ class ThingSpeakWriteConfigurationTests(unittest.TestCase):
             api._thingspeak_write_fire(payload)
         fields = parse_qs(request.call_args.args[0].data.decode())
         self.assertEqual(fields["field1"], ["1"])
-        self.assertEqual(fields["field2"], ["321"])
+        self.assertEqual(fields["field2"], ["321.0"])
         self.assertNotIn("field3", fields)
         self.assertNotIn("field4", fields)
         self.assertNotIn("field5", fields)
