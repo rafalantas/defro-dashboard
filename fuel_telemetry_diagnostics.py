@@ -7,7 +7,7 @@ estimates.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 MAX_GAP_SECONDS = 300
 RETURN_WARNING_C = 54.0
