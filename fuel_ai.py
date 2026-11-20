@@ -346,9 +346,11 @@ def evaluate(rows: list[dict]) -> dict:
         "counter_day_diagnostics": counter_day_diagnostics,
         "telemetry_incomplete_days": telemetry_incomplete_days,
         "telemetry_incomplete_periods": telemetry_incomplete_periods,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods,
         "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "rejected_by_reason": rejected_by_reason,
-                        "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
+                        "telemetry_incomplete_days": telemetry_incomplete_days,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
 
     train, test = clean[:train_count], clean[train_count:]
@@ -369,7 +371,8 @@ def evaluate(rows: list[dict]) -> dict:
                     "rejected_days": rejected_rows, "rejected_periods": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                    "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
+                    "telemetry_incomplete_days": telemetry_incomplete_days,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                     "message": "Model nie przeszedł kontroli stabilności"}
         baseline_predictions.append(_predict(baseline, row))
         candidate_predictions.append(_predict(candidate, row))
@@ -397,7 +400,8 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
-                "telemetry_incomplete_days": telemetry_incomplete_days, "telemetry_incomplete_periods": telemetry_incomplete_periods,
+                "telemetry_incomplete_days": telemetry_incomplete_days,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
     gain = ((baseline_score["mae_kg_day"] - candidate_score["mae_kg_day"])
             / baseline_score["mae_kg_day"] if baseline_score["mae_kg_day"] else 0.0)
@@ -417,6 +421,7 @@ def evaluate(rows: list[dict]) -> dict:
                     "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods,
                 "message": "Nie udało się dopasować modelu końcowego"}
 
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
@@ -535,6 +540,7 @@ def evaluate(rows: list[dict]) -> dict:
         "invalid_base_by_reason": invalid_base_by_reason,
         "counter_day_diagnostics": counter_day_diagnostics,
         "telemetry_incomplete_days": telemetry_incomplete_days,
+        "telemetry_incomplete_periods": telemetry_incomplete_periods,
         "mae_gain_percent": round(gain * 100, 1),
         "baseline": baseline_score,
         "candidate": candidate_score,
