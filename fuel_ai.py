@@ -339,6 +339,7 @@ def evaluate(rows: list[dict]) -> dict:
                                   "days_needed": telemetry_minimum_days,
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                     "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "invalid_base_by_reason": invalid_base_by_reason,
                     "missing_day_gaps": day_gaps,
                     "telemetry_incomplete_days": telemetry_incomplete_days,
                     "message": "Model nie przeszedł kontroli stabilności"}
@@ -366,6 +367,7 @@ def evaluate(rows: list[dict]) -> dict:
                               "days_needed": telemetry_minimum_days,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "invalid_base_by_reason": invalid_base_by_reason,
                 "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Model nie przeszedł kontroli stałego holdoutu"}
@@ -384,6 +386,7 @@ def evaluate(rows: list[dict]) -> dict:
                               "days_needed": telemetry_minimum_days,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
+                    "invalid_base_by_reason": invalid_base_by_reason,
                 "missing_day_gaps": day_gaps,
                 "telemetry_incomplete_days": telemetry_incomplete_days,
                 "message": "Nie udało się dopasować modelu końcowego"}
