@@ -222,12 +222,21 @@ def _combustion(raw, fire_diagnostics=None):
 
 def _burner_cycles(raw, fire_diagnostics):
     """Build conservative burner cycles; telemetry gaps censor rather than join cycles."""
-    points = [(ts, value) for ts, value in _points(raw, "thermoflow-fire")
-              if value in (0.0, 1.0)]
+    parsed_points = [(ts, value) for ts, value in _points(raw, "thermoflow-fire")
+                     if value in (0.0, 1.0)]
+    timestamp_counts = {}
+    for timestamp, _value in parsed_points:
+        timestamp_counts[timestamp] = timestamp_counts.get(timestamp, 0) + 1
+    duplicate_timestamp_samples = sum(count for count in timestamp_counts.values() if count > 1)
+    points = [(ts, value) for ts, value in parsed_points if timestamp_counts[ts] == 1]
+    raw_fire_samples = raw.get("thermoflow-fire", []) or []
+    discarded_non_binary_samples = max(0, len(raw_fire_samples) - len(parsed_points))
     if not points:
         return {"status": "collecting", "cycles": [], "complete": 0, "incomplete": 0,
                 "incomplete_cycles": [], "ignored_transitions": 0,
-                "note": "Brak poprawnych binarnych próbek FIRE; cykle palnika pozostają nieznane."}
+                "duplicate_timestamp_samples": duplicate_timestamp_samples,
+                "discarded_non_binary_samples": discarded_non_binary_samples,
+                "note": "Brak jednoznacznych binarnych próbek FIRE; cykle palnika pozostają nieznane."}
 
     # Split the timeline at every telemetry gap. A state observed after a gap
     # must never be joined to a cycle from before that gap.
@@ -309,6 +318,9 @@ def _burner_cycles(raw, fire_diagnostics):
         "incomplete_cycles": incomplete_cycles[-100:],
         "open_cycles": [item for item in incomplete_cycles if item["end"] is not None][-100:],
         "ignored_transitions": ignored_transitions,
+        "duplicate_timestamp_samples": duplicate_timestamp_samples,
+        "discarded_non_binary_samples": discarded_non_binary_samples,
+        "duration_validation": "strictly_positive_elapsed_time; censored_cycles_excluded",
         "transition_debounce": "two_consecutive_samples",
         "max_gap_seconds": MAX_GAP_SECONDS,
         "timeline_segments": len(segments),
