@@ -253,14 +253,11 @@ def _counter_drop(start: datetime, end: datetime):
     before = [p for p in points if p[0] <= t0]
     inside = [p for p in points if t0 < p[0] <= t1]
     seq = ([before[-1]] if before else []) + inside
-    # Do not call a counter interval complete if it lacks a baseline sample or
-    # spans a recording outage. The existing 15-minute daily cutoff is the
-    # established maximum tolerated counter gap.
+    # Change-point history cannot prove continuity by the spacing of counter
+    # drops: unchanged readings are intentionally suppressed by the provider.
+    # It can still tell us whether a baseline at or before the interval start
+    # exists; without one, the interval's starting level is unknown.
     if len(seq) < 2 or not before:
-        return None, False, False
-    if t0 - seq[0][0] > 900 or t1 - seq[-1][0] > 900:
-        return None, False, False
-    if any(cur[0] - prev[0] > 900 for prev, cur in zip(seq, seq[1:])):
         return None, False, False
     drop = sum(prev[1] - cur[1] for prev, cur in zip(seq, seq[1:]) if cur[1] < prev[1])
     floor_hit = any(value <= 1 for _ts, value in seq)
