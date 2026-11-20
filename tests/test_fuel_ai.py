@@ -179,7 +179,7 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(telemetry["safety"], "shadow_only; production estimates are unchanged")
 
     def test_distributed_missing_features_use_a_common_observed_subset_without_imputation(self):
-        rows = add_telemetry(synthetic_rows(36))
+        rows = add_telemetry(synthetic_rows(60))
         feature_names = [
             "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
             "telemetry_return_c", "telemetry_boiler_power_kw",
@@ -193,8 +193,8 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(telemetry["status"], "shadow_ready")
         self.assertGreaterEqual(len(telemetry["selected_features"]), 1)
         self.assertLess(len(telemetry["selected_features"]), len(feature_names))
-        self.assertEqual(telemetry["complete_periods"], 28)
-        self.assertEqual(telemetry["training_periods"], 23)
+        self.assertEqual(telemetry["complete_periods"], 52)
+        self.assertEqual(telemetry["training_periods"], 47)
         self.assertEqual(telemetry["holdout_periods"], 5)
 
     def test_non_finite_and_negative_inputs_are_rejected(self):
