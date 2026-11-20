@@ -21,12 +21,34 @@ def build_diagnostics(rows: list[dict], ai_shadow: dict) -> dict:
         if all(row.get(name) is not None for name in TELEMETRY_FEATURES)
     ]
     missing_by_feature = Counter()
+    missing_by_period = []
     for row in rows:
-        missing = row.get("telemetry_missing_features")
-        if missing is None:
-            missing = [name for name in TELEMETRY_FEATURES if row.get(name) is None]
-        missing_by_feature.update(set(missing))
+        # The explicit list is useful provenance, but the actual aggregate
+        # values remain authoritative. Union both so stale/empty metadata can
+        # never make a missing feature look covered.
+        declared_missing = row.get("telemetry_missing_features") or []
+        missing = sorted({
+            name for name in TELEMETRY_FEATURES
+            if row.get(name) is None
+        } | {
+            name for name in declared_missing if name in TELEMETRY_FEATURES
+        })
+        missing_by_feature.update(missing)
+        if missing:
+            missing_by_period.append({
+                "day": row.get("day"),
+                "period_end": row.get("end"),
+                "missing_features": missing,
+            })
 
+    feature_coverage_periods = {
+        name: max(0, total - missing_by_feature.get(name, 0))
+        for name in TELEMETRY_FEATURES
+    }
+    feature_coverage_percent = {
+        name: round(100 * feature_coverage_periods[name] / total, 1) if total else None
+        for name in TELEMETRY_FEATURES
+    }
     coverage = {
         "status": "available" if total else "collecting",
         "periods_total": total,
@@ -36,7 +58,13 @@ def build_diagnostics(rows: list[dict], ai_shadow: dict) -> dict:
         "missing_by_feature": {
             name: missing_by_feature.get(name, 0) for name in TELEMETRY_FEATURES
         },
-        "note": "Kompletność dotyczy całego okresu dosypka–dosypka; braków nie interpolujemy.",
+        # Counts are period-level feature availability, not raw sample counts.
+        # Keep this key stable for the fuel panel and expose percentages too.
+        "feature_coverage_periods": feature_coverage_periods,
+        "feature_coverage_percent": feature_coverage_percent,
+        "missing_by_period": missing_by_period[-100:],
+        "coverage_basis": "accepted_refill_period_aggregates",
+        "note": "Kompletność dotyczy okresu dosypka–dosypka. Pokrycie pól oznacza liczbę okresów z wartością; braków nie interpolujemy.",
     }
 
     comparison = {
