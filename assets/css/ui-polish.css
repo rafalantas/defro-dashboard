@@ -133,3 +133,39 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   html{scroll-behavior:auto}
   *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}
 }
+
+
+/* Fuel analytics: independent columns prevent tall model cards from creating dead space. */
+.fuel-analysis-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,1fr);gap:14px;align-items:start}
+.fuel-analysis-main,.fuel-analysis-side{display:grid;align-content:start;gap:14px;min-width:0}
+.fuel-analysis-main .fuel-detail-panel,.fuel-analysis-side .fuel-detail-panel{min-width:0}
+.fuel-chart-panel{padding:16px}
+.fuel-chart-panel h4,.fuel-model-panel>h4,.fuel-planning-panel>h4,.fuel-forecast-panel>h4{margin-bottom:12px}
+.fuel-chart-panel #fuelDailyChart{height:300px}
+.fuel-history-panel{min-height:180px}
+.fuel-history-panel .fuel-refill-row{padding:11px 0}
+.fuel-model-panel{padding:16px}
+.fuel-model-panel #fuelModelDetails{display:grid;gap:0}
+.fuel-model-panel .fuel-model-row{padding:10px 0;line-height:1.45}
+.fuel-model-panel .fuel-model-row span{flex:1 1 42%;font-size:11px}
+.fuel-model-panel .fuel-model-row b{flex:0 1 58%;font-size:10px;line-height:1.45}
+.fuel-planning-panel,.fuel-forecast-panel{padding:16px}
+.fuel-analysis-side .fuel-planning-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fuel-analysis-side .fuel-planning-card strong{font-size:20px}
+@media(max-width:900px){
+  .fuel-analysis-layout{grid-template-columns:minmax(0,1fr)}
+  .fuel-analysis-main,.fuel-analysis-side{display:contents}
+  .fuel-analysis-layout{grid-template-areas:"chart" "model" "history" "planning" "forecast"}
+  .fuel-chart-panel{grid-area:chart}
+  .fuel-model-panel{grid-area:model}
+  .fuel-history-panel{grid-area:history}
+  .fuel-planning-panel{grid-area:planning}
+  .fuel-forecast-panel{grid-area:forecast}
+}
+@media(max-width:520px){
+  .fuel-chart-panel,.fuel-model-panel,.fuel-planning-panel,.fuel-forecast-panel{padding:12px}
+  .fuel-chart-panel #fuelDailyChart{height:250px}
+  .fuel-model-panel .fuel-model-row{gap:8px}
+  .fuel-model-panel .fuel-model-row span{flex-basis:40%}
+  .fuel-model-panel .fuel-model-row b{flex-basis:60%}
+}
