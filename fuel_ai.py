@@ -450,6 +450,8 @@ def evaluate(rows: list[dict]) -> dict:
         return {"period_diagnostics": period_diagnostics, "status": "collecting", "days": total, "periods": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                              "selected_features": telemetry_selected_features,
+                              "feature_coverage_periods": telemetry_feature_coverage,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Za mało kompletnych okresów z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_PERIODS,
@@ -563,7 +565,7 @@ def evaluate(rows: list[dict]) -> dict:
                         "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                         "training_days_needed": TELEMETRY_MIN_TRAIN_PERIODS, "training_periods_needed": TELEMETRY_MIN_TRAIN_PERIODS,
                         "holdout_days_needed": TELEMETRY_MIN_TEST_PERIODS, "holdout_periods_needed": TELEMETRY_MIN_TEST_PERIODS,
-                        "message": "Model telemetrii czeka na 20 kompletnych okresów treningowych i 5 testowych"}
+                        "message": "Model telemetrii czeka na 20 okresów treningowych i 5 testowych z kompletnym zestawem wybranych cech"}
     if telemetry_train_count >= TELEMETRY_MIN_TRAIN_PERIODS and telemetry_test_count >= TELEMETRY_MIN_TEST_PERIODS:
         telemetry_baseline_names = ["hdd_lag", "solar_mj", "wind_hdd_lag"]
         telemetry_candidate_names = telemetry_baseline_names + telemetry_selected_features
