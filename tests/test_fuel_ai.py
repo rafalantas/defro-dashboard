@@ -70,6 +70,26 @@ class FuelAiTests(unittest.TestCase):
         self.assertLess(fixed["training_to"], fixed["scored_from"])
         self.assertIn("mae_kg_day", fixed["candidate"])
 
+    def test_coefficient_stability_reports_expanding_windows(self):
+        result = fuel_ai.evaluate(synthetic_rows(130))
+        stability = result["coefficient_stability"]
+        self.assertTrue(stability["available"])
+        self.assertEqual(len(stability["windows"]), 3)
+        sizes = [window["training_days"] for window in stability["windows"]]
+        self.assertEqual(sizes, sorted(sizes))
+        self.assertEqual(set(stability["features"]), set(result["features"]))
+        for feature in stability["features"].values():
+            self.assertEqual(len(feature["values"]), 3)
+            self.assertIn("sign_consistent", feature)
+
+    def test_coefficient_stability_is_unavailable_for_short_training_history(self):
+        result = fuel_ai.evaluate(synthetic_rows(60))
+        self.assertFalse(result["coefficient_stability"]["available"])
+        self.assertEqual(
+            result["coefficient_stability"]["reason"],
+            "insufficient_history_for_three_expanding_windows",
+        )
+
     def test_seven_days_of_telemetry_are_ingested_but_not_overfit(self):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(7)))
         self.assertEqual(result["status"], "collecting")
