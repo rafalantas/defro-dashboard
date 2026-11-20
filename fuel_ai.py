@@ -154,8 +154,8 @@ def _select_telemetry_features(rows: list[dict], names: list[str], minimum_perio
     return selected, eligible, coverage
 
 
-def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None) -> dict:
-    """Explain model eligibility without pretending aggregated features are raw samples."""
+def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None, all_telemetry_names=None) -> dict:
+    """Explain model eligibility and separately expose full sensor-contract coverage."""
     day = row.get("day")
     end = row.get("end")
     start = row.get("start")
@@ -171,15 +171,16 @@ def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_name
         "telemetry_feature_count": None,
         "telemetry_feature_total": len(telemetry_names) if telemetry_names else None,
         "telemetry_coverage_percent": None,
-        # Refill-period rows contain aggregated features, not raw timestamped samples.
+        "all_telemetry_feature_count": None,
+        "all_telemetry_feature_total": len(all_telemetry_names) if all_telemetry_names else None,
+        "all_telemetry_coverage_percent": None,
+        "all_telemetry_missing_fields": [],
+        "all_telemetry_invalid_fields": [],
         "samples_expected": None,
         "samples_received": None,
         "max_gap_minutes": None,
         "diagnostic_granularity": "aggregated_period_features",
     }
-    if telemetry_names is None:
-        return result
-
     ranges = {
         "telemetry_co_c": (-10.0, 120.0),
         "telemetry_dhw_c": (0.0, 100.0),
@@ -191,32 +192,37 @@ def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_name
         "telemetry_pump_dhw_h": (0.0, 24.0),
         "telemetry_pump_circulation_h": (0.0, 24.0),
     }
-    valid_count = 0
-    for name in telemetry_names:
-        raw = row.get(name)
-        value = _number(raw)
-        if value is None:
-            if raw is None:
-                result["missing_fields"].append(name)
-                result["reason_codes"].append(f"telemetry_missing:{name}")
-            else:
-                result["invalid_fields"].append(name)
-                result["reason_codes"].append(f"telemetry_invalid:{name}")
-            continue
-        low, high = ranges[name]
-        if not low <= value <= high:
-            result["invalid_fields"].append(name)
-            result["reason_codes"].append(f"telemetry_out_of_range:{name}")
-            continue
-        valid_count += 1
 
-    result["telemetry_feature_count"] = valid_count
-    result["telemetry_coverage_percent"] = round(
-        valid_count / len(telemetry_names) * 100, 1
-    ) if telemetry_names else None
-    result["status"] = "complete" if not result["reason_codes"] else "incomplete"
+    def inspect(names, missing_key, invalid_key):
+        valid = 0
+        for name in names or []:
+            raw = row.get(name)
+            value = _number(raw)
+            if value is None:
+                result[missing_key if raw is None else invalid_key].append(name)
+                continue
+            low, high = ranges[name]
+            if not low <= value <= high:
+                result[invalid_key].append(name)
+                continue
+            valid += 1
+        return valid
+
+    if telemetry_names is not None:
+        valid_count = inspect(telemetry_names, "missing_fields", "invalid_fields")
+        result["telemetry_feature_count"] = valid_count
+        result["telemetry_coverage_percent"] = round(
+            valid_count / len(telemetry_names) * 100, 1
+        ) if telemetry_names else None
+        result["status"] = "complete" if not result["missing_fields"] and not result["invalid_fields"] else "incomplete"
+
+    if all_telemetry_names is not None:
+        all_valid = inspect(all_telemetry_names, "all_telemetry_missing_fields", "all_telemetry_invalid_fields")
+        result["all_telemetry_feature_count"] = all_valid
+        result["all_telemetry_coverage_percent"] = round(
+            all_valid / len(all_telemetry_names) * 100, 1
+        ) if all_telemetry_names else None
     return result
-
 
 def _prepare(rows: list[dict], names: list[str]):
     means, scales = [], []
@@ -441,8 +447,13 @@ def evaluate(rows: list[dict]) -> dict:
         )
     )
     period_diagnostics.extend(
-        _period_diagnostic(row, "complete" if row in telemetry_clean else "incomplete",
-                           telemetry_names=telemetry_names)
+        _period_diagnostic(
+            row,
+            "complete" if row in telemetry_clean else "incomplete",
+            (["no_telemetry_feature_selected"] if not telemetry_selected_features else None),
+            telemetry_names=telemetry_selected_features or None,
+            all_telemetry_names=telemetry_names,
+        )
         for row in clean
     )
     period_diagnostics.sort(
