@@ -58,6 +58,47 @@ class RawTelemetryDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["hydraulics"]["low_return_episode_count"], 2)
         self.assertEqual(result["series"]["return_c"]["gaps_over_5m"], 1)
 
+
+    def test_fire_sensor_records_flame_appearance_and_disappearance(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        points = {
+            "fire_detected": [
+                (start, 0), (start + timedelta(minutes=1), 1),
+                (start + timedelta(minutes=2), 1), (start + timedelta(minutes=3), 0),
+            ],
+            "fire_brightness": [
+                (start + timedelta(minutes=1), 210),
+                (start + timedelta(minutes=2), 260),
+            ],
+            "flue_c": [(start, 35), (start + timedelta(minutes=1), 80)],
+        }
+        result = build_raw_diagnostics(points, start)
+        fire = result["fire_activity"]
+        self.assertEqual(fire["episodes_count"], 1)
+        event = fire["episodes"][0]
+        self.assertEqual(event["classification"], "sensor_reported_flame_presence")
+        self.assertTrue(event["flame_appearance_transition_observed"])
+        self.assertTrue(event["flame_disappearance_transition_observed"])
+        self.assertFalse(event["ignition_command_confirmed"])
+        self.assertEqual(event["brightness"]["max"], 260)
+
+    def test_fire_sensor_gap_splits_episode_without_claiming_flame_off(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        points = {"fire_detected": [
+            (start, 1), (start + timedelta(minutes=1), 1),
+            (start + timedelta(minutes=10), 1),
+        ]}
+        result = build_raw_diagnostics(points, start)
+        events = result["fire_activity"]["episodes"]
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["ended_by"], "telemetry_gap")
+        self.assertFalse(events[0]["flame_disappearance_transition_observed"])
+        self.assertFalse(events[0]["flame_appearance_transition_observed"])
+
+    def test_empty_fire_series_is_safe(self):
+        result = build_raw_diagnostics({}, datetime.now(timezone.utc))
+        self.assertEqual(result["fire_activity"]["episodes_count"], 0)
+
     def test_empty_data_is_safe(self):
         result = build_raw_diagnostics({}, datetime.now(timezone.utc))
         self.assertEqual(result["firing_activity"]["episodes_count"], 0)
