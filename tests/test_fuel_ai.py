@@ -48,6 +48,14 @@ class FuelAiTests(unittest.TestCase):
         self.assertEqual(result["status"], "collecting")
         self.assertNotIn("model", result)
 
+    def test_insufficient_history_reports_refill_period_requirement(self):
+        result = fuel_ai.evaluate(synthetic_rows(50))
+        self.assertEqual(result["available_periods"], 50)
+        self.assertEqual(result["required_periods"], 52)
+        self.assertEqual(result["train_periods_needed"], 45)
+        self.assertEqual(result["test_periods_needed"], 7)
+        self.assertIn("okresów dosypka–dosypka", result["message"])
+
     def test_shadow_model_uses_chronological_holdout(self):
         result = fuel_ai.evaluate(synthetic_rows())
         self.assertEqual(result["status"], "shadow_ready")
