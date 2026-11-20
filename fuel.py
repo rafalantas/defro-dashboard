@@ -623,23 +623,18 @@ def _stats(query: dict) -> dict:
 
 
 def _prefetch(days: int = 400):
-    """Równolegle pobiera doby z ThingSpeak (temperatury, licznik), żeby zimny start nie trwał minut."""
-    if not TS_CHANNEL_TEMPS:
-        return
-    ts_start = _temps_data_start()   # raz, przed wątkami
-    today = datetime.now(TZ).date()
-    first = max(ts_start or today - timedelta(days=MAX_DAYS), today - timedelta(days=days))
-    wanted = [first + timedelta(days=i) for i in range((today - first).days + 1)]
-
-    def one(day: date):
-        for fetch in (_get_daily_raw, _counter_points):
-            try:
-                fetch(day)
-            except FuelError:
-                pass   # brak jednej doby nie przerywa rozgrzewania pozostałych
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        list(pool.map(one, wanted))
+    """Compatibility wrapper for parallel daily telemetry/counter prefetch."""
+    from fuel_prefetch_service import prefetch
+    return prefetch({
+        "configured": lambda: bool(TS_CHANNEL_TEMPS),
+        "temps_data_start": _temps_data_start,
+        "now": lambda: datetime.now(TZ),
+        "max_days": MAX_DAYS,
+        "get_daily_raw": _get_daily_raw,
+        "counter_points": _counter_points,
+        "fuel_error": FuelError,
+        "executor": ThreadPoolExecutor,
+    }, days=days)
 
 
 def _summary_runtime_deps():
