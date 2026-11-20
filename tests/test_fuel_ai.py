@@ -314,5 +314,49 @@ class FuelAiTests(unittest.TestCase):
         self.assertNotEqual(result["status"], "collecting")
 
 
+    def test_period_diagnostics_explain_missing_and_invalid_telemetry_features(self):
+        rows = add_telemetry(synthetic_rows(50))
+        missing_day = rows[3]["day"]
+        invalid_day = rows[4]["day"]
+        rows[3].pop("telemetry_return_c")
+        rows[4]["telemetry_pump_floor_h"] = 25.0
+
+        result = fuel_ai.evaluate(rows)
+        diagnostics = {item["date"]: item for item in result["period_diagnostics"]}
+
+        self.assertEqual(result["rejected_days"], 0)
+        self.assertEqual(len(result["period_diagnostics"]), 50)
+        self.assertEqual(diagnostics[missing_day]["status"], "incomplete")
+        self.assertIn("telemetry_return_c", diagnostics[missing_day]["missing_fields"])
+        self.assertIn("telemetry_missing:telemetry_return_c",
+                      diagnostics[missing_day]["reason_codes"])
+        self.assertEqual(diagnostics[invalid_day]["status"], "incomplete")
+        self.assertIn("telemetry_pump_floor_h", diagnostics[invalid_day]["invalid_fields"])
+        self.assertIn("telemetry_out_of_range:telemetry_pump_floor_h",
+                      diagnostics[invalid_day]["reason_codes"])
+        self.assertEqual(diagnostics[missing_day]["telemetry_feature_count"], 8)
+        self.assertEqual(diagnostics[missing_day]["telemetry_coverage_percent"], 88.9)
+        self.assertIsNone(diagnostics[missing_day]["samples_expected"])
+        self.assertIsNone(diagnostics[missing_day]["samples_received"])
+        self.assertIsNone(diagnostics[missing_day]["max_gap_minutes"])
+        self.assertEqual(diagnostics[rows[0]["day"]]["status"], "complete")
+
+    def test_period_diagnostics_distinguish_rejected_base_rows(self):
+        rows = synthetic_rows(50)
+        estimated_day = rows[0]["day"]
+        invalid_day = rows[1]["day"]
+        rows[0]["estimate"] = True
+        rows[1]["kg_counter"] = None
+
+        result = fuel_ai.evaluate(rows)
+        diagnostics = {item["date"]: item for item in result["period_diagnostics"]}
+
+        self.assertEqual(diagnostics[estimated_day]["status"], "rejected")
+        self.assertIn("estimated_row", diagnostics[estimated_day]["reason_codes"])
+        self.assertEqual(diagnostics[invalid_day]["status"], "rejected")
+        self.assertIn("kg_counter_missing_or_invalid",
+                      diagnostics[invalid_day]["reason_codes"])
+
+
 if __name__ == "__main__":
     unittest.main()
