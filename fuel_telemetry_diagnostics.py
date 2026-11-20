@@ -183,7 +183,9 @@ def build_raw_diagnostics(points, now):
             "ignition_confirmed": False,
         })
 
-    fire_events = _fire_events(normalized)\n\n    returns = normalized.get("return_c", [])
+    fire_events = _fire_events(normalized)
+
+    returns = normalized.get("return_c", [])
     low_samples = [(ts, value) for ts, value in returns if value < RETURN_WARNING_C]
     low_groups = _episodes(
         returns,
