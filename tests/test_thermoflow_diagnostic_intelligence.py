@@ -217,6 +217,20 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(pump["paired_events"], 0)
         self.assertEqual(pump["events"][0]["association_status"], "insufficient_contiguous_return_samples")
 
+    def test_hydraulic_return_samples_are_not_reused_for_multiple_pump_events(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start, 56], [start + 180, 52]],
+            "thermoflow-pump-floor": [[start, 0], [start + 60, 1], [start + 120, 0]],
+        }
+        pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["starts"], 1)
+        self.assertEqual(pump["stops"], 1)
+        self.assertEqual(pump["paired_events"], 1)
+        self.assertEqual(pump["events"][0]["association_status"], "paired")
+        self.assertEqual(pump["events"][1]["association_status"],
+                         "insufficient_unique_contiguous_return_samples")
+
     def test_duplicate_timestamp_samples_are_excluded_from_diagnostic_series(self):
         start = 1795161600
         raw = {"thermoflow-valve4d-return": [[start, 56], [start, 49], [start + 60, 53]]}
