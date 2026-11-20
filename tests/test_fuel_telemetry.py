@@ -76,3 +76,82 @@ class FuelTelemetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FuelTelemetryAuditServiceTests(unittest.TestCase):
+    def test_fetches_days_in_parallel_and_restores_chronological_order(self):
+        from datetime import date
+        from threading import Lock
+        from time import sleep
+        from zoneinfo import ZoneInfo
+        from fuel_telemetry_audit_service import (
+            AUDIT_MAX_WORKERS, AUDIT_REQUEST_TIMEOUT_SECONDS, build_audit,
+        )
+
+        active = 0
+        max_active = 0
+        lock = Lock()
+        calls = []
+
+        def request_json(url, *, params, timeout):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                calls.append((url, params, timeout))
+            sleep(0.03)
+            with lock:
+                active -= 1
+            return {"feeds": [{"created_at": params["start"], "field1": url.split("/")[-2]}]}
+
+        captured = {}
+
+        def analyze(feeds, channel_ids, days, ignition_config=None):
+            captured.update(feeds=feeds, channel_ids=channel_ids, days=days,
+                            ignition_config=ignition_config)
+            return {"ok": True}
+
+        result = build_audit(
+            {"days": ["1"]}, max_days=120,
+            channel_ids=["temps", "valve", "fire"],
+            read_keys=["read-a", "read-b", "read-c"],
+            today=date(2026, 11, 20), tz=ZoneInfo("Europe/Warsaw"),
+            endpoint="https://api.thingspeak.com", request_json=request_json,
+            analyze=analyze, fuel_error=Exception,
+            ignition_config={"setpoint_c": 70, "hysteresis_c": 6},
+        )
+
+        self.assertEqual(len(calls), 6)
+        self.assertGreater(max_active, 1)
+        self.assertLessEqual(max_active, AUDIT_MAX_WORKERS)
+        self.assertTrue(all(call[2] == AUDIT_REQUEST_TIMEOUT_SECONDS for call in calls))
+        self.assertEqual([len(channel) for channel in captured["feeds"]], [2, 2, 2])
+        self.assertEqual(captured["days"], 1)
+        self.assertEqual(captured["ignition_config"], {"setpoint_c": 70, "hysteresis_c": 6})
+        for channel in captured["feeds"]:
+            self.assertLess(channel[0]["created_at"], channel[1]["created_at"])
+        self.assertTrue(result["ok"])
+        self.assertIn("fetched_at", result)
+
+    def test_optional_empty_fire_channel_is_skipped(self):
+        from datetime import date
+        from zoneinfo import ZoneInfo
+        from fuel_telemetry_audit_service import build_audit
+
+        calls = []
+
+        def request_json(url, *, params, timeout):
+            calls.append(url)
+            return {"feeds": []}
+
+        result = build_audit(
+            {"days": ["1"]}, max_days=120,
+            channel_ids=["temps", "valve", ""], read_keys=["", "", ""],
+            today=date(2026, 11, 20), tz=ZoneInfo("Europe/Warsaw"),
+            endpoint="https://api.thingspeak.com", request_json=request_json,
+            analyze=lambda feeds, ids, days: {"channel_feed_counts": [len(x) for x in feeds]},
+            fuel_error=Exception,
+        )
+
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(result["channel_feed_counts"], [0, 0, 0])
