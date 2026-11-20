@@ -238,6 +238,12 @@ def build_raw_diagnostics(points, now):
             "context_window_minutes_each_side": EVENT_CONTEXT_MINUTES,
             "note": "Epizody spalin są kandydatami do korelacji z hydrauliką, nie potwierdzonymi rozpaleniami.",
         },
-        "fire_activity": {\n            "episodes_count": len(fire_events),\n            "episodes": fire_events[-100:],\n            "max_sample_gap_seconds": MAX_GAP_SECONDS,\n            "note": "Czujnik potwierdza obecność płomienia; przejście sygnału nie potwierdza komendy ani sekwencji rozpalania palnika.",\n        },\n        "hydraulics": hydraulics,
+        "fire_activity": {
+            "episodes_count": len(fire_events),
+            "episodes": fire_events[-100:],
+            "max_sample_gap_seconds": MAX_GAP_SECONDS,
+            "note": "Czujnik potwierdza obecność płomienia; przejście sygnału nie potwierdza komendy ani sekwencji rozpalania palnika.",
+        },
+        "hydraulics": hydraulics,
         "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes",
     }
