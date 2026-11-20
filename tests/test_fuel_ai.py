@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import fuel_ai
+from fuel_refill_ai import build_refill_period_rows
 
 
 def synthetic_rows(count=90):
@@ -244,6 +245,34 @@ class FuelAiTests(unittest.TestCase):
         result = fuel_ai.evaluate(rows)
         self.assertEqual(result["telemetry_incomplete_days"], 2)
         self.assertEqual(result["telemetry"]["incomplete_days"], 2)
+
+
+    def test_refill_period_training_does_not_require_daily_refills(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/Warsaw")
+        first = datetime(2026, 1, 1, 8, tzinfo=tz)
+        refills = []
+        for index in range(61):
+            moment = first + timedelta(days=2 * index)
+            refills.append({"ts": moment.isoformat(), "kg": 10.0 + (index % 7)})
+        def period_features(start, end):
+            index = int((start - first).total_seconds() // (2 * 86400))
+            return [
+                {"fraction": 1.0, "hdd_lag": float(5 + index % 17),
+                 "solar_mj": float(2 + index % 13),
+                 "wind_max_kmh": float(5 + index % 23)},
+                {"fraction": 1.0, "hdd_lag": float(7 + index % 11),
+                 "solar_mj": float(3 + index % 9),
+                 "wind_max_kmh": float(8 + index % 19)},
+            ]
+        rows, meta = build_refill_period_rows(refills, period_features, max_days=120)
+        self.assertEqual(len(rows), 60)
+        self.assertFalse(meta["daily_refills_required"])
+        result = fuel_ai.evaluate(rows)
+        self.assertEqual(result["rejected_days"], 0)
+        self.assertEqual(result["rejected_by_reason"]["duplicate_day"], 0)
+        self.assertNotEqual(result["status"], "collecting")
 
 
 if __name__ == "__main__":
