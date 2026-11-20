@@ -77,7 +77,7 @@ def build_audit(query, *, max_days, channel_ids, read_keys, today, tz,
         if not channel_id:
             continue
         for offset in range(days, -1, -1):
-            feeds_by_channel[channel_index].extend(results[(channel_index, offset)])
+            feeds_by_channel[channel_index].extend(results.get((channel_index, offset), []))
 
     if ignition_config is None:
         result = analyze(feeds_by_channel, channel_ids, days)
