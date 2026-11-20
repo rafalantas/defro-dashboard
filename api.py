@@ -75,6 +75,8 @@ _i18n_cache: dict[str, str] | None = None
 THINGSPEAK_COMPACT_CHANNEL_FIELDS = api_channel_fields()
 
 THINGSPEAK_LAST_WRITES = [0.0] * len(THINGSPEAK_COMPACT_CHANNEL_FIELDS)
+THINGSPEAK_WRITE_LOCK = threading.Lock()
+THINGSPEAK_WRITE_INTERVAL_SECONDS = max(0, int(os.getenv("THINGSPEAK_WRITE_INTERVAL_SECONDS", "40")))
 
 
 def _thingspeak_field_schema() -> tuple:
