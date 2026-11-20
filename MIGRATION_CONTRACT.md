@@ -12,7 +12,7 @@
 - `snapshot()` has a 20-second in-process cache. Statistics/history have separate 30-second caches.
 - No database or local persistence is used by the fuel module for refill/daily aggregates; ThingSpeak is the durable store and most computed results are in-memory caches.
 - `api.py` imports `fuel` at module import time. A future package split must preserve startup/import behavior or deliberately decouple the live status API from the fuel engine.
-- `Dockerfile.api` explicitly copies `api.py`, `fuel.py`, `fuel_ai.py`, and `fuel_telemetry.py` into `/app`. Moving modules into a package requires a matching Dockerfile change.
+- `Dockerfile.api` explicitly copies runtime modules into `/app`; keep it synchronized when adding or moving files.
 
 ## 2. HTTP API contract
 
@@ -84,7 +84,7 @@ Channel 2 — valve, pumps and fuel level:
 
 ### Current schema risk
 
-The field mapping exists in more than one place: `api.py: THINGSPEAK_COMPACT_CHANNEL_FIELDS`, `fuel_telemetry.py: CHANNELS`, and positional constants in `fuel.py`. The new architecture should define one canonical schema and add a contract test proving all consumers agree before removing any legacy mapping.
+The field mapping originally existed in multiple places. `fuel_schema.py` is now canonical; `api.py`, `fuel_telemetry.py`, and `thermoflow2_runtime.py` consume it and contract tests verify the mapping.
 
 ## 4. Configuration inventory
 
@@ -146,7 +146,7 @@ Existing regression files include:
 
 The validation workflow should run all of them. Locally, the fuel-focused checks are:
 ```sh
-python -m py_compile api.py fuel.py fuel_ai.py fuel_telemetry.py
+python -m py_compile api.py fuel.py thermoflow2_runtime.py fuel_engine.py fuel_ai.py fuel_telemetry.py
 python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py tests/test_fuel_telemetry.py
 python tests/test_counter_epoch.py
 python tests/test_hdd_base.py

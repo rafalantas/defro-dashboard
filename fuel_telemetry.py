@@ -10,38 +10,11 @@ from datetime import datetime, timedelta
 from statistics import median
 from zoneinfo import ZoneInfo
 
-TZ = ZoneInfo("Europe/Warsaw")
+from fuel_schema import telemetry_channels, timezone
+
+TZ = timezone()
 MAX_SAMPLE_GAP_SECONDS = 300
-
-CHANNELS = (
-    {
-        "name": "temperatures_power",
-        "series": (
-            ("co_c", "Temperatura CO", "thermoflow-co", "temperature"),
-            ("dhw_c", "Temperatura CWU", "thermoflow-dhw", "temperature"),
-            ("flue_c", "Temperatura spalin", "thermoflow-flue", "temperature"),
-            ("outdoor_c", "Temperatura zewnętrzna", "thermoflow-outdoor", "temperature"),
-            ("room_c", "Temperatura pokoju", "thermoflow-room", "temperature"),
-            ("floor_c", "Temperatura podłogówki (C1)", "thermoflow-floor", "temperature"),
-            ("valve_current_c", "Temperatura zaworu 4D", "thermoflow-valve4d-current", "temperature"),
-            ("boiler_power_kw", "Moc chwilowa pieca", "thermoflow-boiler-power", "power"),
-        ),
-    },
-    {
-        "name": "valve_pumps_fuel",
-        "series": (
-            ("valve_setpoint_c", "Temperatura zadana zaworu 4D po korekcie", "thermoflow-valve4d-effective-setpoint", "temperature"),
-            ("valve_opening_pct", "Otwarcie zaworu 4D", "thermoflow-valve4d-opening", "percent"),
-            ("return_c", "Temperatura powrotu", "thermoflow-valve4d-return", "temperature"),
-            ("pump_valve4d", "Pompa zaworu 4D", "thermoflow-pump-valve4d", "state"),
-            ("pump_floor", "Pompa podłogowa", "thermoflow-pump-floor", "state"),
-            ("pump_dhw", "Pompa CWU", "thermoflow-pump-dhw", "state"),
-            ("pump_circulation", "Pompa cyrkulacyjna", "thermoflow-pump-circulation", "state"),
-            ("fuel_percent", "Zapas paliwa", "thermoflow-fuel-percent", "percent"),
-        ),
-    },
-)
-
+CHANNELS = telemetry_channels()
 
 def _timestamp(raw):
     try:
@@ -68,11 +41,12 @@ def _percentile(values, fraction):
     return round(ordered[min(len(ordered) - 1, int((len(ordered) - 1) * fraction))], 1)
 
 
-def analyze(feeds_by_channel, channel_ids, days):
-    """Return coverage audit and day aggregates from already-fetched feeds."""
+def analyze(feeds_by_channel, channel_ids, days, now=None):
+    """Return coverage audit and day aggregates; optional now makes date windows deterministic."""
     points = defaultdict(list)
     channel_audit = []
-    now = datetime.now(TZ)
+    now = now or datetime.now(TZ)
+    now = now.replace(tzinfo=TZ) if now.tzinfo is None else now.astimezone(TZ)
     start = (now - timedelta(days=days)).date()
 
     for channel_index, schema in enumerate(CHANNELS):
