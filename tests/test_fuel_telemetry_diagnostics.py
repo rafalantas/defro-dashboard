@@ -39,6 +39,16 @@ class RawTelemetryDiagnosticsTests(unittest.TestCase):
         self.assertEqual(hydraulics["low_return_episodes"][0]["samples"], 3)
         self.assertEqual(hydraulics["low_return_episodes"][0]["return_c"]["min"], 51.0)
 
+    def test_recovery_closes_low_return_episode(self):
+        start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
+        points = {"return_c": [
+            (start, 53.0), (start + timedelta(minutes=1), 52.0),
+            (start + timedelta(minutes=2), 56.0),
+            (start + timedelta(minutes=3), 53.0),
+        ]}
+        result = build_raw_diagnostics(points, start)
+        self.assertEqual(result["hydraulics"]["low_return_episode_count"], 2)
+
     def test_long_gap_splits_events_without_interpolation(self):
         start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
         points = {"return_c": [
