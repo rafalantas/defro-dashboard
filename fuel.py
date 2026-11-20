@@ -96,6 +96,29 @@ from fuel_config import (
 )
 
 
+# Cache storage is grouped in FuelCacheState; TTL/key/invalidation policy remains in fuel_config.
+from fuel_runtime import FuelCacheState
+
+_cache_state = FuelCacheState()
+_lock = _cache_state.lock
+_daily_cache = _cache_state.daily
+_om_cache = _cache_state.openmeteo
+_temps_start = _cache_state.temps_start
+_refills_cache = _cache_state.refills
+_summary_cache = _cache_state.summary
+_summary_state = _cache_state.summary_state
+_summary_guard = _cache_state.summary_guard
+_offset_cache = _cache_state.offset
+_forecast_cache = _cache_state.forecast
+_climate_cache = _cache_state.climate
+_model_cache = _cache_state.house_model
+_counter_cache = _cache_state.counter
+_weather_cache = _cache_state.weather
+_weather_fetched = _cache_state.weather_fetched
+_daily_model_cache = _cache_state.daily_model
+_telemetry_history_cache = _cache_state.telemetry_history
+
+
 
 
 def _parse_ts(s: str) -> datetime:
