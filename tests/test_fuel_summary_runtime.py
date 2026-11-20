@@ -1,0 +1,133 @@
+"""Tests for summary worker lifecycle, cache and cold-start response contract."""
+import threading
+import unittest
+
+from fuel_errors import FuelError
+from fuel_summary_runtime import get_summary, summary_job, summary_kick, warmup
+
+
+class FakeThread:
+    def __init__(self, target, name, daemon, run_on_start=True, alive_after_start=False):
+        self.target = target
+        self.name = name
+        self.daemon = daemon
+        self.run_on_start = run_on_start
+        self.alive_after_start = alive_after_start
+        self.alive = False
+        self.started = False
+        self.join_timeout = None
+
+    def start(self):
+        self.started = True
+        self.alive = True
+        if self.run_on_start:
+            self.target()
+            self.alive = False
+        elif not self.alive_after_start:
+            self.alive = False
+
+    def join(self, timeout=None):
+        self.join_timeout = timeout
+
+    def is_alive(self):
+        return self.alive
+
+
+class SummaryRuntimeTests(unittest.TestCase):
+    def deps(self, **overrides):
+        cache = {"at": 10.0, "data": None}
+        state = {"thread": None, "error": None}
+        calls = []
+        threads = []
+        def factory(**kwargs):
+            thread = FakeThread(**kwargs)
+            threads.append(thread)
+            return thread
+        deps = {
+            "prefetch": lambda: calls.append("prefetch"),
+            "build": lambda: calls.append("build") or cache.update(at=20.0, data={"ready": True}),
+            "fuel_error": FuelError,
+            "state": state,
+            "guard": threading.Lock(),
+            "thread_factory": factory,
+            "configured": lambda: True,
+            "cache": cache,
+            "monotonic": lambda: 20.0,
+            "cache_seconds": 60.0,
+            "wait_seconds": 25.0,
+        }
+        deps.update(overrides)
+        return deps, calls, threads
+
+    def test_job_runs_prefetch_then_build_and_clears_error(self):
+        deps, calls, _ = self.deps()
+        deps["state"]["error"] = "old error"
+        summary_job(deps)
+        self.assertEqual(calls, ["prefetch", "build"])
+        self.assertIsNone(deps["state"]["error"])
+
+    def test_job_captures_fuel_and_unexpected_errors(self):
+        deps, _, _ = self.deps(prefetch=lambda: (_ for _ in ()).throw(FuelError(503, "offline")))
+        summary_job(deps)
+        self.assertEqual(deps["state"]["error"], "offline")
+        deps["prefetch"] = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+        summary_job(deps)
+        self.assertEqual(deps["state"]["error"], "RuntimeError: boom")
+
+    def test_kick_reuses_live_thread_and_creates_daemon_worker(self):
+        deps, _, threads = self.deps()
+        first = summary_kick(deps)
+        second = summary_kick(deps)
+        self.assertIs(first, second)
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(first.name, "fuel-summary")
+        self.assertTrue(first.daemon)
+        self.assertTrue(first.started)
+
+    def test_unconfigured_and_fresh_cache_do_not_start_worker(self):
+        deps, _, threads = self.deps(configured=lambda: False)
+        self.assertEqual(get_summary(deps), {"configured": False})
+        deps, _, threads = self.deps()
+        deps["cache"].update(at=19.0, data={"cached": True})
+        self.assertEqual(get_summary(deps), {"cached": True})
+        self.assertEqual(threads, [])
+
+    def test_stale_cache_is_returned_while_refresh_starts(self):
+        deps, calls, threads = self.deps()
+        deps["cache"].update(at=0.0, data={"stale": True})
+        self.assertEqual(get_summary(deps), {"stale": True})
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(calls, ["prefetch", "build"])
+
+    def test_cold_start_waits_and_returns_new_cache(self):
+        deps, calls, threads = self.deps()
+        result = get_summary(deps)
+        self.assertEqual(result, {"ready": True})
+        self.assertEqual(calls, ["prefetch", "build"])
+        self.assertEqual(threads[0].join_timeout, 25.0)
+
+    def test_cold_start_failure_maps_to_502_and_timeout_returns_warming(self):
+        deps, _, _ = self.deps(prefetch=lambda: (_ for _ in ()).throw(FuelError(503, "offline")))
+        with self.assertRaises(FuelError) as caught:
+            get_summary(deps)
+        self.assertEqual(caught.exception.status, 502)
+        self.assertEqual(caught.exception.message, "offline")
+
+        deps, _, threads = self.deps()
+        deps["thread_factory"] = lambda **kwargs: FakeThread(
+            **kwargs, run_on_start=False, alive_after_start=True
+        )
+        self.assertEqual(get_summary(deps), {"configured": True, "warming": True})
+        self.assertEqual(threads, [])
+
+    def test_warmup_only_starts_when_configured(self):
+        deps, _, threads = self.deps(configured=lambda: False)
+        warmup(deps)
+        self.assertEqual(threads, [])
+        deps["configured"] = lambda: True
+        warmup(deps)
+        self.assertEqual(len(threads), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
