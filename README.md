@@ -169,7 +169,8 @@ Import wykonaj przed pierwszym wpisem dodanym przez API. Nowe dosypki najwygodni
 ├── README.md                     # opis, wdrożenie i konfiguracja
 ├── .github/workflows/docker.yml  # budowanie i publikowanie obrazów
 ├── api.py                        # tylko-odczytowy backend eModul
-├── fuel.py                       # zużycie peletu (kanał ThingSpeak „Pelet”)
+├── fuel.py                       # zgodna wstecz aliasowa nazwa runtime ThermoFlow 2.0
+├── thermoflow2_runtime.py        # kompozycja providerów i usług paliwa
 ├── tools/import_refills.py       # jednorazowy import historii dosypek
 ├── index.html                    # dashboard i animowany schemat
 ├── favicon.svg                   # ikona dashboardu
@@ -193,4 +194,4 @@ Dobowe rekordy modelu AI są łączone z agregatami z dwóch kanałów ThingSpea
 
 Cechy analogowe są przyjmowane tylko przy co najmniej 1000 próbek na dobę, a czasy pomp tylko przy co najmniej 20 godzinach znanego stanu. Brakujące lub niepełne dane nie są interpolowane. Model AI porównuje wariant pogodowy z wariantem rozszerzonym o telemetrię na wspólnym zbiorze kompletnych dób i chronologicznym holdoucie. Cechy telemetryczne wymagają co najmniej 45 dób treningowych i 7 testowych; do tego czasu API raportuje status `collecting` i liczbę kompletnych dób. Wariant telemetryczny jest zaakceptowany wyłącznie przy poprawie MAE o co najmniej 3%.
 
-Integracja działa wyłącznie w `fuel_ai.py` w trybie shadow. Produkcyjne obliczenia `fuel.py`, prognoza używana przez dashboard i sterowanie kotłem pozostają bez zmian. Publiczny audyt nadal ma limit 14 dni, natomiast wewnętrzny loader modelu pobiera historię do 120 dni (każdą dobę osobno, równolegle) i buforuje agregaty przez 6 godzin. Starsze rekordy paliwa bez dostępnej historii ThingSpeak pozostają bez cech instalacji.
+Integracja `fuel_ai.py` działa w trybie shadow i nie zmienia produkcyjnych estymat paliwa. Obliczenia paliwa są obsługiwane przez runtime ThermoFlow 2.0, a prognoza dashboardu zachowuje dotychczasowy kontrakt. System pozostaje odczytowy i nie steruje kotłem. Publiczny audyt nadal ma limit 14 dni, natomiast wewnętrzny loader modelu pobiera historię do 120 dni i buforuje agregaty przez 6 godzin. Starsze rekordy paliwa bez dostępnej historii ThingSpeak pozostają bez cech instalacji.

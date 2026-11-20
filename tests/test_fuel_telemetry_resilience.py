@@ -1,0 +1,97 @@
+"""Optional telemetry failures must not escape the fuel feature boundary."""
+import unittest
+from datetime import date, timedelta
+from unittest.mock import patch
+
+import fuel
+
+
+class FuelTelemetryResilienceTests(unittest.TestCase):
+    def test_unexpected_telemetry_exception_becomes_explicit_unavailable_state(self):
+        with patch.object(fuel, "_telemetry_history", side_effect=RuntimeError("simulated parser failure")):
+            daily, state = fuel._telemetry_daily_features(30)
+
+        self.assertEqual(daily, {})
+        self.assertEqual(state["status"], "unavailable")
+        self.assertIn("RuntimeError", state["error"])
+        self.assertIn("simulated parser failure", state["error"])
+
+    def test_maximum_history_is_partitioned_into_complete_bounded_windows(self):
+        today = date(2026, 11, 19)
+        windows = fuel._telemetry_fetch_windows(120, today)
+
+        self.assertEqual(len(windows), 41)
+        self.assertEqual(windows[0][0], today - timedelta(days=120))
+        self.assertEqual(windows[-1][1], today + timedelta(days=1))
+        for index, (start, end, _offset) in enumerate(windows):
+            self.assertLessEqual((end - start).days, 3)
+            if index:
+                self.assertEqual(windows[index - 1][1], start)
+
+    def test_partial_telemetry_keeps_successful_days_and_exposes_failed_windows(self):
+        audit = {
+            "daily": [{"day": "2026-11-18", "co_c_mean": 65.0}],
+            "fetch_status": "partial",
+            "fetch_windows": {"requested": 82, "completed": 81, "failed": 1},
+            "fetch_errors": ["FuelError: HTTP 429"],
+        }
+        with patch.object(fuel, "_telemetry_history", return_value=audit):
+            daily, state = fuel._telemetry_daily_features(120)
+
+        self.assertEqual(daily["2026-11-18"]["co_c_mean"], 65.0)
+        self.assertEqual(state["status"], "partial")
+        self.assertEqual(state["fetch_windows"]["failed"], 1)
+        self.assertIn("HTTP 429", state["error"])
+
+    def test_counter_drop_rejects_interval_without_a_baseline_sample(self):
+        start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
+        end = start + timedelta(minutes=10)
+        points = [(start.timestamp() + 60, 99.0), (start.timestamp() + 120, 98.0)]
+        with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
+            fuel, "_counter_sample_points", return_value=points
+        ):
+            self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
+
+    def test_counter_drop_rejects_a_gap_over_fifteen_minutes(self):
+        start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
+        end = start + timedelta(minutes=30)
+        # Raw samples retain unchanged values so this is a true coverage gap.
+        points = [
+            (start.timestamp() - 60, 100.0),
+            (start.timestamp() + 60, 99.0),
+            (start.timestamp() + 20 * 60, 98.0),
+        ]
+        with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
+            fuel, "_counter_sample_points", return_value=points
+        ):
+            self.assertEqual(fuel._counter_drop(start, end), (None, False, False))
+
+    def test_counter_drop_accepts_complete_interval_with_regular_samples(self):
+        start = fuel.datetime(2026, 11, 18, 12, 0, tzinfo=fuel.TZ)
+        end = start + timedelta(minutes=10)
+        points = [
+            (start.timestamp() - 60, 100.0),
+            (start.timestamp() + 60, 99.0),
+            (start.timestamp() + 9 * 60, 98.0),
+        ]
+        with patch.object(fuel, "_temps_data_start", return_value=start.date()), patch.object(
+            fuel, "_counter_sample_points", return_value=points
+        ):
+            self.assertEqual(fuel._counter_drop(start, end), (2.0, True, False))
+
+    def test_successful_telemetry_preserves_daily_aggregates_and_fetch_time(self):
+        audit = {
+            "daily": [{"day": "2026-11-18", "co_c_mean": 65.0}],
+            "fetched_at": "2026-11-19T10:00:00+00:00",
+        }
+        with patch.object(fuel, "_telemetry_history", return_value=audit):
+            daily, state = fuel._telemetry_daily_features(30)
+
+        self.assertEqual(daily["2026-11-18"]["co_c_mean"], 65.0)
+        self.assertEqual(state["status"], "available")
+        self.assertEqual(state["days"], 1)
+        self.assertEqual(state["fetched_at"], audit["fetched_at"])
+
+
+if __name__ == "__main__":
+    unittest.main()
