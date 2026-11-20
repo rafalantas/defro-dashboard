@@ -8,4 +8,23 @@
     .telemetry-tile{background:linear-gradient(145deg,#f7fafb,#edf3f6);border-color:#d4e0e6}.telemetry-label,.metric .label{color:#536a76}.telemetry-value{color:#1c2c35}.telemetry-meta,.telemetry-footer,.telemetry-wait,.metric small,.sensor-note,.bottomnote{color:#617782}.metric{border-color:#dce5e9}.control,.status-line{border-color:#dce5e9}.control p{color:#5d727d}.switch{border-color:#bccbd2;background:#e1e9ed}.switch:after{background:#71858f}.switch.on{background:#bce7d9;border-color:#5aaf95}.switch.on:after{background:#087f70}.pump-status{color:#536a76}
     .sensor-chip{background:#f7fafb;border-color:#d4e0e6;color:#344a55}.sensor-chip.unknown i{background:#9aaab1}.legend-row{color:#536a76}.legend-row b,.status-copy{color:#293b45}.status-copy small{color:#617782}.status-icon{background:#e4f3e9;color:#247348}.status-icon.amber{background:#f7efd9;color:#7c641c}
     .stats-period.active{border-color:#319782;background:#e1f2ed;color:#176451}.stats-date{color:#263943;background:#f7fafb;border-color:#cbd8de}.stats-series-option{color:#536a76}.stats-chart-wrap{background:#f8fbfc;border-color:#d4e0e6}.stats-tooltip{border-color:#b8c8d0;background:#fffffff2;color:#1f313b;box-shadow:0 8px 24px #24394524}.stats-tooltip time,.stats-message,.stats-meta{color:#607580}.valve-tooltip{border-color:#b8c8d0;background:#fffffff5;color:#1f313b;box-shadow:0 8px 24px #24394524}
+    /* Fuel analytics: restore the light palette for panels defined in fuel.css. */
+    .fuel-detail-panel{background:linear-gradient(145deg,#fff,#f6fafb);border-color:#d4e0e6;box-shadow:0 8px 22px #1833440a}
+    .fuel-detail-panel h4{color:#1a2932}
+    .fuel-detail-panel .fuel-chart-legend,
+    .fuel-detail-panel .fuel-detail-footnote,
+    .fuel-detail-panel .fuel-empty{color:#607580}
+    .fuel-detail-panel .fuel-model-row,
+    .fuel-detail-panel .fuel-refill-row,
+    .fuel-detail-panel .fuel-forecast-day{border-color:#e0e8ec}
+    .fuel-detail-panel .fuel-model-row span,
+    .fuel-detail-panel .fuel-forecast-day span,
+    .fuel-detail-panel .fuel-forecast-day small,
+    .fuel-detail-panel .fuel-refill-row small{color:#607580}
+    .fuel-detail-panel .fuel-model-row b,
+    .fuel-detail-panel .fuel-refill-row b,
+    .fuel-detail-panel .fuel-forecast-day b{color:#1a2932}
+    .fuel-planning-card{background:linear-gradient(145deg,#fff,#f5f9fa);border-color:#d4e0e6;box-shadow:0 5px 16px #18334408}
+    .fuel-planning-card span,.fuel-planning-card small{color:#607580}
+    .fuel-planning-card strong{color:#1a2932}
   }
