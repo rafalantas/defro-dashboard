@@ -117,6 +117,43 @@ def _valid_telemetry_row(row: dict, names: list[str]) -> bool:
             return False
     return True
 
+
+def _select_telemetry_features(rows: list[dict], names: list[str], minimum_periods: int):
+    """Maximize complete-period count, then retain every compatible feature.
+
+    Selection uses telemetry availability only, never target values. Missing
+    values are not imputed. Adding a feature is allowed only when it does not
+    reduce the maximum number of fully observed periods.
+    """
+    coverage = {
+        name: sum(_valid_telemetry_row(row, [name]) for row in rows)
+        for name in names
+    }
+    ordered = sorted(names, key=lambda name: (-coverage[name], names.index(name)))
+    selection_floor = min(minimum_periods, len(rows))
+    best_count = max(coverage.values(), default=0)
+    if best_count < selection_floor:
+        return [], [], coverage
+
+    selected = [ordered[0]]
+    eligible = [
+        row for row in rows
+        if _valid_telemetry_row(row, selected)
+    ]
+    for name in ordered[1:]:
+        candidate = [
+            row for row in eligible
+            if _valid_telemetry_row(row, selected + [name])
+        ]
+        # Preserve the maximum coverage; never trade away valid periods just
+        # to add another sensor to the model.
+        if len(candidate) == best_count:
+            selected.append(name)
+            eligible = candidate
+    # With no usable telemetry feature, do not treat weather-only rows as telemetry rows.
+    return selected, eligible, coverage
+
+
 def _period_diagnostic(row: dict, status: str, reason_codes=None, telemetry_names=None) -> dict:
     """Explain model eligibility without pretending aggregated features are raw samples."""
     day = row.get("day")
@@ -397,9 +434,12 @@ def evaluate(rows: list[dict]) -> dict:
         "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
         "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
     ]
-    telemetry_clean = [
-        row for row in clean if _valid_telemetry_row(row, telemetry_names)
-    ]
+    telemetry_selected_features, telemetry_clean, telemetry_feature_coverage = (
+        _select_telemetry_features(
+            clean, telemetry_names,
+            TELEMETRY_MIN_TRAIN_PERIODS + TELEMETRY_MIN_TEST_PERIODS,
+        )
+    )
     period_diagnostics.extend(
         _period_diagnostic(row, "complete" if row in telemetry_clean else "incomplete",
                            telemetry_names=telemetry_names)
@@ -423,10 +463,14 @@ def evaluate(rows: list[dict]) -> dict:
         return {"period_diagnostics": period_diagnostics, "status": "collecting", "days": total, "periods": total,
                 "telemetry": {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                              "selected_features": telemetry_selected_features,
+                              "feature_coverage_periods": telemetry_feature_coverage,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Za mało kompletnych okresów z telemetrią do walidacji"},
                 "train_days_needed": MIN_TRAIN_DAYS, "train_periods_needed": MIN_TRAIN_PERIODS,
                 "test_days_needed": MIN_TEST_DAYS, "test_periods_needed": MIN_TEST_PERIODS,
+                "required_periods": MIN_TRAIN_PERIODS + MIN_TEST_PERIODS,
+                "available_periods": total,
                 "rejected_days": rejected_rows, "rejected_periods": rejected_rows,
         "rejected_by_reason": rejected_by_reason,
         "invalid_base_by_reason": invalid_base_by_reason,
@@ -437,7 +481,7 @@ def evaluate(rows: list[dict]) -> dict:
                 "rejected_by_reason": rejected_by_reason,
                         "telemetry_incomplete_days": telemetry_incomplete_days,
         "telemetry_incomplete_periods": telemetry_incomplete_periods, "telemetry_incomplete_periods": telemetry_incomplete_periods,
-                "message": "Za mało kompletnych, skalibrowanych dób do uczciwego testu"}
+                "message": "Za mało kompletnych okresów dosypka–dosypka do uczciwego testu"}
 
     train, test = clean[:train_count], clean[train_count:]
     baseline_names = ["hdd_lag"]
@@ -452,6 +496,8 @@ def evaluate(rows: list[dict]) -> dict:
             return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                     "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                   "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                                  "selected_features": telemetry_selected_features,
+                                  "feature_coverage_periods": telemetry_feature_coverage,
                                   "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                                   "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                     "rejected_days": rejected_rows, "rejected_periods": rejected_rows, "rejected_by_reason": rejected_by_reason,
@@ -498,6 +544,8 @@ def evaluate(rows: list[dict]) -> dict:
         return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                              "selected_features": telemetry_selected_features,
+                              "feature_coverage_periods": telemetry_feature_coverage,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
@@ -518,6 +566,8 @@ def evaluate(rows: list[dict]) -> dict:
         return {"period_diagnostics": period_diagnostics, "status": "unstable", "days": total, "periods": total,
                 "telemetry": {"status": "not_evaluated", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                               "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                              "selected_features": telemetry_selected_features,
+                              "feature_coverage_periods": telemetry_feature_coverage,
                               "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                               "message": "Model bazowy niestabilny; model telemetrii nie został oceniony"},
                 "rejected_days": rejected_rows, "rejected_by_reason": rejected_by_reason,
@@ -529,13 +579,15 @@ def evaluate(rows: list[dict]) -> dict:
 
     telemetry_result = {"status": "collecting", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                         "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                        "selected_features": telemetry_selected_features,
+                        "feature_coverage_periods": telemetry_feature_coverage,
                         "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                         "training_days_needed": TELEMETRY_MIN_TRAIN_PERIODS, "training_periods_needed": TELEMETRY_MIN_TRAIN_PERIODS,
                         "holdout_days_needed": TELEMETRY_MIN_TEST_PERIODS, "holdout_periods_needed": TELEMETRY_MIN_TEST_PERIODS,
-                        "message": "Model telemetrii czeka na 20 kompletnych okresów treningowych i 5 testowych"}
+                        "message": "Model telemetrii czeka na 20 okresów treningowych i 5 testowych z kompletnym zestawem wybranych cech"}
     if telemetry_train_count >= TELEMETRY_MIN_TRAIN_PERIODS and telemetry_test_count >= TELEMETRY_MIN_TEST_PERIODS:
         telemetry_baseline_names = ["hdd_lag", "solar_mj", "wind_hdd_lag"]
-        telemetry_candidate_names = telemetry_baseline_names + telemetry_names
+        telemetry_candidate_names = telemetry_baseline_names + telemetry_selected_features
         telemetry_test = telemetry_clean[telemetry_train_count:]
         telemetry_actual = [float(row["kg_counter"]) for row in telemetry_test]
         base_predictions, extended_predictions = [], []
@@ -546,6 +598,8 @@ def evaluate(rows: list[dict]) -> dict:
             if base_fit is None or extended_fit is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                     "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                                    "selected_features": telemetry_selected_features,
+                                    "feature_coverage_periods": telemetry_feature_coverage,
                                     "message": "Model telemetrii nie przeszedł kontroli stabilności"}
                 break
             base_predictions.append(_predict(base_fit, row))
@@ -560,6 +614,8 @@ def evaluate(rows: list[dict]) -> dict:
             if telemetry_fixed_base is None or telemetry_fixed_extended is None:
                 telemetry_result = {"status": "unstable", "complete_days": telemetry_days, "complete_periods": telemetry_periods,
                                     "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                                    "selected_features": telemetry_selected_features,
+                                    "feature_coverage_periods": telemetry_feature_coverage,
                                     "message": "Stały holdout telemetrii nie przeszedł kontroli stabilności"}
             else:
                 telemetry_fixed_gain = (
@@ -570,15 +626,21 @@ def evaluate(rows: list[dict]) -> dict:
                 telemetry_ablation_specs = {
                     "weather_only": telemetry_baseline_names,
                     "weather_plus_temperatures": telemetry_baseline_names + [
-                        "telemetry_co_c", "telemetry_dhw_c",
-                        "telemetry_floor_c", "telemetry_return_c",
+                        name for name in (
+                            "telemetry_co_c", "telemetry_dhw_c",
+                            "telemetry_floor_c", "telemetry_return_c",
+                        ) if name in telemetry_selected_features
                     ],
                     "weather_plus_boiler_and_valve": telemetry_baseline_names + [
-                        "telemetry_boiler_power_kw", "telemetry_valve_opening_pct",
+                        name for name in (
+                            "telemetry_boiler_power_kw", "telemetry_valve_opening_pct",
+                        ) if name in telemetry_selected_features
                     ],
                     "weather_plus_pumps": telemetry_baseline_names + [
-                        "telemetry_pump_floor_h", "telemetry_pump_dhw_h",
-                        "telemetry_pump_circulation_h",
+                        name for name in (
+                            "telemetry_pump_floor_h", "telemetry_pump_dhw_h",
+                            "telemetry_pump_circulation_h",
+                        ) if name in telemetry_selected_features
                     ],
                     "weather_plus_all_telemetry": telemetry_candidate_names,
                 }
@@ -599,6 +661,8 @@ def evaluate(rows: list[dict]) -> dict:
                 telemetry_result = {
                     "status": "shadow_ready", "mode": "shadow_only",
                     "complete_days": telemetry_days, "complete_periods": telemetry_periods, "incomplete_days": telemetry_incomplete_days, "incomplete_periods": telemetry_incomplete_periods,
+                    "selected_features": telemetry_selected_features,
+                    "feature_coverage_periods": telemetry_feature_coverage,
                     "days_needed": telemetry_minimum_days, "periods_needed": telemetry_minimum_periods,
                     "training_days": telemetry_train_count, "training_periods": telemetry_train_count,
                     "holdout_days": telemetry_test_count, "holdout_periods": telemetry_test_count,
