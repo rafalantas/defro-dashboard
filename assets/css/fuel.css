@@ -1,8 +1,12 @@
   .fuel-grid{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:700px){.fuel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Rozszerzony, tylko-odczytowy panel paliwa */
-.fuel-detail-section{margin-top:18px;padding-top:16px;border-top:1px solid var(--line,rgba(150,170,180,.16))}
-.fuel-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+.fuel-detail-section{box-sizing:border-box;width:100%;min-width:0;max-width:100%;margin-top:18px;padding:16px;border:1px solid var(--line,rgba(150,170,180,.22));border-radius:14px;background:rgba(8,18,25,.12);overflow:hidden}
+.fuel-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;min-width:0;max-width:100%}
+.fuel-detail-section>.fuel-detail-heading{width:100%;box-sizing:border-box;align-items:flex-start;flex-wrap:wrap;padding:0 2px 12px;border-bottom:1px solid var(--line,rgba(150,170,180,.16))}
+.fuel-detail-section>.fuel-detail-heading>div{flex:1 1 220px;min-width:0}
+.fuel-detail-section>.fuel-detail-heading>#fuelDetailStatus{flex:0 1 auto;max-width:40%;min-width:0;margin-left:auto;text-align:right;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.fuel-analysis-layout{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
 .fuel-detail-heading h3{margin:0;font-size:13px;font-weight:800;letter-spacing:.02em}
 .fuel-detail-heading small,.fuel-refill-row small{display:block;color:var(--muted,#91a3aa);font-size:10px;margin-top:4px}
 .fuel-detail-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:14px}
@@ -22,7 +26,7 @@
 .fuel-empty{padding:16px 0;color:var(--muted,#91a3aa);font-size:11px}
 .fuel-detail-footnote{margin-top:10px;color:var(--muted,#91a3aa);font-size:10px;line-height:1.55}
 @media(max-width:850px){.fuel-detail-grid{grid-template-columns:1fr}}
-@media(max-width:520px){.fuel-detail-panel{padding:10px}.fuel-detail-heading{align-items:flex-start;flex-direction:column}}
+@media(max-width:520px){.fuel-detail-section{padding:12px}.fuel-detail-panel{padding:10px}.fuel-detail-heading{align-items:flex-start;flex-direction:column}.fuel-detail-section>.fuel-detail-heading>#fuelDetailStatus{max-width:100%;margin-left:0;text-align:left}}
 
 .fuel-planning-panel{grid-column:1/-1}
 .fuel-planning-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
