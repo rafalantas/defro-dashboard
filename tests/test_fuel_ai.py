@@ -102,6 +102,38 @@ class FuelAiTests(unittest.TestCase):
             "insufficient_history_for_three_expanding_windows",
         )
 
+    def test_period_diagnostic_uses_selected_model_features_but_reports_all_sensor_gaps(self):
+        row = {
+            "day": "2026-11-20",
+            "telemetry_co_c": 68.0,
+            "telemetry_dhw_c": 45.0,
+            "telemetry_floor_c": None,
+            "telemetry_return_c": 56.0,
+            "telemetry_boiler_power_kw": None,
+            "telemetry_valve_opening_pct": 40.0,
+            "telemetry_pump_floor_h": None,
+            "telemetry_pump_dhw_h": 2.0,
+            "telemetry_pump_circulation_h": 3.0,
+        }
+        selected = ["telemetry_co_c", "telemetry_dhw_c", "telemetry_return_c"]
+        diagnostic = fuel_ai._period_diagnostic(
+            row, "complete", telemetry_names=selected,
+            all_telemetry_names=[
+                "telemetry_co_c", "telemetry_dhw_c", "telemetry_floor_c",
+                "telemetry_return_c", "telemetry_boiler_power_kw",
+                "telemetry_valve_opening_pct", "telemetry_pump_floor_h",
+                "telemetry_pump_dhw_h", "telemetry_pump_circulation_h",
+            ],
+        )
+        self.assertEqual(diagnostic["status"], "complete")
+        self.assertEqual(diagnostic["telemetry_feature_count"], 3)
+        self.assertEqual(diagnostic["all_telemetry_feature_count"], 6)
+        self.assertEqual(diagnostic["all_telemetry_feature_total"], 9)
+        self.assertEqual(
+            set(diagnostic["all_telemetry_missing_fields"]),
+            {"telemetry_floor_c", "telemetry_boiler_power_kw", "telemetry_pump_floor_h"},
+        )
+
     def test_seven_days_of_telemetry_are_ingested_but_not_overfit(self):
         result = fuel_ai.evaluate(add_telemetry(synthetic_rows(7)))
         self.assertEqual(result["status"], "collecting")
@@ -353,8 +385,10 @@ class FuelAiTests(unittest.TestCase):
         self.assertNotIn("telemetry_return_c", telemetry["selected_features"])
         self.assertNotIn("telemetry_pump_floor_h", telemetry["selected_features"])
         diagnostics = {item["date"]: item for item in result["period_diagnostics"]}
-        self.assertEqual(diagnostics[rows[0]["day"]]["status"], "incomplete")
-        self.assertEqual(diagnostics[rows[1]["day"]]["status"], "incomplete")
+        self.assertEqual(diagnostics[rows[0]["day"]]["status"], "complete")
+        self.assertEqual(diagnostics[rows[1]["day"]]["status"], "complete")
+        self.assertIn("telemetry_return_c", diagnostics[rows[0]["day"]]["all_telemetry_missing_fields"])
+        self.assertIn("telemetry_pump_floor_h", diagnostics[rows[1]["day"]]["all_telemetry_missing_fields"])
 
 
     def test_refill_period_training_does_not_require_daily_refills(self):
@@ -397,16 +431,12 @@ class FuelAiTests(unittest.TestCase):
 
         self.assertEqual(result["rejected_days"], 0)
         self.assertEqual(len(result["period_diagnostics"]), 50)
-        self.assertEqual(diagnostics[missing_day]["status"], "incomplete")
-        self.assertIn("telemetry_return_c", diagnostics[missing_day]["missing_fields"])
-        self.assertIn("telemetry_missing:telemetry_return_c",
-                      diagnostics[missing_day]["reason_codes"])
-        self.assertEqual(diagnostics[invalid_day]["status"], "incomplete")
-        self.assertIn("telemetry_pump_floor_h", diagnostics[invalid_day]["invalid_fields"])
-        self.assertIn("telemetry_out_of_range:telemetry_pump_floor_h",
-                      diagnostics[invalid_day]["reason_codes"])
-        self.assertEqual(diagnostics[missing_day]["telemetry_feature_count"], 8)
-        self.assertEqual(diagnostics[missing_day]["telemetry_coverage_percent"], 88.9)
+        self.assertEqual(diagnostics[missing_day]["status"], "complete")
+        self.assertIn("telemetry_return_c", diagnostics[missing_day]["all_telemetry_missing_fields"])
+        self.assertEqual(diagnostics[invalid_day]["status"], "complete")
+        self.assertIn("telemetry_pump_floor_h", diagnostics[invalid_day]["all_telemetry_invalid_fields"])
+        self.assertEqual(diagnostics[missing_day]["all_telemetry_feature_count"], 8)
+        self.assertEqual(diagnostics[missing_day]["all_telemetry_coverage_percent"], 88.9)
         self.assertIsNone(diagnostics[missing_day]["samples_expected"])
         self.assertIsNone(diagnostics[missing_day]["samples_received"])
         self.assertIsNone(diagnostics[missing_day]["max_gap_minutes"])

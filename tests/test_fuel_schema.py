@@ -11,6 +11,19 @@ import fuel
 
 
 class FuelSchemaTests(unittest.TestCase):
+    def test_telemetry_schema_preserves_confirmed_controller_mappings(self):
+        from fuel_schema import CHANNEL_FIELDS
+        fields = {
+            field[0]: field
+            for channel in CHANNEL_FIELDS
+            for field in channel["fields"]
+        }
+        self.assertEqual(fields["floor_c"][4], "temperatures.buffer_upper")
+        self.assertEqual(fields["boiler_power_kw"][4], "boiler_power_kw")
+        self.assertEqual(fields["pump_floor"][4], "pumps.floor")
+        self.assertEqual(fields["pump_dhw"][4], "pumps.dhw")
+        self.assertEqual(fields["pump_circulation"][4], "pumps.circulation")
+
     def test_two_channels_have_eight_ordered_fields_each(self):
         self.assertEqual([channel["name"] for channel in fuel_schema.CHANNEL_FIELDS],
                          ["temperatures_power", "valve_pumps_fuel"])

@@ -86,6 +86,16 @@ class FuelCounterTests(unittest.TestCase):
         self.assertIn("współczynnik tymczasowy", fuel_counter.counter_method(provisional, formatter))
         self.assertIn("±10%", fuel_counter.counter_method(provisional, formatter))
 
+    def test_calibration_confidence_scales_with_complete_period_count(self):
+        self.assertEqual(fuel_counter._calibration_confidence(0, "wartość tymczasowa")["level"], "none")
+        self.assertEqual(fuel_counter._calibration_confidence(1, "okresy po epoce")["level"], "low")
+        self.assertEqual(fuel_counter._calibration_confidence(3, "okresy po epoce")["level"], "limited")
+        self.assertEqual(fuel_counter._calibration_confidence(5, "okresy po epoce")["level"], "moderate")
+        self.assertEqual(fuel_counter._calibration_confidence(9, "okresy po epoce")["level"], "high")
+        span = fuel_counter._calibration_confidence(0, "okres obejmujący epokę")
+        self.assertEqual(span["level"], "low")
+        self.assertEqual(span["basis"], "epoch_spanning_estimate")
+
     def test_day_regime_marks_the_epoch_day(self):
         def bounds(day):
             start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
