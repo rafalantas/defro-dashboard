@@ -87,6 +87,22 @@ class FuelAiTests(unittest.TestCase):
         self.assertIn("mae_kg_day", result["telemetry"]["candidate"])
         self.assertIn("fixed_holdout", result["telemetry"]["validation"])
         self.assertIn("mae_kg_day", result["telemetry"]["validation"]["fixed_holdout"]["candidate"])
+        self.assertTrue(result["telemetry"]["ablation"]["available"])
+        self.assertEqual(
+            set(result["telemetry"]["ablation"]["fixed_holdout"]),
+            {
+                "weather_only",
+                "weather_plus_temperatures",
+                "weather_plus_boiler_and_valve",
+                "weather_plus_pumps",
+                "weather_plus_all_telemetry",
+            },
+        )
+        self.assertIn("not independent evidence", result["telemetry"]["ablation"]["method"])
+        self.assertEqual(
+            result["telemetry"]["ablation"]["fixed_holdout"]["weather_only"]["samples"],
+            result["telemetry"]["holdout_days"],
+        )
         self.assertGreaterEqual(result["telemetry"]["training_days"], fuel_ai.TELEMETRY_MIN_TRAIN_DAYS)
         self.assertGreaterEqual(result["telemetry"]["holdout_days"], fuel_ai.TELEMETRY_MIN_TEST_DAYS)
 
@@ -115,6 +131,9 @@ class FuelAiTests(unittest.TestCase):
         with patch.object(fuel_ai, "_fixed_holdout_metrics", side_effect=[
             {"mae_kg_day": 10.0, "rmse_kg_day": 12.0, "bias_kg_day": 0.0, "samples": 14},
             {"mae_kg_day": 11.0, "rmse_kg_day": 13.0, "bias_kg_day": 0.0, "samples": 14},
+            {"mae_kg_day": 10.0, "rmse_kg_day": 12.0, "bias_kg_day": 0.0, "samples": 14},
+            {"mae_kg_day": 10.0, "rmse_kg_day": 12.0, "bias_kg_day": 0.0, "samples": 14},
+            {"mae_kg_day": 10.0, "rmse_kg_day": 12.0, "bias_kg_day": 0.0, "samples": 14},
         ]):
             result = fuel_ai.evaluate(rows)
         self.assertGreaterEqual(result["mae_gain_percent"], fuel_ai.MIN_RELATIVE_GAIN * 100)
