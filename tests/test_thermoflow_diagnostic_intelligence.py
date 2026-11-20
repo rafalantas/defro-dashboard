@@ -195,6 +195,60 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         self.assertEqual(burner["complete"], 1)
         self.assertEqual(burner["cycles"][0]["duration_minutes"], 8.0)
 
+
+    def test_hydraulic_return_pairing_rejects_samples_across_long_gap(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start, 56], [start + 601, 52]],
+            "thermoflow-pump-floor": [[start, 0], [start + 300, 1]],
+        }
+        pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["starts"], 1)
+        self.assertEqual(pump["paired_events"], 0)
+        self.assertIsNone(pump["events"][0]["return_delta_c"])
+
+    def test_hydraulic_return_pairing_rejects_two_sided_samples_with_600s_gap(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start, 56], [start + 600, 52]],
+            "thermoflow-pump-floor": [[start, 0], [start + 300, 1]],
+        }
+        pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["paired_events"], 0)
+        self.assertEqual(pump["events"][0]["association_status"],
+                         "insufficient_unique_contiguous_return_samples")
+
+    def test_hydraulic_return_pairing_requires_samples_on_both_sides(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start + 360, 52]],
+            "thermoflow-pump-floor": [[start, 0], [start + 60, 1]],
+        }
+        pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["paired_events"], 0)
+        self.assertEqual(pump["events"][0]["association_status"], "insufficient_contiguous_return_samples")
+
+    def test_hydraulic_return_samples_are_not_reused_for_multiple_pump_events(self):
+        start = 1795161600
+        raw = {
+            "thermoflow-valve4d-return": [[start, 56], [start + 180, 52]],
+            "thermoflow-pump-floor": [[start, 0], [start + 60, 1], [start + 120, 0]],
+        }
+        pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
+        self.assertEqual(pump["starts"], 1)
+        self.assertEqual(pump["stops"], 1)
+        self.assertEqual(pump["paired_events"], 1)
+        self.assertEqual(pump["events"][0]["association_status"], "paired")
+        self.assertEqual(pump["events"][1]["association_status"],
+                         "insufficient_unique_contiguous_return_samples")
+
+    def test_duplicate_timestamp_samples_are_excluded_from_diagnostic_series(self):
+        start = 1795161600
+        raw = {"thermoflow-valve4d-return": [[start, 56], [start, 49], [start + 60, 53]]}
+        h = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]
+        self.assertEqual(h["return_samples"], 1)
+        self.assertEqual(h["return_min_c"], 53.0)
+
     def test_ai_exposes_evidence_and_is_explicitly_rule_based(self):
         result = build_thermoflow_intelligence({"thermoflow-fire": [[1795161600, 1]]})
         self.assertIn("evidence", result["thermoflow_ai"])
