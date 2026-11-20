@@ -95,6 +95,65 @@ def _trend(samples):
     return round((samples[-1][1] - samples[0][1]) / elapsed, 2)
 
 
+
+def _fire_events(normalized):
+    """Build flame-presence episodes from the dedicated ThingSpeak channel.
+
+    A flame-on sample proves sensor-reported presence, not the controller's
+    ignition command. Gaps are never bridged or interpreted as flame-off.
+    """
+    states = normalized.get("fire_detected", [])
+    brightness = normalized.get("fire_brightness", [])
+    brightness_by_time = {ts: value for ts, value in brightness}
+    events = []
+    current = []
+    current_appearance_transition = False
+    previous_state = None
+    previous_ts = None
+
+    def finish(ended_by, end_confirmed=False):
+        if not current:
+            return
+        start_ts, _ = current[0]
+        end_ts, _ = current[-1]
+        values = [brightness_by_time[ts] for ts, _ in current if ts in brightness_by_time]
+        events.append({
+            "start": start_ts.isoformat(),
+            "end": end_ts.isoformat(),
+            "duration_minutes": round((end_ts - start_ts).total_seconds() / 60, 1),
+            "samples": len(current),
+            "brightness": _stats(values),
+            "flame_presence_observed": True,
+            "flame_appearance_transition_observed": (
+                current_appearance_transition
+            ),
+            "flame_disappearance_transition_observed": end_confirmed,
+            "ended_by": ended_by,
+            "classification": "sensor_reported_flame_presence",
+            "ignition_command_confirmed": False,
+        })
+        current.clear()
+
+    for ts, value in states:
+        state = value >= 0.5
+        if previous_ts is not None and (ts - previous_ts).total_seconds() > MAX_GAP_SECONDS:
+            finish("telemetry_gap")
+            previous_state = None
+        if state:
+            if not current:
+                current_appearance_transition = previous_state is False and previous_ts is not None
+                current.append((ts, value))
+            else:
+                current.append((ts, value))
+        elif current:
+            finish("flame_signal_off", end_confirmed=True)
+        previous_state = state
+        previous_ts = ts
+
+    finish("latest_sample_active" if current else "series_end")
+    return events
+
+
 def build_raw_diagnostics(points, now):
     """Summarize raw samples, flue candidates and clustered low-return episodes."""
     normalized = _normalize(points)
@@ -123,6 +182,8 @@ def build_raw_diagnostics(points, now):
             "classification": "elevated_flue_activity",
             "ignition_confirmed": False,
         })
+
+    fire_events = _fire_events(normalized)
 
     returns = normalized.get("return_c", [])
     low_samples = [(ts, value) for ts, value in returns if value < RETURN_WARNING_C]
@@ -178,6 +239,12 @@ def build_raw_diagnostics(points, now):
             "max_sample_gap_seconds": MAX_GAP_SECONDS,
             "context_window_minutes_each_side": EVENT_CONTEXT_MINUTES,
             "note": "Epizody spalin są kandydatami do korelacji z hydrauliką, nie potwierdzonymi rozpaleniami.",
+        },
+        "fire_activity": {
+            "episodes_count": len(fire_events),
+            "episodes": fire_events[-100:],
+            "max_sample_gap_seconds": MAX_GAP_SECONDS,
+            "note": "Czujnik potwierdza obecność płomienia; przejście sygnału nie potwierdza komendy ani sekwencji rozpalania palnika.",
         },
         "hydraulics": hydraulics,
         "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes",
