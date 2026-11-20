@@ -175,6 +175,7 @@ def _combustion(raw, fire_diagnostics=None):
     if current:
         episodes.append(current)
     correlations = []
+    legacy_correlations = []
     for episode in episodes[-100:]:
         start_ts, end_ts = episode[0][0], episode[-1][0]
         nearby_state = [(ts, value) for ts, value in fire if start_ts - 300 <= ts <= end_ts + 300]
@@ -187,12 +188,20 @@ def _combustion(raw, fire_diagnostics=None):
             "brightness_samples": len(nearby_brightness),
             "interpretation": "correlation_only; flame-state evidence and brightness remain separate",
         })
+        legacy_correlations.append({
+            "flue_start": datetime.fromtimestamp(start_ts, timezone.utc).isoformat(),
+            "fire_samples_within_5m": len(nearby_state),
+            "nearest_fire_sample": ({"at": datetime.fromtimestamp(nearby_state[0][0], timezone.utc).isoformat(),
+                                     "value": nearby_state[0][1]} if nearby_state else None),
+            "interpretation": "timestamp_overlap_only; FIRE value semantics are not inferred",
+        })
     return {
         "flue_samples": len(flue),
         "fire_samples": len(fire),
         "fire_brightness_samples": len(brightness),
         "fire_join_status": "available" if fire else "not_provided",
         "fire_flue_correlations": correlations,
+        "fire_flue_time_correlations": legacy_correlations,
         "elevated_flue_episodes": [{
             "start": datetime.fromtimestamp(ep[0][0], timezone.utc).isoformat(),
             "end": datetime.fromtimestamp(ep[-1][0], timezone.utc).isoformat(),
@@ -200,7 +209,13 @@ def _combustion(raw, fire_diagnostics=None):
             "flue_min_c": min(v for _, v in ep), "flue_max_c": max(v for _, v in ep),
             "classification": "elevated_flue_activity", "ignition_confirmed": False,
         } for ep in episodes[-100:]],
-        "fire_sensor": fire_diagnostics or _fire_diagnostics(raw),
+        "fire_sensor": {
+            **(fire_diagnostics or _fire_diagnostics(raw)),
+            "status": ("available_in_thermoflow_history" if fire else "not_available_in_history_window"),
+            "fields": {"field1": "flame_state", "field2": "brightness"},
+            "note": ("FIRE został dołączony do historii ThermoFlow z osobnego kanału ThingSpeak."
+                     if fire else "Brak próbek FIRE w tym zakresie historii."),
+        },
         "note": "Podwyższona temperatura spalin jest kandydatem do korelacji, nie potwierdzeniem rozpalenia.",
     }
 
