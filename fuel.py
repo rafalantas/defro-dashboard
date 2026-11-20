@@ -151,25 +151,29 @@ MAX_DAYS = 120
 MIN_PERIOD_DAYS = 2.0
 MAX_PERIODS = 50
 
-_lock = threading.Lock()
-_daily_cache: dict[str, dict] = {}
-_om_cache: dict[str, float] = {}
-_temps_start: list = []   # [date | None] po pierwszym sprawdzeniu
-_refills_cache: dict = {"at": 0.0, "data": None}
-_summary_cache: dict = {"at": 0.0, "data": None}
-_summary_state: dict = {"thread": None, "error": None}
-_summary_guard = threading.Lock()
-_offset_cache: dict = {"at": 0.0, "data": None}
-_forecast_cache: dict = {"at": 0.0, "data": None}
-_climate_cache: dict = {"at": 0.0, "data": None}
+# Cache storage is grouped in FuelCacheState; TTL/key/invalidation policy remains here.
+from fuel_runtime import FuelCacheState
+
+_cache_state = FuelCacheState()
+_lock = _cache_state.lock
+_daily_cache = _cache_state.daily
+_om_cache = _cache_state.openmeteo
+_temps_start = _cache_state.temps_start
+_refills_cache = _cache_state.refills
+_summary_cache = _cache_state.summary
+_summary_state = _cache_state.summary_state
+_summary_guard = _cache_state.summary_guard
+_offset_cache = _cache_state.offset
+_forecast_cache = _cache_state.forecast
+_climate_cache = _cache_state.climate
 CLIMATE_CACHE_SECONDS = 30 * 24 * 3600
 CLIMATE_YEARS = 5
-_model_cache: dict = {"key": None, "data": None}
-_counter_cache: dict[str, list] = {}   # zakończone doby: punkty zmian licznika zapasu
-_weather_cache: dict[str, dict] = {}   # słońce i wiatr z Open-Meteo dla dób
-_weather_fetched: dict[str, float] = {}  # kiedy pobrano prognozę dla dziś i kolejnych dób
-_daily_model_cache: dict = {"key": None, "data": None}
-_telemetry_history_cache: dict = {"key": None, "at": 0.0, "data": None}
+_model_cache = _cache_state.house_model
+_counter_cache = _cache_state.counter
+_weather_cache = _cache_state.weather
+_weather_fetched = _cache_state.weather_fetched
+_daily_model_cache = _cache_state.daily_model
+_telemetry_history_cache = _cache_state.telemetry_history
 TELEMETRY_HISTORY_CACHE_SECONDS = 6 * 3600
 TELEMETRY_PARTIAL_CACHE_SECONDS = 10 * 60
 TELEMETRY_FETCH_CHUNK_DAYS = 3
