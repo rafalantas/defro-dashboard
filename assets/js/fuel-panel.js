@@ -135,5 +135,11 @@
   window.addEventListener('thermoflow:fuel',e=>updateSummary(e.detail||{}));
   window.addEventListener('resize',renderChart);
   if(window.ThermoFlowFuelSummary)updateSummary(window.ThermoFlowFuelSummary);
-  loadDetails();setInterval(loadDetails,300000);
+  const fuelPanel=document.querySelector('[data-view="fuel"]');
+  window.addEventListener('thermoflow:view',event=>{
+    if(event.detail?.view==='fuel')loadDetails();
+  });
+  // Saved deep links may open the fuel panel before navigation listeners run.
+  if(fuelPanel&&!fuelPanel.hidden)loadDetails();
+  setInterval(()=>{if(fuelPanel&&!fuelPanel.hidden)loadDetails();},300000);
 })();
