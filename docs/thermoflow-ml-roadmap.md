@@ -50,6 +50,33 @@ python3 -m thermoflow_burner_ml observed-cycles.json > burner-benchmark.json
 
 Kandydat OLS uczy się wyłącznie na starszych cyklach. Porównanie na nowszym odłożonym bloku to MAE, RMSE i bias w minutach dla OLS, mediany treningowej oraz czasu poprzedniego cyklu. Ten ostatni baseline odpowiada prognozie aktualizowanej po każdym znanym cyklu, nie prognozie na całą przyszłą partię. Cechy są używalne po potwierdzeniu bieżącego stanu FIRE dwiema kolejnymi próbkami; to nie jest prognoza przed rozpaleniem. Gdy jest za mało danych lub kandydat jest nieidentyfikowalny albo przewiduje niedodatni czas, raport nie zwraca modelu. Wynik nie promuje modelu i nie uruchamia go w API.
 
+## Porównanie zużycia paliwa na zweryfikowanych okresach (#95)
+
+```sh
+python3 -m thermoflow_fuel_ml verified-fuel-periods.json > fuel-benchmark.json
+```
+
+To osobny benchmark offline. Nie zamienia każdej zwykłej dosypki w etykietę ani nie uzupełnia braków z bieżącego modelu. Format wejściowy:
+
+```json
+{
+  "schema": "thermoflow-verified-fuel-periods/1",
+  "calibration_epochs": [],
+  "periods": [{
+    "start": "2026-11-20T10:00:00Z",
+    "end": "2026-11-21T10:00:00Z",
+    "mass_reference": "verified_equal_fill_level",
+    "refilled_kg": 11.2,
+    "baseline_kg_per_day": 10.0,
+    "baseline_issued_at": "2026-11-20T10:00:00Z"
+  }]
+}
+```
+
+`verified_equal_fill_level` oznacza potwierdzony ten sam poziom bezpośrednio po obu dosypkach i brak nieujętych dodatków/ubytków między nimi. Nie ustawiaj tego znacznika dla częściowych lub niepewnych dosypek. `refilled_kg` to masa z końcowej dosypki; stanowi etykietę pod tym założeniem, a nie bezpośredni odczyt wagi podczas spalania. `baseline_kg_per_day` to rzeczywiście zachowany wynik dotychczasowej metody wydany najpóźniej na początku okresu, nie prognoza przeliczona po fakcie. Podaj rzeczywiste daty zmian kalibracji w `calibration_epochs`; pusta lista oznacza brak zmian w tej historii. Luki, przedziały nachodzące i przekroczenia epoki nie tworzą par cech. Do benchmarku potrzeba co najmniej 20 wcześniejszych i 5 odłożonych użytecznych rekordów. Metryki opisują kg/dobę; kolejne prognozy mogą korzystać z dopiero co rozliczonego poprzedniego okresu. Nie ma automatycznego zapisu etykiet, uruchamiania treningu ani zmiany w API.
+
+Benchmark trenuje i testuje w najnowszej epoce kalibracji. Początek nowej epoki może ponownie dać stan `collecting`; nie trzeba wtedy usuwać wcześniejszych danych.
+
 ## Kolejność dalszych zmian
 
 Numery oznaczają planowaną kolejność. Wszelkie modele pozostają obserwacyjne, bez wpływu na sterownik, kalibrację, istniejące szacunki lub ustawienia.
