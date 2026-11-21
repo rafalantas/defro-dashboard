@@ -53,8 +53,10 @@ def _audit_raw_channel(feeds, fields):
     """Count raw ingestion issues before timestamp/value parsing drops samples."""
     timestamp_counts = defaultdict(int)
     timestamp_invalid = 0
+    parsed_timestamps = []
     for feed in feeds:
         ts = _timestamp(feed.get("created_at"))
+        parsed_timestamps.append(ts)
         if ts is None:
             timestamp_invalid += 1
         else:
@@ -64,9 +66,12 @@ def _audit_raw_channel(feeds, fields):
     duplicate_feeds = sum(count - 1 for count in timestamp_counts.values() if count > 1)
     field_audit = {}
     for index, (key, _label, _series_id, kind) in enumerate(fields, 1):
-        missing = invalid = out_of_range = accepted = 0
+        missing = invalid = out_of_range = accepted = timestamp_unusable = 0
         low, high = SANITY_RANGES.get(kind, (None, None))
-        for feed in feeds:
+        for feed, ts in zip(feeds, parsed_timestamps):
+            if ts is None:
+                timestamp_unusable += 1
+                continue
             raw = feed.get(f"field{index}")
             if raw is None or (isinstance(raw, str) and not raw.strip()):
                 missing += 1
@@ -80,10 +85,11 @@ def _audit_raw_channel(feeds, fields):
                 continue
             accepted += 1
         total = len(feeds)
-        lost = missing + invalid + out_of_range
+        lost = timestamp_unusable + missing + invalid + out_of_range
         field_audit[key] = {
             "raw_samples": total,
             "accepted_samples": accepted,
+            "timestamp_unusable_samples": timestamp_unusable,
             "missing_samples": missing,
             "invalid_samples": invalid,
             "out_of_range_samples": out_of_range,
@@ -100,7 +106,6 @@ def _audit_raw_channel(feeds, fields):
         "fields": field_audit,
         "range_policy": "diagnostic_only_no_samples_filtered",
     }
-
 
 def _percentile(values, fraction):
     if not values:
