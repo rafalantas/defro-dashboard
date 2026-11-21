@@ -68,7 +68,7 @@ def prepare_burner_cycle_dataset(burner_cycles: dict) -> dict:
     for event in events:
         if previous is not None and event["start"] < previous["end"]:
             rejected["overlapping_cycles"] += 1
-            previous = event
+            previous = None
             continue
         if event["complete"] and previous is not None and previous["complete"]:
             idle_minutes = (event["start"] - previous["end"]) / 60.0
