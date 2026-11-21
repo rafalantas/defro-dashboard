@@ -38,6 +38,8 @@ jobs:
         run: python -m unittest tests/test_thermoflow_cutover.py
       - name: Fuel refill regression
         run: python -m unittest tests/test_fuel_refills.py
+      - name: Fuel ML ThingSpeak import regression
+        run: python -m unittest tests/test_thermoflow_fuel_snapshot.py
       - name: Fuel pure model regression
         run: python -m unittest tests/test_fuel_models.py tests/test_fuel_daily_model.py tests/test_fuel_summary_metrics.py tests/test_fuel_summary_estimates.py tests/test_fuel_house_model.py tests/test_fuel_runtime.py
       - name: Fuel telemetry provider and analysis regression
@@ -118,6 +120,8 @@ jobs:
         run: docker build --pull -t thermoflow-api-smoke -f Dockerfile.api .
       - name: Verify read-only FIRE snapshot command is packaged
         run: docker run --rm --entrypoint python thermoflow-api-smoke -m thermoflow_fire_snapshot --help
+      - name: Verify read-only fuel snapshot command is packaged
+        run: docker run --rm --entrypoint python thermoflow-api-smoke -m thermoflow_fuel_snapshot --help
       - name: Start API container without external credentials
         run: |
           docker run -d --name thermoflow-api-smoke \
