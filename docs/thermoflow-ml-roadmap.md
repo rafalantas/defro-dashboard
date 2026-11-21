@@ -1,5 +1,21 @@
 # ThermoFlow: cykle i ML w trybie obserwacyjnym
 
+## Ciągłe zbieranie i kontrola FIRE (#93)
+
+Dedykowany ThingSpeak pozostaje jedynym trwałym archiwum. Zapis wykonuje istniejący poller API, niezależnie od otwartej karty dashboardu. Nie uruchamiamy dodatkowego kontenera, SQLite, wolumenu ani zapisu na SD. Wymiana kontenera nie kasuje historii z ThingSpeak, ale podczas przerwy w pracy pollera nie powstają nowe próbki.
+
+W obrazie zawierającym #93 dostępne jest polecenie odczytu. Korzysta z `THINGSPEAK_FIRE_CHANNEL_ID` i `THINGSPEAK_FIRE_READ_KEY` już ustawionych w kontenerze przez Portainera. Bez argumentów odczytuje ostatnią dobę. `--status` pokazuje liczbę stanów `0`, `1`, braków i zakres próbek, niczego nie zapisując:
+
+```sh
+docker exec defro-dashboard-api python -m thermoflow_fire_snapshot --status
+```
+
+Gdy zbierze się więcej historii, administrator może świadomie zapisać eksport na wybranym komputerze. Polecenie czyta maksymalnie 14 dni na wywołanie i wypisuje tylko czasy i stany, bez klucza i ID kanału. Plik w poniższym przykładzie powstaje wyłącznie przez przekierowanie powłoki:
+
+```sh
+(umask 077; docker exec defro-dashboard-api python -m thermoflow_fire_snapshot --days 7 > fire-snapshot.json)
+```
+
 ## Import cykli z pomiarów FIRE (#93)
 
 Narzędzie działa lokalnie. Czyta jeden zrzut JSON, wypisuje raport na standardowe wyjście i nie pobiera próbek z ThingSpeak. W wejściu podaj rzeczywiste, nieprzerzedzone próbki FIRE w UTC, opcjonalnie z temperaturą spalin i mocą. Same spaliny, jasność lub moc nie są etykietą rozpalenia. Nie używaj skompresowanego wykresu ani odpowiedzi, która nie zawiera surowej serii FIRE.
