@@ -50,4 +50,4 @@ COPY fuel_hydraulic_correlation.py /app/fuel_hydraulic_correlation.py
 
 COPY thermoflow_diagnostic_intelligence.py /app/thermoflow_diagnostic_intelligence.py
 COPY fuel_cycle_hydraulic_response.py /app/fuel_cycle_hydraulic_response.py
-COPY thermoflow_fire_collector.py /app/thermoflow_fire_collector.py
+COPY thermoflow_fire_snapshot.py /app/thermoflow_fire_snapshot.py
