@@ -1,26 +1,19 @@
 # ThermoFlow: cykle i ML w trybie obserwacyjnym
 
-## Ciągłe zbieranie FIRE (#93)
+## Ciągłe zbieranie i kontrola FIRE (#93)
 
-Istniejące API nadal zapisuje stan i jasność do osobnego kanału ThingSpeak. Dodatkowy `fire-collector` jest opcjonalnym odbiorcą: używa jedynie `THINGSPEAK_FIRE_CHANNEL_ID` i `THINGSPEAK_FIRE_READ_KEY`, nie dostaje klucza zapisu ani tokenu eModul. Zapisuje lokalną historię w nazwanym wolumenie `fire-archive` i nie wystawia portu. Uruchomienie bez profilu nie zmienia dotychczasowego stosu.
+Dedykowany ThingSpeak pozostaje jedynym trwałym archiwum. Zapis wykonuje istniejący poller API, niezależnie od otwartej karty dashboardu. Nie uruchamiamy dodatkowego kontenera, SQLite, wolumenu ani zapisu na SD. Wymiana kontenera nie kasuje historii z ThingSpeak, ale podczas przerwy w pracy pollera nie powstają nowe próbki.
 
-Po publikacji obrazu zawierającego ten PR, w istniejącej konfiguracji stacka z tym samym środowiskiem:
+W obrazie zawierającym #93 dostępne jest polecenie odczytu. Korzysta z `THINGSPEAK_FIRE_CHANNEL_ID` i `THINGSPEAK_FIRE_READ_KEY` już ustawionych w kontenerze przez Portainera. Bez argumentów odczytuje ostatnią dobę. `--status` pokazuje liczbę stanów `0`, `1`, braków i zakres próbek, niczego nie zapisując:
 
 ```sh
-docker compose --profile ml-collection up -d --no-deps fire-collector
-docker compose logs --tail=20 fire-collector
-docker compose exec -T fire-collector python -m thermoflow_fire_collector status
+docker exec defro-dashboard-api python -m thermoflow_fire_snapshot --status
 ```
 
-W Portainerze profil musi być aktywny dla wdrożenia stosu. Jeżeli używany sposób wdrożenia nie przekazuje profili Compose, usuń `profiles: ["ml-collection"]` wyłącznie z sekcji `fire-collector` w konfiguracji tego stosu. Nie kopiuj klucza do polecenia ani do pliku z wynikami. Nie kasuj wolumenu podczas redeployu.
-
-Pierwsza synchronizacja sięga do 24 h wstecz, kolejne uruchamiają się co 5 minut i nadrabiają od ostatniego zatwierdzonego okna, z 15 minutami nakładania. Błąd odczytu nie przesuwa kursora; duplikaty tego samego wpisu ThingSpeak nie dublują rekordów, a różne wpisy o tym samym czasie zostają widoczne do odrzucenia przez segmenter. Pole `valid_fire_samples` mówi, ile jest próbek binarnych; świeży checkpoint sam w sobie nie potwierdza świeżego stanu płomienia. Kolektor nie może odtworzyć próbek niezgromadzonych wcześniej przez ThingSpeak.
-
-Kiedy chcesz sprawdzić postęp, wyeksportuj lokalne archiwum bez sekretów:
+Gdy zbierze się więcej historii, administrator może świadomie zapisać eksport na wybranym komputerze. Polecenie czyta maksymalnie 14 dni na wywołanie i wypisuje tylko czasy i stany, bez klucza i ID kanału. Plik w poniższym przykładzie powstaje wyłącznie przez przekierowanie powłoki:
 
 ```sh
-(umask 077; docker compose exec -T fire-collector python -m thermoflow_fire_collector export > fire-snapshot.json)
-python3 -m thermoflow_observed_cycles fire-snapshot.json > observed-cycles.json
+(umask 077; docker exec defro-dashboard-api python -m thermoflow_fire_snapshot --days 7 > fire-snapshot.json)
 ```
 
 ## Import cykli z pomiarów FIRE (#93)
