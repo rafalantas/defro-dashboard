@@ -283,7 +283,7 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
         daily.append(row)
 
     diagnostic_summary = build_diagnostic_summary(
-        raw_diagnostics, {"series": quality},
+        raw_diagnostics, {"series": {item["key"]: item for item in series_audit}},
         {
             "channels": raw_ingestion_channels,
             "total_raw_feeds": sum(item["raw_feeds"] for item in raw_ingestion_channels),
