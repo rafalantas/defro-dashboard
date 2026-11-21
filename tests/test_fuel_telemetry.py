@@ -85,13 +85,15 @@ class FuelTelemetryTests(unittest.TestCase):
 
         co = primary["fields"]["co_c"]
         self.assertEqual(co["accepted_samples"], 1)
-        self.assertEqual(co["missing_samples"], 1)
+        self.assertEqual(co["timestamp_unusable_samples"], 1)
+        self.assertEqual(co["missing_samples"], 0)
         self.assertEqual(co["out_of_range_samples"], 1)
         self.assertEqual(co["lost_samples"], 2)
         self.assertEqual(co["loss_percent"], 66.7)
 
         dhw = primary["fields"]["dhw_c"]
-        self.assertEqual(dhw["invalid_samples"], 2)
+        self.assertEqual(dhw["invalid_samples"], 1)
+        self.assertEqual(dhw["timestamp_unusable_samples"], 1)
         self.assertEqual(dhw["missing_samples"], 0)
         self.assertEqual(dhw["loss_percent"], 66.7)
         self.assertEqual(primary["range_policy"], "diagnostic_only_no_samples_filtered")
