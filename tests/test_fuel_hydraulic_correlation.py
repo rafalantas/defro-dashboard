@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from fuel_hydraulic_correlation import build_hydraulic_correlation
 
@@ -73,6 +74,22 @@ class HydraulicCorrelationTests(unittest.TestCase):
         result = build_hydraulic_correlation({})
         self.assertEqual(result["pump_transitions_count"], 0)
         self.assertEqual(result["valve_movements_count"], 0)
+
+    def test_counts_all_events_but_only_analyzes_the_returned_windows(self):
+        dates = [self.start + timedelta(minutes=i) for i in range(151)]
+        pump = [(ts, i % 2) for i, ts in enumerate(dates)]
+        valve = [(ts, 10 * (i % 2)) for i, ts in enumerate(dates)]
+        points = {"pump_floor": pump, "pump_dhw": pump, "valve_opening_pct": valve}
+        with patch("fuel_hydraulic_correlation._response", return_value={}) as response:
+            result = build_hydraulic_correlation(points)
+        self.assertEqual(result["pump_transitions_count"], 300)
+        self.assertEqual(result["valve_movements_count"], 150)
+        self.assertEqual(response.call_count, 200)
+        self.assertEqual([e["at"] for e in result["pump_transitions"]],
+                         [ts.isoformat() for ts in dates[-100:]])
+        self.assertTrue(all(e["signal"] == "pump_dhw" for e in result["pump_transitions"]))
+        self.assertEqual([e["at"] for e in result["valve_movements"]],
+                         [ts.isoformat() for ts in dates[-100:]])
 
 
 if __name__ == "__main__":
