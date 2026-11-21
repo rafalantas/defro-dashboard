@@ -17,6 +17,8 @@ INPUT_SCHEMA = "thermoflow-verified-fuel-periods/1"
 REPORT_SCHEMA = "thermoflow-fuel-shadow/1"
 FEATURE_KEYS = ("baseline_kg_per_day", "previous_kg_per_day")
 TARGET_KEY = "observed_kg_per_day"
+AS_ISSUED = "as_issued"
+REPLAY = "causal_replay_median"
 
 
 def _instant(value):
@@ -63,7 +65,7 @@ def _intervals(sources, rejected):
         rejected["overlapping_or_duplicate_interval"] += len(group)
 
 
-def prepare_fuel_dataset(snapshot, *, latest_regime_only=False):
+def prepare_fuel_dataset(snapshot, *, latest_regime_only=False, allow_import_modes=False):
     """Build rates without treating arbitrary refills as fuel consumption."""
     if not isinstance(snapshot, dict) or snapshot.get("schema") != INPUT_SCHEMA:
         raise ValueError(f"expected {INPUT_SCHEMA} input")
@@ -72,6 +74,14 @@ def prepare_fuel_dataset(snapshot, *, latest_regime_only=False):
     if not isinstance(sources, list) or not isinstance(epochs_raw, list):
         raise ValueError("periods and calibration_epochs must be lists")
     epochs = sorted({_instant(value) for value in epochs_raw})
+    baseline_mode = snapshot.get("baseline_mode", AS_ISSUED)
+    label_mode = snapshot.get("label_mode", "verified_equal_fill_level")
+    if baseline_mode not in (AS_ISSUED, REPLAY) or label_mode not in (
+        "verified_equal_fill_level", "assumed_equal_fill_level",
+    ):
+        raise ValueError("unsupported baseline or label provenance")
+    if not allow_import_modes and (baseline_mode != AS_ISSUED or label_mode != "verified_equal_fill_level"):
+        raise ValueError("this benchmark requires verified labels and as-issued baselines")
     previous = None
     rows = []
     rejected = Counter()
@@ -84,7 +94,7 @@ def prepare_fuel_dataset(snapshot, *, latest_regime_only=False):
         if latest_regime_only and regime != len(epochs):
             rejected["prior_calibration_epoch"] += 1
             continue
-        if source.get("mass_reference") != "verified_equal_fill_level":
+        if source.get("mass_reference") != label_mode:
             rejected["unverified_mass_balance"] += 1
             previous = None
             continue
@@ -100,7 +110,8 @@ def prepare_fuel_dataset(snapshot, *, latest_regime_only=False):
         previous = end, regime, actual
         try:
             baseline = _positive(source["baseline_kg_per_day"])
-            if _instant(source["baseline_issued_at"]) > start:
+            time_key = "baseline_issued_at" if baseline_mode == AS_ISSUED else "baseline_replay_cutoff"
+            if _instant(source[time_key]) > start:
                 raise ValueError
         except (KeyError, TypeError, ValueError, OverflowError, OSError):
             rejected["missing_invalid_or_late_baseline"] += 1
@@ -113,6 +124,8 @@ def prepare_fuel_dataset(snapshot, *, latest_regime_only=False):
 
     return {
         "source_periods": len(sources),
+        "baseline_mode": baseline_mode,
+        "label_mode": label_mode,
         "excluded_periods_by_reason": dict(sorted(rejected.items())),
         "dataset": prepare_chronological_dataset(rows, feature_keys=FEATURE_KEYS,
                                                  target_key=TARGET_KEY),
@@ -130,7 +143,7 @@ def _scores(actual, predicted):
 
 
 def evaluate_fuel_model(snapshot):
-    prepared = prepare_fuel_dataset(snapshot, latest_regime_only=True)
+    prepared = prepare_fuel_dataset(snapshot, latest_regime_only=True, allow_import_modes=True)
     dataset = prepared["dataset"]
     result = {
         "schema": REPORT_SCHEMA, "mode": "offline_shadow_only", "promotion": "disabled",
@@ -149,7 +162,8 @@ def evaluate_fuel_model(snapshot):
     actual = [row["target"] for row in holdout]
     baseline = _scores(actual, [row["features"][FEATURE_KEYS[0]] for row in holdout])
     previous = _scores(actual, [row["features"][FEATURE_KEYS[1]] for row in holdout])
-    result["evaluation"] = {"as_issued_baseline": baseline, "previous_period": previous,
+    baseline_name = "as_issued_baseline" if prepared["baseline_mode"] == AS_ISSUED else REPLAY
+    result["evaluation"] = {baseline_name: baseline, "previous_period": previous,
                             "candidate": None}
     if trained["model"] is None:
         return {**result, "status": "unavailable", "reason": trained["reason"]}
@@ -158,7 +172,7 @@ def evaluate_fuel_model(snapshot):
         return {**result, "status": "unavailable", "reason": "nonphysical_holdout_prediction"}
     candidate = _scores(actual, values)
     result["evaluation"]["candidate"] = {
-        **candidate, "beats_as_issued_baseline_on_mae":
+        **candidate, f"beats_{baseline_name}_on_mae":
             candidate["mae_kg_per_day"] < baseline["mae_kg_per_day"],
     }
     return {**result, "status": "evaluated", "model": trained["model"]}
