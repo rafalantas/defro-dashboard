@@ -1062,6 +1062,7 @@ def _telemetry_history_impl(days: int) -> dict:
         analyze=fuel_telemetry.analyze,
         endpoint=TS_API,
         monotonic=time.monotonic,
+        singleflight=_singleflight,
     )
 
 
