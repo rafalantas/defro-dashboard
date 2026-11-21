@@ -29,7 +29,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from fuel_errors import FuelError
-from fuel_http import request_json as _request_json
+from fuel_http import request_json as _raw_request_json
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
 from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weather_for_day as _weather_impl
 from fuel_refill_provider import fetch_refills as fetch_refill_records, write_refill as write_refill_record
@@ -118,6 +118,24 @@ _weather_cache = _cache_state.weather
 _weather_fetched = _cache_state.weather_fetched
 _daily_model_cache = _cache_state.daily_model
 _telemetry_history_cache = _cache_state.telemetry_history
+_cache_locks = _cache_state.cache_locks
+_singleflight = _cache_state.singleflight
+_stage_timer = _cache_state.stage_timer
+
+
+def _timed_request_json(url, *args, **kwargs):
+    """HTTP z pomiarem czasu (etap ``http:<host>``); semantyka bez zmian."""
+    from urllib.parse import urlsplit
+    with _stage_timer.stage(f"http:{urlsplit(url).netloc or 'local'}"):
+        return _raw_request_json(url, *args, **kwargs)
+
+
+_request_json = _timed_request_json
+
+
+def stage_timings() -> dict:
+    """Skumulowane czasy etapów (sekundy) od startu procesu; tylko diagnostyka."""
+    return {name: round(value, 3) for name, value in _stage_timer.snapshot().items()}
 
 
 
@@ -170,6 +188,15 @@ def _temps_data_start():
     """Pierwszy dzień z danych ThingSpeak (ustawienie albo data utworzenia kanału)."""
     if TS_DATA_START:
         return date.fromisoformat(TS_DATA_START)
+    if _temps_start:
+        return _temps_start[0]
+    # Jednorazowa detekcja: osobny lock-liść (nie bierze _lock), więc równoległe
+    # żądania nie wykonują jej wielokrotnie ani nie dopisują dwóch wartości.
+    with _cache_locks["temps_start"]:
+        return _temps_data_start_locked()
+
+
+def _temps_data_start_locked():
     if not _temps_start:
         start = None
         if TS_CHANNEL_TEMPS:
@@ -199,6 +226,17 @@ def _get_daily_raw(day: date) -> dict:
 
 def _om_offset() -> dict:
     """Średnia różnica: czujnik sterownika (ThingSpeak) minus Open-Meteo, z dób z obu źródeł."""
+    cached = _offset_cache["data"]
+    if cached is not None:
+        ttl = OFFSET_RECALC_SECONDS if cached.get("frozen") else OFFSET_CACHE_SECONDS
+        if time.monotonic() - _offset_cache["at"] < ttl:
+            return cached
+    # Single-flight: przy zimnym cache tylko jeden wątek liczy offset (setki dób),
+    # pozostali dostają ten sam wynik. Ścieżka nie bierze _lock -> brak deadlocku.
+    return _singleflight.run("om_offset", _om_offset_refresh)
+
+
+def _om_offset_refresh() -> dict:
     cached = _offset_cache["data"]
     if cached is not None:
         ttl = OFFSET_RECALC_SECONDS if cached.get("frozen") else OFFSET_CACHE_SECONDS
@@ -613,6 +651,13 @@ def _forecast():
     cached = _forecast_cache["data"]
     if cached is not None and time.monotonic() - _forecast_cache["at"] < FORECAST_CACHE_SECONDS:
         return cached
+    return _singleflight.run("forecast", _forecast_refresh)
+
+
+def _forecast_refresh():
+    cached = _forecast_cache["data"]
+    if cached is not None and time.monotonic() - _forecast_cache["at"] < FORECAST_CACHE_SECONDS:
+        return cached
     days = []
     if FUEL_LAT and FUEL_LON:
         try:
@@ -735,6 +780,11 @@ def _burner_kg(start: datetime, end: datetime, calib: dict):
 
 
 def _stats(query: dict) -> dict:
+    with _stage_timer.stage("endpoint:stats"):
+        return _stats_impl(query)
+
+
+def _stats_impl(query: dict) -> dict:
     return build_stats(query, {
         "max_days": MAX_DAYS,
         "now": lambda: datetime.now(TZ),
@@ -768,17 +818,26 @@ def _prefetch(days: int = 400):
         "temps_data_start": _temps_data_start,
         "now": lambda: datetime.now(TZ),
         "max_days": MAX_DAYS,
-        "get_daily_raw": _get_daily_raw,
-        "counter_points": _counter_points,
+        # Deduplikacja per doba: równoległe prefetche (worker summary, /daily,
+        # /stats) nie pobierają tej samej doby dwa razy jednocześnie.
+        "get_daily_raw": lambda day: _singleflight.run(("daily_raw", day), lambda: _get_daily_raw(day)),
+        "counter_points": lambda day: _singleflight.run(("counter", day), lambda: _counter_points(day)),
         "fuel_error": FuelError,
         "executor": ThreadPoolExecutor,
     }, days=days)
 
 
+def _timed(name, fn):
+    def run(*args, **kwargs):
+        with _stage_timer.stage(name):
+            return fn(*args, **kwargs)
+    return run
+
+
 def _summary_runtime_deps():
     return {
-        "prefetch": _prefetch,
-        "build": _summary_build,
+        "prefetch": _timed("summary:prefetch", _prefetch),
+        "build": _timed("summary:build", _summary_build),
         "fuel_error": FuelError,
         "state": _summary_state,
         "guard": _summary_guard,
@@ -902,6 +961,11 @@ def _summary_build() -> dict:
 
 def _daily(query: dict) -> dict:
     """Compatibility wrapper for the extracted daily endpoint orchestration."""
+    with _stage_timer.stage("endpoint:daily"):
+        return _daily_impl(query)
+
+
+def _daily_impl(query: dict) -> dict:
     from fuel_daily_service import build_daily
     return build_daily(query, {
         "max_days": MAX_DAYS,
