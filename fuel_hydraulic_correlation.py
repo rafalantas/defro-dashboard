@@ -55,21 +55,22 @@ def _response(event_time, returns, valve):
     before_valve = [(ts, value) for ts, value in valve
                     if event_time - window <= ts < event_time]
     after_valve = _window(valve, event_time, event_time + window)
+    return_covered = len(before_return) >= 2 and len(after_return) >= 2
+    valve_covered = len(before_valve) >= 2 and len(after_valve) >= 2
     return {
         "window_minutes_each_side": EVENT_WINDOW_MINUTES,
         "return_before_samples": len(before_return),
         "return_after_samples": len(after_return),
         "return_mean_before_c": _mean(before_return),
         "return_mean_after_c": _mean(after_return),
-        "return_mean_delta_c": _delta(before_return, after_return),
+        "return_mean_delta_c": _delta(before_return, after_return) if return_covered else None,
         "valve_before_samples": len(before_valve),
         "valve_after_samples": len(after_valve),
         "valve_mean_before_pct": _mean(before_valve),
         "valve_mean_after_pct": _mean(after_valve),
-        "valve_mean_delta_pct": _delta(before_valve, after_valve),
+        "valve_mean_delta_pct": _delta(before_valve, after_valve) if valve_covered else None,
         "response_status": (
-            "observed_both_windows"
-            if len(before_return) >= 2 and len(after_return) >= 2
+            "observed_both_windows" if return_covered
             else "insufficient_window_coverage"
         ),
     }
