@@ -1100,15 +1100,31 @@ def _telemetry_audit(query: dict) -> dict:
     )
 
 
+_telemetry_audit_job = None
+
+
+def _telemetry_audit_status():
+    return _telemetry_audit_job.status()
+
+
+def _telemetry_audit_start():
+    return _telemetry_audit_job.start()
+
+
 def create_engine():
     """Construct the service-driven runtime behind the legacy module facade."""
     from fuel_engine import ThermoFlowEngine
+    global _telemetry_audit_job
+    if _telemetry_audit_job is None:
+        from fuel_telemetry_audit_runtime import TelemetryAuditJob
+        _telemetry_audit_job = TelemetryAuditJob(lambda: _telemetry_audit({"days": ["30"]}))
     return ThermoFlowEngine(
         handlers={
             "stats": _stats,
             "summary": _summary,
             "daily": _daily,
-            "telemetry_audit": _telemetry_audit,
+            "telemetry_audit_status": _telemetry_audit_status,
+            "telemetry_audit_start": _telemetry_audit_start,
             "refills": _refills,
             "add_refill": _add_refill,
             "void_refill": _void_refill,
