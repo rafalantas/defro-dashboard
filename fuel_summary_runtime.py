@@ -2,9 +2,54 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from time import perf_counter
 
 _logger = logging.getLogger(__name__)
+_build_profile = ContextVar("fuel_summary_build_profile", default=None)
+_stages = ("temperature_offset", "calibration", "telemetry_fetch")
+
+
+@contextmanager
+def summary_build_profile():
+    """Emit one profile per build, even when the build raises."""
+    profile = ({name: [0.0, 0] for name in _stages}, [])
+    token = _build_profile.set(profile)
+    started = perf_counter()
+    succeeded = False
+    try:
+        yield
+        succeeded = True
+    finally:
+        total = perf_counter() - started
+        _build_profile.reset(token)
+        timings, _ = profile
+        parts = " ".join(f"{name}={seconds:.3f}s/{calls}" for name, (seconds, calls) in timings.items())
+        other = max(0.0, total - sum(value[0] for value in timings.values()))
+        _logger.warning("Fuel summary build profile status=%s total=%.3fs %s other=%.3fs",
+                        "ok" if succeeded else "failed", total, parts, other)
+
+
+@contextmanager
+def summary_build_stage(name):
+    """Attribute nested work only to its innermost stage."""
+    profile = _build_profile.get()
+    if profile is None:
+        yield
+        return
+    timings, stack = profile
+    frame = [perf_counter(), 0.0]
+    stack.append(frame)
+    try:
+        yield
+    finally:
+        elapsed = perf_counter() - frame[0]
+        stack.pop()
+        if stack:
+            stack[-1][1] += elapsed
+        timings[name][0] += max(0.0, elapsed - frame[1])
+        timings[name][1] += 1
 
 
 def _run_stage(name, operation):
