@@ -47,9 +47,13 @@ def _transition_events(samples, key, label):
 
 def _response(event_time, returns, valve):
     window = timedelta(minutes=EVENT_WINDOW_MINUTES)
-    before_return = _window(returns, event_time - window, event_time)
+    # Keep the event timestamp in the post-event window only. Including it
+    # on both sides biases the delta and can make a one-sample side look valid.
+    before_return = [(ts, value) for ts, value in returns
+                     if event_time - window <= ts < event_time]
     after_return = _window(returns, event_time, event_time + window)
-    before_valve = _window(valve, event_time - window, event_time)
+    before_valve = [(ts, value) for ts, value in valve
+                    if event_time - window <= ts < event_time]
     after_valve = _window(valve, event_time, event_time + window)
     return {
         "window_minutes_each_side": EVENT_WINDOW_MINUTES,
