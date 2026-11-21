@@ -1,6 +1,7 @@
 """Tests for summary worker lifecycle, cache and cold-start response contract."""
 import threading
 import unittest
+from unittest.mock import patch
 
 from fuel_errors import FuelError
 from fuel_summary_runtime import get_summary, summary_job, summary_kick, warmup
@@ -130,6 +131,38 @@ class SummaryRuntimeTests(unittest.TestCase):
         deps["configured"] = lambda: True
         warmup(deps)
         self.assertEqual(len(threads), 1)
+
+    def test_runtime_cold_start_wait_budget_and_prefetch_window(self):
+        import thermoflow2_runtime as runtime
+
+        deps, _, threads = self.deps(
+            wait_seconds=runtime._summary_runtime_deps()["wait_seconds"]
+        )
+
+        def factory(**kwargs):
+            thread = FakeThread(**kwargs, run_on_start=False, alive_after_start=True)
+            threads.append(thread)
+            return thread
+
+        deps["thread_factory"] = factory
+        self.assertEqual(get_summary(deps), {"configured": True, "warming": True})
+        self.assertEqual(threads[0].join_timeout, 1.0)
+        self.assertEqual(get_summary(deps), {"configured": True, "warming": True})
+        self.assertEqual(len(threads), 1)
+        # The same worker can still publish the full result after the request ends.
+        threads[0].target()
+        self.assertEqual(get_summary(deps), {"ready": True})
+
+        with patch.object(runtime, "_prefetch") as prefetch:
+            runtime._summary_runtime_deps()["prefetch"]()
+        prefetch.assert_called_once_with(days=120)
+
+    def test_slow_stage_log_identifies_phase_without_request_details(self):
+        deps, _, _ = self.deps()
+        with patch("fuel_summary_runtime.perf_counter", side_effect=[0, 12, 12, 13]):
+            with self.assertLogs("fuel_summary_runtime", level="WARNING") as logs:
+                summary_job(deps)
+        self.assertEqual(logs.output, ["WARNING:fuel_summary_runtime:Fuel summary prefetch took 12.0s"])
 
 
 if __name__ == "__main__":
