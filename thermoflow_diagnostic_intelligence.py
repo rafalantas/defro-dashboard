@@ -1,5 +1,6 @@
 """Read-only seven-stage ThermoFlow diagnostic pipeline (stdlib only)."""
 from datetime import datetime, timezone
+from bisect import bisect_left, bisect_right
 from math import sqrt, isfinite
 from statistics import median
 
@@ -243,7 +244,8 @@ def _combustion(raw, fire_diagnostics=None):
     }
 
 
-def _burner_cycles(raw, fire_diagnostics):
+def segment_burner_cycles(raw, *, report_limit=100, include_segments=False,
+                          break_timestamps=()):
     """Build conservative burner cycles; telemetry gaps censor rather than join cycles."""
     parsed_points = [(ts, value) for ts, value in _points(raw, "thermoflow-fire")
                      if value in (0.0, 1.0)]
@@ -263,9 +265,13 @@ def _burner_cycles(raw, fire_diagnostics):
 
     # Split the timeline at every telemetry gap. A state observed after a gap
     # must never be joined to a cycle from before that gap.
+    barriers = sorted(break_timestamps)
     segments, segment = [], [points[0]]
     for point in points[1:]:
-        if point[0] - segment[-1][0] > MAX_GAP_SECONDS:
+        previous_ts = segment[-1][0]
+        at = bisect_right(barriers, previous_ts) if barriers else 0
+        if (point[0] - previous_ts > MAX_GAP_SECONDS
+                or (at < len(barriers) and barriers[at] <= point[0])):
             segments.append(segment)
             segment = [point]
         else:
@@ -273,14 +279,19 @@ def _burner_cycles(raw, fire_diagnostics):
     if segment:
         segments.append(segment)
 
-    flue = _points(raw, "thermoflow-flue")
-    power = _points(raw, "thermoflow-boiler-power")
+    flue = [ts for ts, value in _points(raw, "thermoflow-flue") if value > 0]
+    power = [ts for ts, value in _points(raw, "thermoflow-boiler-power") if value > 0]
     cycles, incomplete_cycles = [], []
     ignored_transitions = 0
 
     def evidence(series, opened, closed):
-        return any(opened - 300 <= timestamp <= closed + 300 and value > 0
-                   for timestamp, value in series)
+        idx = bisect_left(series, opened - 300)
+        return idx < len(series) and series[idx] <= closed + 300
+
+    def record(destination, event, segment_index):
+        if include_segments:
+            event["segment"] = segment_index
+        destination.append(event)
 
     for segment_index, samples in enumerate(segments):
         state = samples[0][1]
@@ -306,40 +317,43 @@ def _burner_cycles(raw, fire_diagnostics):
                     left_censored = False
             elif opened is not None:
                 if left_censored:
-                    incomplete_cycles.append({
+                    record(incomplete_cycles, {
                         "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
                         "end": datetime.fromtimestamp(current[0], timezone.utc).isoformat(),
                         "complete": False, "reason": "left_censored_initial_on_state",
                         "duration_minutes": None,
-                    })
+                    }, segment_index)
                 else:
                     flue_support = evidence(flue, opened, current[0])
                     power_support = evidence(power, opened, current[0])
-                    cycles.append({
+                    record(cycles, {
                         "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
                         "end": datetime.fromtimestamp(current[0], timezone.utc).isoformat(),
                         "duration_minutes": round((current[0] - opened) / 60, 1),
                         "flue_support": flue_support, "power_support": power_support,
                         "status": "confirmed_by_fire_state",
                         "complete": True,
-                    })
+                    }, segment_index)
                 opened = None
                 left_censored = False
 
         if opened is not None:
             reason = "telemetry_gap" if segment_index < len(segments) - 1 else "right_censored_open_cycle"
-            incomplete_cycles.append({
+            record(incomplete_cycles, {
                 "start": datetime.fromtimestamp(opened, timezone.utc).isoformat(),
                 "end": datetime.fromtimestamp(samples[-1][0], timezone.utc).isoformat(),
                 "complete": False, "reason": reason, "duration_minutes": None,
-            })
+            }, segment_index)
+
+    def limited(events):
+        return events if report_limit is None else events[-report_limit:]
 
     return {
         "status": "available" if cycles else ("partial" if incomplete_cycles else "collecting"),
-        "cycles": cycles[-100:], "complete": len(cycles),
+        "cycles": limited(cycles), "complete": len(cycles),
         "incomplete": len(incomplete_cycles),
-        "incomplete_cycles": incomplete_cycles[-100:],
-        "open_cycles": [item for item in incomplete_cycles if item["end"] is not None][-100:],
+        "incomplete_cycles": limited(incomplete_cycles),
+        "open_cycles": limited([item for item in incomplete_cycles if item["end"] is not None]),
         "ignored_transitions": ignored_transitions,
         "duplicate_timestamp_samples": duplicate_timestamp_samples,
         "discarded_non_binary_samples": discarded_non_binary_samples,
@@ -446,7 +460,7 @@ def build_thermoflow_intelligence(raw, base_analysis=None, now=None):
             "version": VERSION, "timezone": str(now.tzinfo), "series": quality,
             "max_gap_seconds": MAX_GAP_SECONDS, "interpolation": False}
     fire_diagnostics = _fire_diagnostics(raw)
-    burner_cycles = _burner_cycles(raw, fire_diagnostics)
+    burner_cycles = segment_burner_cycles(raw)
     cycles, complete = _cycle_stage(base_analysis, burner_cycles)
     hydraulics, combustion = _hydraulics(raw), _combustion(raw, fire_diagnostics)
     ml = _ml(complete)
