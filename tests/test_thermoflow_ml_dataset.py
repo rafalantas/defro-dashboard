@@ -45,7 +45,7 @@ class ThermoFlowMlDatasetTests(unittest.TestCase):
         result = self.prepare(samples)
         self.assertEqual(result["rejected_samples"]["incomplete"], 1)
         self.assertEqual(result["rejected_samples"]["invalid_or_missing_value"], 1)
-        self.assertEqual(result["eligible_samples"], 23)
+        self.assertEqual(result["eligible_samples"], 24)
         self.assertEqual(result["status"], "collecting")
 
     def test_all_duplicate_timestamps_are_excluded(self):
