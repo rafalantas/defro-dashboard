@@ -17,7 +17,7 @@ class DailyServiceTests(unittest.TestCase):
             "max_days": 120,
             "fuel_error": FuelError,
             "prefetch": lambda days: calls.append(("prefetch", days)),
-            "lock": threading.RLock(),
+            "lock": threading.Lock(),
             "refills": lambda: calls.append(("refills",)) or [{"id": 1}],
             "fit_model": lambda refills: calls.append(("fit_model", len(refills))) or {
                 "base_kg_per_day": 0.2
