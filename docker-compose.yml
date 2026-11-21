@@ -44,6 +44,18 @@ services:
       - "8000"
     restart: unless-stopped
 
+  fire-collector:
+    profiles: ["ml-collection"]
+    image: ghcr.io/rafalantas/defro-dashboard-api:latest
+    pull_policy: always
+    command: ["python", "-u", "-m", "thermoflow_fire_collector", "run"]
+    environment:
+      THINGSPEAK_FIRE_CHANNEL_ID: ${THINGSPEAK_FIRE_CHANNEL_ID:-}
+      THINGSPEAK_FIRE_READ_KEY: ${THINGSPEAK_FIRE_READ_KEY:-}
+    volumes:
+      - fire-archive:/archive
+    restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: defro-dashboard-cloudflared
@@ -58,3 +70,6 @@ services:
     depends_on:
       - thermoflow
     restart: unless-stopped
+
+volumes:
+  fire-archive:
