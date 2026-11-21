@@ -84,3 +84,47 @@ button{font-weight:700}
   .telemetry-value{font-size:17px}
   .metric strong,.overview-metric strong{font-size:18px}
 }
+
+
+/* Telemetry quality panel: theme-aware surfaces and readable semantic loss chips. */
+.fuel-quality-summary>div{
+  background:var(--panel2);
+  border-color:var(--line);
+}
+.fuel-quality-summary span,
+.fuel-quality-channel summary small,
+.fuel-quality-field small{
+  color:var(--muted);
+}
+.fuel-quality-summary b,
+.fuel-quality-field b{
+  color:var(--text);
+}
+.fuel-quality-field{
+  background:var(--panel2);
+  color:var(--text);
+}
+.fuel-quality-worst span{
+  background:color-mix(in srgb,var(--orange) 12%,var(--panel));
+  border:1px solid color-mix(in srgb,var(--orange) 26%,var(--line));
+  color:var(--orange);
+}
+@media(prefers-color-scheme:light){
+  .fuel-quality-summary>div{
+    background:linear-gradient(145deg,#fff,#f4f8fa);
+    border-color:#d4e0e6;
+    box-shadow:0 5px 14px #18334408;
+  }
+  .fuel-quality-summary span,
+  .fuel-quality-channel summary small,
+  .fuel-quality-field small{color:#607580}
+  .fuel-quality-summary b,
+  .fuel-quality-field b,
+  .fuel-quality-field{color:#1a2932}
+  .fuel-quality-field{background:#f4f8fa}
+  .fuel-quality-worst span{
+    background:#fbf2e9;
+    border-color:#efd5bd;
+    color:#98501e;
+  }
+}
