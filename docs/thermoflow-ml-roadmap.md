@@ -1,5 +1,28 @@
 # ThermoFlow: cykle i ML w trybie obserwacyjnym
 
+## Ciągłe zbieranie FIRE (#93)
+
+Istniejące API nadal zapisuje stan i jasność do osobnego kanału ThingSpeak. Dodatkowy `fire-collector` jest opcjonalnym odbiorcą: używa jedynie `THINGSPEAK_FIRE_CHANNEL_ID` i `THINGSPEAK_FIRE_READ_KEY`, nie dostaje klucza zapisu ani tokenu eModul. Zapisuje lokalną historię w nazwanym wolumenie `fire-archive` i nie wystawia portu. Uruchomienie bez profilu nie zmienia dotychczasowego stosu.
+
+Po publikacji obrazu zawierającego ten PR, w istniejącej konfiguracji stacka z tym samym środowiskiem:
+
+```sh
+docker compose --profile ml-collection up -d --no-deps fire-collector
+docker compose logs --tail=20 fire-collector
+docker compose exec -T fire-collector python -m thermoflow_fire_collector status
+```
+
+W Portainerze profil musi być aktywny dla wdrożenia stosu. Jeżeli używany sposób wdrożenia nie przekazuje profili Compose, usuń `profiles: ["ml-collection"]` wyłącznie z sekcji `fire-collector` w konfiguracji tego stosu. Nie kopiuj klucza do polecenia ani do pliku z wynikami. Nie kasuj wolumenu podczas redeployu.
+
+Pierwsza synchronizacja sięga do 24 h wstecz, kolejne uruchamiają się co 5 minut i nadrabiają od ostatniego zatwierdzonego okna, z 15 minutami nakładania. Błąd odczytu nie przesuwa kursora; duplikaty tego samego wpisu ThingSpeak nie dublują rekordów, a różne wpisy o tym samym czasie zostają widoczne do odrzucenia przez segmenter. Pole `valid_fire_samples` mówi, ile jest próbek binarnych; świeży checkpoint sam w sobie nie potwierdza świeżego stanu płomienia. Kolektor nie może odtworzyć próbek niezgromadzonych wcześniej przez ThingSpeak.
+
+Kiedy chcesz sprawdzić postęp, wyeksportuj lokalne archiwum bez sekretów:
+
+```sh
+(umask 077; docker compose exec -T fire-collector python -m thermoflow_fire_collector export > fire-snapshot.json)
+python3 -m thermoflow_observed_cycles fire-snapshot.json > observed-cycles.json
+```
+
 ## Import cykli z pomiarów FIRE (#93)
 
 Narzędzie działa lokalnie. Czyta jeden zrzut JSON, wypisuje raport na standardowe wyjście i nie pobiera próbek z ThingSpeak. W wejściu podaj rzeczywiste, nieprzerzedzone próbki FIRE w UTC, opcjonalnie z temperaturą spalin i mocą. Same spaliny, jasność lub moc nie są etykietą rozpalenia. Nie używaj skompresowanego wykresu ani odpowiedzi, która nie zawiera surowej serii FIRE.
