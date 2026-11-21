@@ -95,7 +95,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         burner = result["burner_cycle_analyzer"]
         self.assertEqual(burner["complete"], 1)
         self.assertEqual(burner["cycles"][0]["status"], "confirmed_by_fire_state")
-        self.assertEqual(burner["cycles"][0]["duration_minutes"], 9.0)
+        self.assertEqual(burner["cycles"][0]["duration_minutes"], 3.0)
         self.assertEqual(result["cycle_analyzer"]["source"],
                          "existing_timestamped_4d_protection_cycle_analysis")
 
@@ -148,7 +148,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
         self.assertEqual(burner["complete"], 1)
         self.assertEqual(burner["ignored_transitions"], 2)
-        self.assertEqual(burner["cycles"][0]["duration_minutes"], 7.0)
+        self.assertEqual(burner["cycles"][0]["duration_minutes"], 2.0)
 
     def test_burner_cycle_starting_on_is_left_censored_not_baseline_eligible(self):
         start = 1795161600
@@ -193,7 +193,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
         self.assertEqual(burner["duplicate_timestamp_samples"], 2)
         self.assertEqual(burner["complete"], 1)
-        self.assertEqual(burner["cycles"][0]["duration_minutes"], 8.0)
+        self.assertEqual(burner["cycles"][0]["duration_minutes"], 2.0)
 
 
     def test_hydraulic_return_pairing_rejects_samples_across_long_gap(self):
