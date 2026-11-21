@@ -836,7 +836,9 @@ def _timed(name, fn):
 
 def _summary_runtime_deps():
     return {
-        "prefetch": _timed("summary:prefetch", _prefetch),
+        # Warm the daily-model window, not an unconditional 400 days.
+        # Refill periods and the offset still read older days on demand.
+        "prefetch": _timed("summary:prefetch", lambda: _prefetch(days=MAX_DAYS)),
         "build": _timed("summary:build", _summary_build),
         "fuel_error": FuelError,
         "state": _summary_state,
