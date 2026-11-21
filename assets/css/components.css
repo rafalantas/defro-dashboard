@@ -48,3 +48,27 @@
 .diagnostics-load progress{width:34%;height:7px;accent-color:var(--teal,#49d7bd)}
 .diagnostics-load p{margin:6px 0 0;color:var(--muted,#91a3aa);font-size:9px;line-height:1.5}
 @media(max-width:760px){.diagnostics-intro{padding:0 12px 10px}.diagnostics-section-title{margin-left:12px;margin-right:12px}.diagnostics-toolbar{padding-left:12px;padding-right:12px}.diagnostics-load{margin-left:12px;margin-right:12px}}
+
+[aria-labelledby="intelligenceTitle"]{margin-block:12px}
+.intelligence-toolbar p,.intelligence-note,.intelligence-context{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.intelligence-content{padding:4px 18px 18px}
+.intelligence-content h3{margin:10px 0 8px;font-size:13px;color:var(--text)}
+.intelligence-content .intelligence-note{margin:-3px 0 10px}
+.intelligence-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin-bottom:14px}
+.intelligence-grid:last-child{margin-bottom:0}
+.intelligence-module{grid-column:span 2;min-width:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--text);overflow-wrap:anywhere}
+#intelligenceLive .intelligence-module{grid-column:span 3}
+.intelligence-heading{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:5px 10px;margin-bottom:6px}
+.intelligence-heading h4{font-size:13px;margin:0}
+.intelligence-state{border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:11px;font-weight:700}
+.intelligence-state[data-tone="ready"]{color:var(--teal)}
+.intelligence-score{margin:4px 0;color:var(--text);font:600 22px var(--mono)}
+.intelligence-context + .intelligence-context{margin-top:5px}
+.intelligence-context time{font-variant-numeric:tabular-nums}
+.intelligence-list{margin:6px 0;padding-inline-start:17px;font-size:12px;line-height:1.5}
+.intelligence-table{width:100%;margin-top:7px;border-collapse:collapse;font-size:11px;line-height:1.4}
+.intelligence-table th,.intelligence-table td{border-top:1px solid var(--line);padding:5px 3px;text-align:right}
+.intelligence-table th:first-child{text-align:left}
+.intelligence-table tbody td{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:960px){.intelligence-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.intelligence-module,#intelligenceLive .intelligence-module{grid-column:auto}}
+@media(max-width:620px){.intelligence-content{padding:4px 12px 12px}.intelligence-grid{grid-template-columns:minmax(0,1fr)}}
