@@ -183,3 +183,31 @@ def counter_method(counter: dict, format_pl) -> str:
         return (f"licznik podajnika, współczynnik tymczasowy {value} kg/% "
                 f"(szacunek, ±{uncertainty}%)")
     return "licznik podajnika skalibrowany do dosypek"
+
+
+def movement_diagnostics(sequence: list[tuple[float, float]], tz) -> dict:
+    """Summarize signed counter movement and the largest sample gap for one day."""
+    if not sequence:
+        return {}
+    values = [value for _stamp, value in sequence]
+    deltas = [cur[1] - prev[1] for prev, cur in zip(sequence, sequence[1:])]
+    rises = [delta for delta in deltas if delta > 0]
+    drops = [-delta for delta in deltas if delta < 0]
+    gaps = [(cur[0] - prev[0], prev[0], cur[0])
+            for prev, cur in zip(sequence, sequence[1:])]
+    max_gap = max(gaps, default=None, key=lambda item: item[0])
+    result = {
+        "upward_total_pct": round(sum(rises), 2),
+        "downward_total_pct": round(sum(drops), 2),
+        "net_change_pct": round(values[-1] - values[0], 2),
+        "upward_changes": len(rises),
+        "downward_changes": len(drops),
+        "min_counter_pct": min(values),
+        "max_counter_pct": max(values),
+        "largest_rise_pct": round(max(rises), 2) if rises else 0.0,
+        "largest_drop_pct": round(max(drops), 2) if drops else 0.0,
+        "max_gap_seconds": int(max_gap[0]) if max_gap else None,
+        "max_gap_from": datetime.fromtimestamp(max_gap[1], tz).isoformat() if max_gap else None,
+        "max_gap_to": datetime.fromtimestamp(max_gap[2], tz).isoformat() if max_gap else None,
+    }
+    return result
