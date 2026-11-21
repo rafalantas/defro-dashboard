@@ -44,5 +44,6 @@ COPY fuel_telemetry_audit_service.py /app/fuel_telemetry_audit_service.py
 COPY fuel_thermoflow_diagnostics.py /app/fuel_thermoflow_diagnostics.py
 
 COPY fuel_telemetry_diagnostics.py /app/fuel_telemetry_diagnostics.py
+COPY fuel_diagnostic_summary.py /app/fuel_diagnostic_summary.py
 
 COPY thermoflow_diagnostic_intelligence.py /app/thermoflow_diagnostic_intelligence.py
