@@ -39,6 +39,69 @@ def _number(raw):
         return None
 
 
+# Broad engineering sanity bounds used for diagnostics only. They never
+# filter samples or alter the existing aggregates/model inputs.
+SANITY_RANGES = {
+    "temperature": (-40.0, 120.0),
+    "power": (0.0, 50.0),
+    "percent": (0.0, 100.0),
+    "state": (0.0, 1.0),
+}
+
+
+def _audit_raw_channel(feeds, fields):
+    """Count raw ingestion issues before timestamp/value parsing drops samples."""
+    timestamp_counts = defaultdict(int)
+    timestamp_invalid = 0
+    for feed in feeds:
+        ts = _timestamp(feed.get("created_at"))
+        if ts is None:
+            timestamp_invalid += 1
+        else:
+            timestamp_counts[ts] += 1
+
+    duplicate_groups = sum(count > 1 for count in timestamp_counts.values())
+    duplicate_feeds = sum(count - 1 for count in timestamp_counts.values() if count > 1)
+    field_audit = {}
+    for index, (key, _label, _series_id, kind) in enumerate(fields, 1):
+        missing = invalid = out_of_range = accepted = 0
+        low, high = SANITY_RANGES.get(kind, (None, None))
+        for feed in feeds:
+            raw = feed.get(f"field{index}")
+            if raw is None or (isinstance(raw, str) and not raw.strip()):
+                missing += 1
+                continue
+            value = _number(raw)
+            if value is None:
+                invalid += 1
+                continue
+            if low is not None and not low <= value <= high:
+                out_of_range += 1
+                continue
+            accepted += 1
+        total = len(feeds)
+        lost = missing + invalid + out_of_range
+        field_audit[key] = {
+            "raw_samples": total,
+            "accepted_samples": accepted,
+            "missing_samples": missing,
+            "invalid_samples": invalid,
+            "out_of_range_samples": out_of_range,
+            "lost_samples": lost,
+            "loss_percent": round(100.0 * lost / total, 1) if total else None,
+            "sanity_range": [low, high] if low is not None else None,
+        }
+    return {
+        "raw_feeds": len(feeds),
+        "timestamp_valid_feeds": len(feeds) - timestamp_invalid,
+        "timestamp_invalid_feeds": timestamp_invalid,
+        "duplicate_timestamp_groups": duplicate_groups,
+        "duplicate_timestamp_feeds": duplicate_feeds,
+        "fields": field_audit,
+        "range_policy": "diagnostic_only_no_samples_filtered",
+    }
+
+
 def _percentile(values, fraction):
     if not values:
         return None
@@ -50,12 +113,17 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
     """Return coverage audit and day aggregates; optional now makes date windows deterministic."""
     points = defaultdict(list)
     channel_audit = []
+    raw_ingestion_channels = []
     now = now or datetime.now(TZ)
     now = now.replace(tzinfo=TZ) if now.tzinfo is None else now.astimezone(TZ)
     start = (now - timedelta(days=days)).date()
 
     for channel_index, schema in enumerate(CHANNELS):
         feeds = feeds_by_channel[channel_index] if channel_index < len(feeds_by_channel) else []
+        raw_ingestion_channels.append({
+            "name": schema["name"],
+            **_audit_raw_channel(feeds, schema["fields"] if "fields" in schema else CHANNELS[channel_index]["series"]),
+        })
         parsed_count = 0
         channel_times = []
         for feed in feeds:
@@ -78,6 +146,10 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
         })
 
     fire_feeds = feeds_by_channel[2] if len(feeds_by_channel) > 2 else []
+    raw_ingestion_channels.append({
+        "name": "fire_sensor",
+        **_audit_raw_channel(fire_feeds, FIRE_SERIES),
+    })
     fire_times = []
     for feed in fire_feeds:
         ts = _timestamp(feed.get("created_at"))
@@ -209,6 +281,18 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
         "timezone": str(TZ),
         "requested_days": days,
         "channels": channel_audit,
+        "raw_ingestion_quality": {
+            "mode": "read_only_pre_parse_audit",
+            "channels": raw_ingestion_channels,
+            "total_raw_feeds": sum(item["raw_feeds"] for item in raw_ingestion_channels),
+            "total_timestamp_invalid_feeds": sum(item["timestamp_invalid_feeds"] for item in raw_ingestion_channels),
+            "total_duplicate_timestamp_feeds": sum(item["duplicate_timestamp_feeds"] for item in raw_ingestion_channels),
+            "notes": [
+                "Zakresy sanity są orientacyjne i służą wyłącznie diagnostyce; nie filtrują danych wejściowych.",
+                "Duplikaty są raportowane, ale nie są usuwane ani scalane.",
+                "Brakujące wartości i błędne timestampy nie są imputowane.",
+            ],
+        },
         "series": series_audit,
         "daily": daily,
         "raw_diagnostics": raw_diagnostics,
