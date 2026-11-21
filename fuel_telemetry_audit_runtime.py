@@ -25,8 +25,6 @@ class TelemetryAuditJob:
         with self._lock:
             if self._state == "running":
                 return self._snapshot_locked()
-            if self._state == "completed":
-                return self._snapshot_locked()
             self._state = "running"
             self._started_at = datetime.now(timezone.utc).isoformat()
             self._finished_at = None
