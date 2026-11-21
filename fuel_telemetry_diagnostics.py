@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from fuel_hydraulic_correlation import build_hydraulic_correlation
+
 MAX_GAP_SECONDS = 300
 RETURN_WARNING_C = 54.0
 FLUE_ACTIVE_C = 70.0
@@ -355,5 +357,6 @@ def build_raw_diagnostics(points, now):
             "note": "Czujnik potwierdza obecność płomienia; przejście sygnału nie potwierdza komendy ani sekwencji rozpalania palnika.",
         },
         "hydraulics": hydraulics,
+        "hydraulic_correlation": build_hydraulic_correlation(normalized),
         "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes",
     }

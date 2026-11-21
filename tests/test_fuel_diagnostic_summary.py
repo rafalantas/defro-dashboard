@@ -48,6 +48,23 @@ class DiagnosticSummaryTests(unittest.TestCase):
         self.assertIn("telemetry_coverage_gaps", codes)
         self.assertIn("raw_ingestion_loss", codes)
 
+    def test_hydraulic_correlation_is_summarized_as_cooccurrence(self):
+        result = build_diagnostic_summary(
+            {"hydraulic_correlation": {
+                "pump_transitions": [{
+                    "return_response": {"response_status": "observed_both_windows"},
+                }],
+                "valve_movements": [],
+            }},
+            {"series": {"return_c": {"samples": 20, "gaps_over_5m": 0}}},
+        )
+        finding = next(item for item in result["findings"]
+                       if item["code"] == "hydraulic_event_correlation")
+        self.assertEqual(finding["pump_transitions"], 1)
+        self.assertEqual(finding["responses_with_sufficient_coverage"], 1)
+        self.assertEqual(finding["confidence"], "timestamped_cooccurrence")
+        self.assertIn("nie dowodzi przyczynowości", finding["message"])
+
     def test_empty_input_is_explicitly_insufficient(self):
         result = build_diagnostic_summary({}, {})
         self.assertEqual(result["status"], "insufficient_data")
