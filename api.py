@@ -14,6 +14,7 @@ import unicodedata
 from datetime import datetime, timezone
 from fuel_schema import timezone as thermoflow_timezone
 from thermoflow_shadow_runtime import PATH as SHADOW_PATH, ShadowRuntime
+from thermoflow_unified_runtime import PATH as INTELLIGENCE_PATH, REFRESH_SECONDS, UnifiedRuntime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -67,6 +68,8 @@ STATISTICS_LABELS = {
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
 _shadow_runtime = ShadowRuntime()
+_intelligence_bundle = os.getenv("THERMOFLOW_INTELLIGENCE_BUNDLE", "").strip()
+_intelligence_runtime = UnifiedRuntime(_intelligence_bundle)
 _statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()
 _history_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
@@ -1468,6 +1471,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == SHADOW_PATH:
             self._send_json(200, _shadow_runtime.read(time.time()))
             return
+        if path == INTELLIGENCE_PATH:
+            now = time.time()
+            self._send_json(200, _intelligence_runtime.read(now, _shadow_runtime.read(now)))
+            return
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
             self.send_error(404)
             return
@@ -1567,8 +1574,16 @@ def _poll_forever() -> None:
         time.sleep(30)
 
 
+def _refresh_intelligence_forever() -> None:
+    while True:
+        _intelligence_runtime.refresh(now=time.time())
+        time.sleep(REFRESH_SECONDS)
+
+
 if __name__ == "__main__":
     threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", 8000), Handler)
     threading.Thread(target=_warmup_fuel, name="fuel-warmup", daemon=True).start()
+    if _intelligence_bundle:
+        threading.Thread(target=_refresh_intelligence_forever, name="intelligence-bundle", daemon=True).start()
     server.serve_forever()
