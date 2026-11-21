@@ -17,7 +17,7 @@ class DailyServiceTests(unittest.TestCase):
             "max_days": 120,
             "fuel_error": FuelError,
             "prefetch": lambda days: calls.append(("prefetch", days)),
-            "lock": threading.RLock(),
+            "lock": threading.Lock(),
             "refills": lambda: calls.append(("refills",)) or [{"id": 1}],
             "fit_model": lambda refills: calls.append(("fit_model", len(refills))) or {
                 "base_kg_per_day": 0.2
@@ -55,6 +55,14 @@ class DailyServiceTests(unittest.TestCase):
         self.assertEqual(result["counter_calibration"], {"collecting": True})
         self.assertEqual(result["telemetry"]["status"], "available")
         self.assertEqual(result["weather_vars"]["solar_mj"], "suma promieniowania krótkofalowego, MJ/m²")
+
+    def test_network_bound_daily_rows_run_outside_shared_lock(self):
+        deps, _ = self.dependencies()
+        lock = deps["lock"]
+        deps["daily_rows"] = lambda days: self.assertFalse(lock.locked()) or (
+            [{"day": "2026-11-19", "t_mean": 5.0, "kg_counter": None}], {}
+        )
+        build_daily({"days": ["1"]}, deps)
 
     def test_no_model_leaves_rows_without_model_fields(self):
         deps, _ = self.dependencies(fit_model=lambda refills: None)
