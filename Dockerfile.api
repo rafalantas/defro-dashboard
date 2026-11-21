@@ -45,5 +45,6 @@ COPY fuel_thermoflow_diagnostics.py /app/fuel_thermoflow_diagnostics.py
 
 COPY fuel_telemetry_diagnostics.py /app/fuel_telemetry_diagnostics.py
 COPY fuel_diagnostic_summary.py /app/fuel_diagnostic_summary.py
+COPY fuel_hydraulic_correlation.py /app/fuel_hydraulic_correlation.py
 
 COPY thermoflow_diagnostic_intelligence.py /app/thermoflow_diagnostic_intelligence.py
