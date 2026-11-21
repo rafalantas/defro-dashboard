@@ -65,6 +65,22 @@ class DiagnosticSummaryTests(unittest.TestCase):
         self.assertEqual(finding["confidence"], "timestamped_cooccurrence")
         self.assertIn("nie dowodzi przyczynowości", finding["message"])
 
+    def test_cycle_hydraulic_response_is_summarized_as_cooccurrence(self):
+        result = build_diagnostic_summary(
+            {"cycle_hydraulic_response": {
+                "cycles_analyzed": 3,
+                "cycles_with_return_coverage": 2,
+                "cycles_with_pump_events": 1,
+                "cycles_with_valve_movements": 2,
+            }},
+            {"series": {"return_c": {"samples": 30, "gaps_over_5m": 0}}},
+        )
+        finding = next(item for item in result["findings"]
+                       if item["code"] == "ignition_hydraulic_response")
+        self.assertEqual(finding["cycles_analyzed"], 3)
+        self.assertEqual(finding["confidence"], "timestamped_cooccurrence")
+        self.assertIn("nie dowodzi przyczynowości", finding["message"])
+
     def test_empty_input_is_explicitly_insufficient(self):
         result = build_diagnostic_summary({}, {})
         self.assertEqual(result["status"], "insufficient_data")
