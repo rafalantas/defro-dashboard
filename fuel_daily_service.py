@@ -14,11 +14,15 @@ def build_daily(query: dict, deps: dict) -> dict:
 
     # Legacy behavior: prefetch days+2 before entering the shared calculation lock.
     deps["prefetch"](days + 2)
+    # Keep the shared lock around the small model/refill snapshot only.
+    # Daily row construction performs network I/O (ThingSpeak/Open-Meteo and
+    # telemetry history) and must not block other read-only endpoints.
     with deps["lock"]:
         refills = deps["refills"]()
         model = deps["fit_model"](refills)
-        rows, counter = deps["daily_rows"](days)
-        daily_model = deps["fit_daily_model"](rows)
+
+    rows, counter = deps["daily_rows"](days)
+    daily_model = deps["fit_daily_model"](rows)
 
     for row in rows:
         if model and row["t_mean"] is not None:
