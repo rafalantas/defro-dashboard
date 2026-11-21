@@ -66,3 +66,8 @@ def test_telemetry_quality_panel_uses_read_only_audit_endpoint_and_handles_missi
     assert "loss_percent" in source
     assert "Audyt read-only" in source
     assert "fuelTelemetryQuality" in source
+
+
+def test_fuel_chart_does_not_draw_zero_or_negative_counter_values():
+    source = (ROOT / "assets/js/fuel-panel.js").read_text(encoding="utf-8")
+    assert "if(!Number.isFinite(v)||v<=0)return" in source
