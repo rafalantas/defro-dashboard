@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from fuel_hydraulic_correlation import build_hydraulic_correlation
+from fuel_cycle_hydraulic_response import build_cycle_hydraulic_response
 
 MAX_GAP_SECONDS = 300
 RETURN_WARNING_C = 54.0
@@ -286,6 +287,10 @@ def build_raw_diagnostics(points, now):
     fire_events = _fire_events(normalized)
     ignition_requests = _ignition_requests(normalized)
     ignition_cycles = _ignition_cycles(normalized, fire_events, firing, ignition_requests)
+    hydraulic_correlation = build_hydraulic_correlation(normalized)
+    cycle_hydraulic_response = build_cycle_hydraulic_response(
+        normalized, ignition_cycles, hydraulic_correlation
+    )
 
     returns = normalized.get("return_c", [])
     low_samples = [(ts, value) for ts, value in returns if value < RETURN_WARNING_C]
@@ -357,6 +362,7 @@ def build_raw_diagnostics(points, now):
             "note": "Czujnik potwierdza obecność płomienia; przejście sygnału nie potwierdza komendy ani sekwencji rozpalania palnika.",
         },
         "hydraulics": hydraulics,
-        "hydraulic_correlation": build_hydraulic_correlation(normalized),
+        "hydraulic_correlation": hydraulic_correlation,
+        "cycle_hydraulic_response": cycle_hydraulic_response,
         "safety": "diagnostics_only; no control, setpoint, pump, valve or fuel-estimate changes",
     }
