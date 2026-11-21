@@ -42,6 +42,14 @@ Raport zawiera skrót pliku wejściowego, odrzucone próbki, kompletne i ucięte
 
 Przechowuj zrzut i raport poza repozytorium: timestampy mogą ujawniać rytm pracy instalacji. Dane testowe w tym PR są syntetyczne. Import rzeczywistego zrzutu i ocena jego pokrycia pozostają osobnym krokiem odbioru.
 
+## Porównanie prognozy długości cyklu (#94)
+
+```sh
+python3 -m thermoflow_burner_ml observed-cycles.json > burner-benchmark.json
+```
+
+Kandydat OLS uczy się wyłącznie na starszych cyklach. Porównanie na nowszym odłożonym bloku to MAE, RMSE i bias w minutach dla OLS, mediany treningowej oraz czasu poprzedniego cyklu. Ten ostatni baseline odpowiada prognozie aktualizowanej po każdym znanym cyklu, nie prognozie na całą przyszłą partię. Cechy są używalne po potwierdzeniu bieżącego stanu FIRE dwiema kolejnymi próbkami; to nie jest prognoza przed rozpaleniem. Gdy jest za mało danych lub kandydat jest nieidentyfikowalny albo przewiduje niedodatni czas, raport nie zwraca modelu. Wynik nie promuje modelu i nie uruchamia go w API.
+
 ## Kolejność dalszych zmian
 
 Numery oznaczają planowaną kolejność. Wszelkie modele pozostają obserwacyjne, bez wpływu na sterownik, kalibrację, istniejące szacunki lub ustawienia.

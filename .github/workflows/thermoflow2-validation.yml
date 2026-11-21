@@ -2,7 +2,7 @@ name: ThermoFlow validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/thermoflow-observed-cycle-dataset]
   push:
     branches:
       - "work/thermoflow2/**"
@@ -60,6 +60,8 @@ jobs:
         run: python -m unittest tests/test_thermoflow_diagnostic_intelligence.py tests/test_thermoflow_shadow_anomaly.py tests/test_thermoflow_causal_diagnostics.py tests/test_thermoflow_replay.py tests/test_thermoflow_ml_dataset.py tests/test_thermoflow_ml_training.py tests/test_thermoflow_ml_burner_adapter_shadow.py
       - name: ThermoFlow offline observed cycle dataset
         run: python -m unittest tests/test_thermoflow_observed_cycles.py tests/test_thermoflow_fire_snapshot.py
+      - name: ThermoFlow offline burner benchmark
+        run: python -m unittest tests/test_thermoflow_burner_ml.py
       - name: Existing fuel model regression
         run: python tests/test_daily_lag.py
       - name: History analysis regression
