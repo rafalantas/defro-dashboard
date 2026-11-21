@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from fuel_schema import telemetry_channels, timezone
 from fuel_telemetry_diagnostics import build_raw_diagnostics
+from fuel_diagnostic_summary import build_diagnostic_summary
 
 TZ = timezone()
 MAX_SAMPLE_GAP_SECONDS = 300
@@ -281,6 +282,15 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
             row[key + "_samples"] = len(samples)
         daily.append(row)
 
+    diagnostic_summary = build_diagnostic_summary(
+        raw_diagnostics, {"series": {item["key"]: item for item in series_audit}},
+        {
+            "channels": raw_ingestion_channels,
+            "total_raw_feeds": sum(item["raw_feeds"] for item in raw_ingestion_channels),
+            "total_timestamp_invalid_feeds": sum(item["timestamp_invalid_feeds"] for item in raw_ingestion_channels),
+            "total_duplicate_timestamp_feeds": sum(item["duplicate_timestamp_feeds"] for item in raw_ingestion_channels),
+        },
+    )
     return {
         "mode": "read_only_audit",
         "timezone": str(TZ),
@@ -301,6 +311,7 @@ def analyze(feeds_by_channel, channel_ids, days, now=None, ignition_config=None)
         "series": series_audit,
         "daily": daily,
         "raw_diagnostics": raw_diagnostics,
+        "diagnostic_summary": diagnostic_summary,
         "quality": {
             "series_count": len(series_audit),
             "available_series": sum(not item["missing"] for item in series_audit),
