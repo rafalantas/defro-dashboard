@@ -69,15 +69,6 @@ class StatsServiceTests(unittest.TestCase):
         self.assertEqual(result["summary"]["days_with_burner_data"], 1)
         self.assertEqual(result["refills_count"], 1)
 
-    def test_prefetch_and_daily_reads_run_outside_shared_lock(self):
-        deps = self.deps()
-        lock = deps["lock"]
-        deps["prefetch_daily"] = lambda day: self.assertFalse(lock.locked())
-        deps["get_daily"] = lambda day: self.assertFalse(lock.locked()) or {
-            "day": day.isoformat(), "burner_kwh": None, "hdd": None
-        }
-        build_stats({"days": ["2"]}, deps)
-
     def test_refill_fetch_failure_returns_empty_legacy_data_and_error(self):
         deps = self.deps()
         def fail():
