@@ -13,6 +13,7 @@ import time
 import unicodedata
 from datetime import datetime, timezone
 from fuel_schema import timezone as thermoflow_timezone
+from thermoflow_shadow_runtime import PATH as SHADOW_PATH, ShadowRuntime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -65,6 +66,7 @@ STATISTICS_LABELS = {
 }
 _cache: dict = {"updated": 0.0, "payload": None}
 _cache_lock = threading.Lock()
+_shadow_runtime = ShadowRuntime()
 _statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()
 _history_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
@@ -1463,6 +1465,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path == SHADOW_PATH:
+            self._send_json(200, _shadow_runtime.read(time.time()))
+            return
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
             self.send_error(404)
             return
@@ -1553,7 +1558,12 @@ class Handler(BaseHTTPRequestHandler):
 def _poll_forever() -> None:
     """Keep ThingSpeak history recording even when no dashboard tab is open."""
     while True:
-        snapshot()
+        payload = snapshot()
+        try:
+            _shadow_runtime.observe(payload)
+        except Exception:
+            # Optional screening must not stop the existing archival poller.
+            _shadow_runtime.observe({})
         time.sleep(30)
 
 

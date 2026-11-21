@@ -187,6 +187,12 @@
     <div class="sensor-chip control unknown" id="sensorRoom"><i></i><span>Regulator pokojowy · brak odczytu</span></div>
     <div class="sensor-chip" id="sensorSupply"><i></i><span>Czujnik zasilania kotła · oczekiwanie na API</span></div>
   </div></section>
+  <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="shadowTitle" hidden>
+    <div class="cardhead"><div><h2 id="shadowTitle">Ocena obserwacyjna</h2><div class="subhead">Spaliny i powrót · tylko odczyt</div></div></div>
+    <div class="diagnostics-toolbar"><button type="button" class="button diagnostics-refresh" id="shadowRefresh" data-testid="button-refresh-shadow">Odśwież ocenę</button></div>
+    <div class="diagnostics-intro" aria-live="polite" data-testid="text-shadow-status" id="shadowStatus">Oczekiwanie na ocenę…</div>
+    <ul id="shadowComponents" class="stats-meta" data-testid="list-shadow-components" hidden></ul>
+  </section>
   <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="diagnosticsHistoryTitle">
     <div class="cardhead"><div><h2 id="diagnosticsHistoryTitle">Diagnostyka pracy kotła</h2><div class="subhead">Analiza zapisanych próbek ThingSpeak · zakres 24 h, 7 dni lub 30 dni · tylko odczyt</div></div><span class="badge warn" id="diagnosticsHistoryState">OCZEKIWANIE NA HISTORIĘ</span></div>
     <div class="diagnostics-toolbar"><div class="stats-controls diagnostics-periods" role="group" aria-label="Zakres analizy"><button class="stats-period active" data-diagnostics-range="24" aria-pressed="true">24 h</button><button class="stats-period" data-diagnostics-range="168" aria-pressed="false">7 dni</button><button class="stats-period" data-diagnostics-range="720" aria-pressed="false">30 dni</button></div><button type="button" class="button diagnostics-refresh" id="diagnosticsRefresh">Odśwież</button></div>
@@ -208,4 +214,5 @@
   <script src="/assets/js/fuel-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/overview.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/diagnostics.js?v=__APP_COMMIT__" defer></script>
+  <script src="/assets/js/shadow-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/navigation.js?v=__APP_COMMIT__" defer></script></body></html>
