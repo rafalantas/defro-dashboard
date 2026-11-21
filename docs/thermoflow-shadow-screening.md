@@ -7,3 +7,7 @@
 ## Health Score
 
 `build_health_score` korzysta z jawnej listy wymaganych składowych i tej samej chwili `as_of` co screening. Pokazuje dla każdej czas, wiek, stan i wartość składowej. Wynik ogólny to odsetek składowych mieszczących się w poziomie odniesienia, a nie prawdopodobieństwo awarii ani certyfikat bezpiecznej pracy. Jeżeli choć jedna oczekiwana składowa nie ma oceny, ogólny wynik pozostaje pusty, a odpowiedź pokazuje pokrycie.
+
+## Diagnostic AI
+
+`diagnostic_hypotheses` zgłasza tylko zgodne czasowo odchylenia, odwołując się do odpowiedniego rekordu w `screens`. Rozróżnia „brak sygnału w ocenionych składowych” od „nie wiadomo”. Zmiana warunków pracy i zmiana pomiaru pozostają alternatywnymi hipotezami. To deterministyczne reguły na danych, bez LLM, ustalania przyczyny, automatycznych komend ani zmian nastaw.
