@@ -87,7 +87,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         start = 1795161600
         raw = {
             "thermoflow-fire": [[start, 0], [start + 60, 1], [start + 120, 1],
-                                [start + 600, 0], [start + 660, 0]],
+                                [start + 240, 0], [start + 300, 0]],
             "thermoflow-flue": [[start + 120, 80]],
             "thermoflow-boiler-power": [[start + 120, 15]],
         }
@@ -117,7 +117,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         for index in range(25):
             base = start + index * 3600
             fire.extend([[base, 0], [base + 60, 1], [base + 120, 1],
-                         [base + 660, 0], [base + 720, 0]])
+                         [base + 180, 0], [base + 240, 0]])
         result = build_thermoflow_intelligence({"thermoflow-fire": fire})
         model = result["burner_ml_baseline"]
         self.assertEqual(model["status"], "evaluated")
@@ -143,7 +143,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         raw = {"thermoflow-fire": [
             [start, 0], [start + 60, 1], [start + 120, 0],
             [start + 180, 1], [start + 240, 1],
-            [start + 600, 0], [start + 660, 0],
+            [start + 300, 0], [start + 360, 0],
         ]}
         burner = build_thermoflow_intelligence(raw)["burner_cycle_analyzer"]
         self.assertEqual(burner["complete"], 1)
@@ -226,7 +226,7 @@ class ThermoFlowDiagnosticIntelligenceTests(unittest.TestCase):
         }
         pump = build_thermoflow_intelligence(raw)["hydraulic_diagnostics"]["pump_correlations"]["thermoflow-pump-floor"]
         self.assertEqual(pump["paired_events"], 0)
-        self.assertEqual(pump["events"][0]["association_status"], "insufficient_contiguous_return_samples")
+        self.assertEqual(pump["events"][0]["association_status"], "insufficient_unique_contiguous_return_samples")
 
     def test_hydraulic_return_samples_are_not_reused_for_multiple_pump_events(self):
         start = 1795161600
