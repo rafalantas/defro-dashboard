@@ -5,12 +5,14 @@ or recommend/control pump and valve settings.
 """
 from __future__ import annotations
 
+from collections import deque
 from datetime import timedelta
 
 MAX_GAP_SECONDS = 300
 EVENT_WINDOW_MINUTES = 5
 VALVE_MOVEMENT_THRESHOLD_PCT = 5.0
 PUMP_KEYS = ("pump_floor", "pump_dhw", "pump_circulation")
+REPORTED_EVENTS = 100
 
 
 def _window(samples, start, end):
@@ -31,18 +33,16 @@ def _delta(before, after):
 
 
 def _transition_events(samples, key, label):
-    events = []
     for (previous_ts, previous), (ts, value) in zip(samples, samples[1:]):
         gap = (ts - previous_ts).total_seconds()
         if 0 < gap <= MAX_GAP_SECONDS and (previous >= 0.5) != (value >= 0.5):
-            events.append({
+            yield ts, {
                 "signal": key,
                 "label": label,
                 "at": ts.isoformat(),
                 "transition": "on" if value >= 0.5 else "off",
                 "gap_seconds": round(gap, 1),
-            })
-    return events
+            }
 
 
 def _response(event_time, returns, valve):
@@ -86,14 +86,17 @@ def build_hydraulic_correlation(normalized):
         "pump_dhw": "Pompa CWU",
         "pump_circulation": "Pompa cyrkulacyjna",
     }
-    pump_events = []
+    # The payload and downstream cycle diagnostics expose only these events.
+    # Count all transitions, but do not scan history for discarded responses.
+    pump_events = deque(maxlen=REPORTED_EVENTS)
+    pump_count = 0
     for key in PUMP_KEYS:
-        for event in _transition_events(normalized.get(key, []), key, labels[key]):
-            at = next(ts for ts, _ in normalized[key] if ts.isoformat() == event["at"])
-            event["return_response"] = _response(at, returns, valve)
-            pump_events.append(event)
+        for item in _transition_events(normalized.get(key, []), key, labels[key]):
+            pump_count += 1
+            pump_events.append(item)
 
-    valve_events = []
+    valve_events = deque(maxlen=REPORTED_EVENTS)
+    valve_count = 0
     for (previous_ts, previous), (ts, value) in zip(valve, valve[1:]):
         gap = (ts - previous_ts).total_seconds()
         change = value - previous
@@ -107,18 +110,22 @@ def build_hydraulic_correlation(normalized):
                 "to_pct": round(value, 2),
                 "gap_seconds": round(gap, 1),
             }
-            event["return_response"] = _response(ts, returns, valve)
-            valve_events.append(event)
+            valve_count += 1
+            valve_events.append((ts, event))
+
+    def with_responses(events):
+        return [dict(event, return_response=_response(ts, returns, valve))
+                for ts, event in events]
 
     return {
         "mode": "read_only_timestamped_hydraulic_correlation",
         "max_sample_gap_seconds": MAX_GAP_SECONDS,
         "event_window_minutes_each_side": EVENT_WINDOW_MINUTES,
         "valve_movement_threshold_pct": VALVE_MOVEMENT_THRESHOLD_PCT,
-        "pump_transitions_count": len(pump_events),
-        "pump_transitions": pump_events[-100:],
-        "valve_movements_count": len(valve_events),
-        "valve_movements": valve_events[-100:],
+        "pump_transitions_count": pump_count,
+        "pump_transitions": with_responses(pump_events),
+        "valve_movements_count": valve_count,
+        "valve_movements": with_responses(valve_events),
         "limitations": [
             "Porównanie opisuje współwystępowanie próbek, nie dowodzi związku przyczynowego.",
             "Okna z mniej niż dwiema próbkami temperatury po którejkolwiek stronie są oznaczane jako niewystarczające.",
