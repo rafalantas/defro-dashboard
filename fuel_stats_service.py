@@ -30,11 +30,19 @@ def build_stats(query: dict, deps: dict) -> dict:
         except deps["fuel_error"] as error:
             return {"day": day.isoformat(), "error": error.message}
 
+    wanted = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    # Past days are immutable once cached and the background summary worker
+    # already warms them without the shared lock, so warming them here outside
+    # the lock adds no new kind of concurrent access. Everything that computes
+    # results (today's record, refills, model, periods, daily reads) stays
+    # serialized under the shared lock exactly as restored in PR #82.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(prefetch, [day for day in wanted if day < today]))
+
     with deps["lock"]:
-        wanted = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
-        # Preserve the legacy four-worker prefetch and lock scope.
+        # Preserve the legacy four-worker prefetch and lock scope for today.
         with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(prefetch, wanted))
+            list(pool.map(prefetch, [day for day in wanted if day >= today]))
         try:
             refills = deps["refills"]()
             model = deps["fit_model"](refills)
