@@ -14,10 +14,9 @@ def iso(timestamp):
 
 class ThermoFlowMlBurnerAdapterTests(unittest.TestCase):
     def cycles(self, count=26):
-        start = 1_800_000_000
+        cycle_start = 1_800_000_000
         complete = []
         for index in range(count):
-            cycle_start = start + index * 3600
             duration = 20.0 + (index % 5) * 2.0
             complete.append({
                 "start": iso(cycle_start),
@@ -26,6 +25,9 @@ class ThermoFlowMlBurnerAdapterTests(unittest.TestCase):
                 "complete": True,
                 "status": "confirmed_by_fire_state",
             })
+            # Vary idle intervals independently of burn duration so the
+            # predictors are not perfectly collinear in this fixture.
+            cycle_start += 3600 + (index % 4) * 300
         return {"cycles": complete, "incomplete_cycles": []}
 
     def test_maps_real_diagnostic_cycle_contract_to_supervised_rows(self):
