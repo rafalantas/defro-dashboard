@@ -4,7 +4,7 @@
   const n = (v, d=1) => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pl-PL',{maximumFractionDigits:d,minimumFractionDigits:d});
   const date = (v) => { const d=new Date(v); return Number.isNaN(d.getTime())?'—':d.toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); };
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let dailyData=[], refillData=[], summaryData=null;
+  let dailyData=[], refillData=[], summaryData=null, telemetryAudit=null;
   const get = async (path) => { const r=await ThermoFlowApi.get(path); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); };
   function renderChart() {
     const canvas=$('fuelDailyChart'); if(!canvas) return;
@@ -32,6 +32,27 @@
     const rows=refillData.slice().reverse().slice(0,12);
     el.innerHTML=rows.length?rows.map(r=>'<div class="fuel-refill-row"><strong>'+esc(date(r.ts))+'</strong><b>'+n(r.kg,1)+' kg</b></div>').join(''):'<div class="fuel-empty">Brak zapisanych dosypek.</div>';
     const count=$('fuelRefillCount');if(count)count.textContent=refillData.length+' wpisów';
+  }
+  function renderTelemetryQuality(){
+    const el=$('fuelTelemetryQuality');if(!el)return;
+    const audit=telemetryAudit;
+    if(!audit){el.innerHTML='<div class="fuel-empty">Audyt jakości telemetrii niedostępny lub nieobsługiwany przez API.</div>';return;}
+    const channels=audit.channels||[];
+    if(!channels.length){el.innerHTML='<div class="fuel-empty">Brak danych z kanałów ThingSpeak.</div>';return;}
+    const total=audit.total_raw_feeds??channels.reduce((sum,c)=>sum+(c.raw_feeds||0),0);
+    const invalid=audit.total_timestamp_invalid_feeds??channels.reduce((sum,c)=>sum+(c.timestamp_invalid_feeds||0),0);
+    const duplicates=audit.total_duplicate_timestamp_feeds??channels.reduce((sum,c)=>sum+(c.duplicate_timestamp_feeds||0),0);
+    const signalRows=channels.flatMap(channel=>Object.entries(channel.fields||{}).map(([key,v])=>({channel:channel.name,key,...v})));
+    const loss=signalRows.filter(v=>v.raw_samples>0).sort((a,b)=>(b.loss_percent||0)-(a.loss_percent||0));
+    const summary='<div class="fuel-quality-summary"><div><span>Surowe próbki</span><b>'+n(total,0)+'</b></div><div><span>Błędne czasy</span><b>'+n(invalid,0)+'</b></div><div><span>Duplikaty</span><b>'+n(duplicates,0)+'</b></div></div>';
+    const channelHtml=channels.map(c=>{
+      const fields=Object.entries(c.fields||{});
+      const accepted=fields.reduce((sum,[,v])=>sum+(v.accepted_samples||0),0);
+      const lost=fields.reduce((sum,[,v])=>sum+(v.lost_samples||0),0);
+      return '<details class="fuel-quality-channel"><summary><span>'+esc(c.name)+'</span><small>'+n(c.raw_feeds,0)+' próbek · '+n(c.timestamp_invalid_feeds,0)+' błędnych timestampów · '+n(c.duplicate_timestamp_feeds,0)+' nadmiarowych duplikatów</small></summary><div class="fuel-quality-fields">'+fields.map(([key,v])=>'<div class="fuel-quality-field"><span>'+esc(key.replaceAll('_',' '))+'</span><b>'+n(v.loss_percent,1)+'% strat</b><small>'+n(v.accepted_samples,0)+' poprawnych / '+n(v.raw_samples,0)+' surowych · braki '+n(v.missing_samples,0)+' · błędne '+n(v.invalid_samples,0)+' · poza zakresem '+n(v.out_of_range_samples,0)+' · bez czasu '+n(v.timestamp_unusable_samples,0)+'</small></div>').join('')+'</div></details>';
+    }).join('');
+    const worst=loss.slice(0,3).map(v=>'<span>'+esc(v.key.replaceAll('_',' '))+': '+n(v.loss_percent,1)+'%</span>').join('');
+    el.innerHTML=summary+'<div class="fuel-quality-worst">'+(worst||'Brak próbek do oceny strat')+'</div>'+channelHtml+'<p class="fuel-detail-footnote">Audyt read-only. Zakresy sanity są orientacyjne; nie filtrują ani nie zmieniają danych używanych przez model.</p>';
   }
   function renderModel(){
     const s=summaryData||{}, m=s.model||{}, dm=s.daily_model||{}, cc=s.counter_calibration||{}, cal=s.calibration||{}, off=s.om_offset||{};
@@ -73,8 +94,8 @@
     el.innerHTML=days.length?days.map(d=>'<div class="fuel-forecast-day"><span>'+esc(new Date(d.day+'T12:00:00').toLocaleDateString('pl-PL',{weekday:'short',day:'2-digit',month:'2-digit'}))+'</span><b>'+n(d.kg,1)+' kg</b><small>'+n(d.t_mean,1)+' °C</small></div>').join(''):'<div class="fuel-empty">Prognoza niedostępna.</div>';
   }
   async function loadDetails(){
-    try { const [daily,stats,refills]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/stats?days=30'),get('/api/fuel/refills')]); const burnerByDay=new Map((stats.daily||[]).map(r=>[r.day,r.est_kg])); dailyData=(daily.days||[]).map(r=>({...r,est_kg:burnerByDay.get(r.day)??null}));refillData=refills.refills||[];renderChart();renderRefills(); }
-    catch(e){ const el=$('fuelDetailStatus');if(el)el.textContent='Nie udało się pobrać historii: '+e.message; }
+    try { const [daily,stats,refills,audit]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/stats?days=30'),get('/api/fuel/refills'),get('/api/fuel/telemetry-audit?days=30').catch(()=>null)]); const burnerByDay=new Map((stats.daily||[]).map(r=>[r.day,r.est_kg])); dailyData=(daily.days||[]).map(r=>({...r,est_kg:burnerByDay.get(r.day)??null}));refillData=refills.refills||[];telemetryAudit=audit?.raw_ingestion_quality||null;renderChart();renderRefills();renderTelemetryQuality(); }
+    catch(e){ const el=$('fuelDetailStatus');if(el)el.textContent='Nie udało się pobrać historii: '+e.message;renderTelemetryQuality(); }
   }
   function updateSummary(s){summaryData=s;renderModel();renderForecast();renderPlanning();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
   window.addEventListener('thermoflow:fuel',e=>updateSummary(e.detail||{}));
