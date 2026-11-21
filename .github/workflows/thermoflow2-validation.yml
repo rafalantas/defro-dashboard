@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python syntax
-        run: python -m py_compile api.py fuel.py thermoflow2_runtime.py fuel_engine.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py fuel_refills.py fuel_counter.py fuel_energy.py fuel_planning.py fuel_errors.py fuel_http.py fuel_telemetry_provider.py fuel_weather_provider.py fuel_refill_provider.py fuel_thingspeak_daily_provider.py fuel_daily_provider.py fuel_counter_provider.py fuel_estimates.py fuel_period_analysis.py fuel_daily_model.py fuel_summary_metrics.py fuel_summary_estimates.py fuel_house_model.py fuel_runtime.py fuel_config.py fuel_stats_service.py fuel_daily_service.py fuel_summary_service.py fuel_refill_service.py fuel_summary_runtime.py fuel_prefetch_service.py fuel_climate_provider.py fuel_telemetry_audit_service.py
+        run: python -m py_compile api.py fuel.py thermoflow2_runtime.py fuel_engine.py fuel_ai.py fuel_telemetry.py fuel_schema.py fuel_models.py fuel_refills.py fuel_counter.py fuel_energy.py fuel_planning.py fuel_errors.py fuel_http.py fuel_telemetry_provider.py fuel_weather_provider.py fuel_refill_provider.py fuel_thingspeak_daily_provider.py fuel_daily_provider.py fuel_counter_provider.py fuel_estimates.py fuel_period_analysis.py fuel_daily_model.py fuel_summary_metrics.py fuel_summary_estimates.py fuel_house_model.py fuel_runtime.py fuel_config.py fuel_stats_service.py fuel_daily_service.py fuel_summary_service.py fuel_refill_service.py fuel_summary_runtime.py fuel_prefetch_service.py fuel_climate_provider.py fuel_telemetry_audit_service.py fuel_diagnostic_summary.py
       - name: Fuel Intelligence regression
         run: python -m unittest tests/test_fuel_ai.py tests/test_fuel_planning.py tests/test_fuel_calibration_windows.py
       - name: Fuel HTTP transport regression
@@ -41,7 +41,7 @@ jobs:
       - name: Fuel pure model regression
         run: python -m unittest tests/test_fuel_models.py tests/test_fuel_daily_model.py tests/test_fuel_summary_metrics.py tests/test_fuel_summary_estimates.py tests/test_fuel_house_model.py tests/test_fuel_runtime.py
       - name: Fuel telemetry provider and analysis regression
-        run: python -m unittest tests/test_fuel_telemetry.py tests/test_fuel_telemetry_resilience.py tests/test_fuel_telemetry_provider.py
+        run: python -m unittest tests/test_fuel_telemetry.py tests/test_fuel_telemetry_resilience.py tests/test_fuel_telemetry_provider.py tests/test_fuel_telemetry_diagnostics.py tests/test_fuel_diagnostic_summary.py
       - name: Canonical schema and API isolation regression
         run: python -m unittest tests/test_fuel_schema.py tests/test_fuel_config.py tests/test_fuel_stats_service.py tests/test_fuel_daily_service.py tests/test_fuel_summary_service.py tests/test_fuel_refill_service.py tests/test_fuel_summary_runtime.py tests/test_fuel_prefetch_service.py tests/test_fuel_climate_provider.py tests/test_fuel_telemetry_audit_service.py
       - name: Fuel energy module regression
