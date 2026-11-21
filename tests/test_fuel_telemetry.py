@@ -68,6 +68,44 @@ class FuelTelemetryTests(unittest.TestCase):
         room_series = next(item for item in result["series"] if item["id"] == "thermoflow-room")
         self.assertEqual(room_series["samples"], 2)  # surowa telemetria pozostaje widoczna
 
+    def test_raw_ingestion_quality_counts_invalid_missing_ranges_and_duplicates(self):
+        feeds = [
+            {"created_at": "2026-11-18T10:00:00Z", "field1": "65", "field2": "nan"},
+            {"created_at": "2026-11-18T10:00:00Z", "field1": "140", "field2": "42"},
+            {"created_at": "not-a-timestamp", "field1": "", "field2": "oops"},
+        ]
+        result = fuel_telemetry.analyze([feeds, [], []], ["123", "456", "789"], 2, now=NOW)
+        audit = result["raw_ingestion_quality"]
+        primary = audit["channels"][0]
+        self.assertEqual(primary["raw_feeds"], 3)
+        self.assertEqual(primary["timestamp_valid_feeds"], 2)
+        self.assertEqual(primary["timestamp_invalid_feeds"], 1)
+        self.assertEqual(primary["duplicate_timestamp_groups"], 1)
+        self.assertEqual(primary["duplicate_timestamp_feeds"], 1)
+
+        co = primary["fields"]["co_c"]
+        self.assertEqual(co["accepted_samples"], 1)
+        self.assertEqual(co["missing_samples"], 1)
+        self.assertEqual(co["out_of_range_samples"], 1)
+        self.assertEqual(co["lost_samples"], 2)
+        self.assertEqual(co["loss_percent"], 66.7)
+
+        dhw = primary["fields"]["dhw_c"]
+        self.assertEqual(dhw["invalid_samples"], 2)
+        self.assertEqual(dhw["missing_samples"], 0)
+        self.assertEqual(dhw["loss_percent"], 66.7)
+        self.assertEqual(primary["range_policy"], "diagnostic_only_no_samples_filtered")
+        # The pre-parse audit must not deduplicate or otherwise change series.
+        co_series = next(item for item in result["series"] if item["key"] == "co_c")
+        self.assertEqual(co_series["samples"], 2)
+
+    def test_raw_ingestion_quality_handles_empty_channels(self):
+        result = fuel_telemetry.analyze([[], []], ["123", "456"], 1, now=NOW)
+        audit = result["raw_ingestion_quality"]
+        self.assertEqual(audit["total_raw_feeds"], 0)
+        self.assertIsNone(audit["channels"][0]["fields"]["co_c"]["loss_percent"])
+        self.assertEqual(audit["channels"][0]["timestamp_invalid_feeds"], 0)
+
     def test_bad_values_are_not_counted(self):
         feeds = [{"created_at": "2026-11-18T10:00:00Z", "field1": "", "field2": "nan"}]
         result = fuel_telemetry.analyze([feeds, []], ["123", "456"], 1)
