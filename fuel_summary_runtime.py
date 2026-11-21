@@ -1,11 +1,30 @@
 """Background summary worker lifecycle and stale-while-refresh behavior."""
 from __future__ import annotations
 
+import logging
+from time import perf_counter
+
+_logger = logging.getLogger(__name__)
+
+
+def _run_stage(name, operation):
+    started = perf_counter()
+    try:
+        return operation()
+    except Exception as error:
+        # Exception messages can include upstream request details. Log only the type.
+        _logger.warning("Fuel summary %s failed (%s)", name, type(error).__name__)
+        raise
+    finally:
+        elapsed = perf_counter() - started
+        if elapsed >= 5:
+            _logger.warning("Fuel summary %s took %.1fs", name, elapsed)
+
 
 def summary_job(deps: dict) -> None:
     try:
-        deps["prefetch"]()
-        deps["build"]()
+        _run_stage("prefetch", deps["prefetch"])
+        _run_stage("build", deps["build"])
         deps["state"]["error"] = None
     except deps["fuel_error"] as exc:
         deps["state"]["error"] = exc.message
