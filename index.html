@@ -187,6 +187,20 @@
     <div class="sensor-chip control unknown" id="sensorRoom"><i></i><span>Regulator pokojowy · brak odczytu</span></div>
     <div class="sensor-chip" id="sensorSupply"><i></i><span>Czujnik zasilania kotła · oczekiwanie na API</span></div>
   </div></section>
+  <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="intelligenceTitle" hidden>
+    <div class="cardhead"><div><h2 id="intelligenceTitle">ThermoFlow Unified Intelligence</h2><div class="subhead">Bieżąca ocena i testy historyczne · tylko odczyt</div></div></div>
+    <div class="diagnostics-toolbar intelligence-toolbar">
+      <p id="intelligenceStatus" role="status">Oczekiwanie na odczyt.</p>
+      <button type="button" class="button diagnostics-refresh" id="intelligenceRefresh">Odśwież wyniki</button>
+    </div>
+    <div class="intelligence-content" id="intelligenceResults">
+      <h3>Bieżąca ocena</h3>
+      <div class="intelligence-grid" id="intelligenceLive"></div>
+      <h3>Benchmarki historyczne</h3>
+      <p class="intelligence-note">Porównanie na odłożonych danych testowych, nie prognoza na żywo. MAE i RMSE: im niższe, tym lepiej.</p>
+      <div class="intelligence-grid" id="intelligenceBenchmarks"></div>
+    </div>
+  </section>
   <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="shadowTitle" hidden>
     <div class="cardhead"><div><h2 id="shadowTitle">Ocena obserwacyjna</h2><div class="subhead">Spaliny i powrót · tylko odczyt</div></div></div>
     <div class="diagnostics-toolbar"><button type="button" class="button diagnostics-refresh" id="shadowRefresh" data-testid="button-refresh-shadow">Odśwież ocenę</button></div>
@@ -215,4 +229,5 @@
   <script src="/assets/js/overview.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/diagnostics.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/shadow-panel.js?v=__APP_COMMIT__" defer></script>
+  <script src="/assets/js/intelligence-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/navigation.js?v=__APP_COMMIT__" defer></script></body></html>
