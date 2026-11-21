@@ -30,20 +30,28 @@ def build_stats(query: dict, deps: dict) -> dict:
         except deps["fuel_error"] as error:
             return {"day": day.isoformat(), "error": error.message}
 
+    wanted = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    # Warm raw daily inputs before taking the shared lock. These calls perform
+    # network I/O and must not serialize the daily endpoint behind this request.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(prefetch, wanted))
+
     with deps["lock"]:
-        wanted = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
-        # Preserve the legacy four-worker prefetch and lock scope.
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(prefetch, wanted))
         try:
             refills = deps["refills"]()
             model = deps["fit_model"](refills)
-            periods = deps["periods"](refills)
         except deps["fuel_error"] as error:
-            refills, periods, model = [], [], None
+            refills, model = [], None
             errors.append(error.message)
-        daily = [safe_daily(day) for day in wanted]
 
+    # Period aggregation and daily reads may fetch weather/ThingSpeak data;
+    # keep them outside the global lock so unrelated read-only routes can run.
+    try:
+        periods = deps["periods"](refills)
+    except deps["fuel_error"] as error:
+        periods = []
+        errors.append(error.message)
+    daily = [safe_daily(day) for day in wanted]
     calibration = deps["calibration"](periods)
     for row in daily:
         if row.get("burner_kwh") is None or not row.get("burner_kwh_complete", True):
