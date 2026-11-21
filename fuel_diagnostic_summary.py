@@ -33,6 +33,24 @@ def build_diagnostic_summary(raw_diagnostics: dict, quality: dict,
             "message": "Sygnał do analizy hydrauliki; nie potwierdza awarii ani zadziałania ochrony.",
         })
 
+    hydraulic_correlation = raw.get("hydraulic_correlation") or {}
+    pump_transitions = hydraulic_correlation.get("pump_transitions") or []
+    valve_movements = hydraulic_correlation.get("valve_movements") or []
+    if pump_transitions or valve_movements:
+        findings.append({
+            "code": "hydraulic_event_correlation",
+            "severity": "info",
+            "title": "Korelacja pracy pomp i zaworu 4D",
+            "pump_transitions": len(pump_transitions),
+            "valve_movements": len(valve_movements),
+            "responses_with_sufficient_coverage": sum(
+                item.get("return_response", {}).get("response_status") == "observed_both_windows"
+                for item in pump_transitions + valve_movements
+            ),
+            "confidence": "timestamped_cooccurrence",
+            "message": "Zestawienie czasowe próbek przed i po zmianie stanu pompy lub ruchu zaworu; współwystępowanie nie dowodzi przyczynowości i nie zmienia nastaw.",
+        })
+
     ignition = raw.get("ignition_activity") or {}
     cycles = ignition.get("cycles") or []
     if cycles:
