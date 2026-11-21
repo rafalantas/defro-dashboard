@@ -30,6 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from fuel_errors import FuelError
 from fuel_http import request_json as _raw_request_json
+from fuel_summary_runtime import summary_build_profile, summary_build_stage
 from fuel_telemetry_provider import fetch_history as fetch_telemetry_history
 from fuel_weather_provider import openmeteo_mean as _openmeteo_mean_impl, weather_for_day as _weather_impl
 from fuel_refill_provider import fetch_refills as fetch_refill_records, write_refill as write_refill_record
@@ -233,7 +234,8 @@ def _om_offset() -> dict:
             return cached
     # Single-flight: przy zimnym cache tylko jeden wątek liczy offset (setki dób),
     # pozostali dostają ten sam wynik. Ścieżka nie bierze _lock -> brak deadlocku.
-    return _singleflight.run("om_offset", _om_offset_refresh)
+    with summary_build_stage("temperature_offset"):
+        return _singleflight.run("om_offset", _om_offset_refresh)
 
 
 def _om_offset_refresh() -> dict:
@@ -335,11 +337,12 @@ def _span_estimate(refills: list[dict], old: dict):
 
 
 def _counter_calibration(refills: list[dict]) -> dict:
-    return _counter_calibration_impl(
-        refills, COUNTER_EPOCH, datetime.now(TZ), _counter_drop, MIN_COUNTER_DROP,
-        MIN_SPAN_DROP, COUNTER_PROVISIONAL_KG_PER_PERCENT, COUNTER_ESTIMATE_UNCERTAINTY,
-        COUNTER_COLLECTING_MESSAGE, _fmt_pl,
-    )
+    with summary_build_stage("calibration"):
+        return _counter_calibration_impl(
+            refills, COUNTER_EPOCH, datetime.now(TZ), _counter_drop, MIN_COUNTER_DROP,
+            MIN_SPAN_DROP, COUNTER_PROVISIONAL_KG_PER_PERCENT, COUNTER_ESTIMATE_UNCERTAINTY,
+            COUNTER_COLLECTING_MESSAGE, _fmt_pl,
+        )
 
 
 def _counter_factor(counter: dict, moment: datetime):
@@ -910,14 +913,20 @@ def _planning_forecast(model: dict | None, daily_model: dict | None,
 def _summary_calibration_inputs(refills: list[dict]):
     """Preserve legacy summary calibration scope: the latest seven refill events."""
     recent_refills = refills[-7:]
-    recent_periods = _periods(recent_refills)
-    calibration = _calibration(recent_periods)
+    with summary_build_stage("calibration"):
+        recent_periods = _periods(recent_refills)
+        calibration = _calibration(recent_periods)
     counter = _counter_calibration(recent_refills)
     return recent_periods, calibration, counter
 
 
 def _summary_build() -> dict:
-    """Compatibility wrapper for the extracted summary calculation service."""
+    """Measure the complete build separately from prefetch."""
+    with summary_build_profile():
+        return _summary_build_impl()
+
+
+def _summary_build_impl() -> dict:
     from fuel_summary_service import build_summary
     return build_summary({
         "now": lambda: datetime.now(TZ),
@@ -1033,6 +1042,11 @@ def _telemetry_fetch_windows(days: int, today: date) -> list[tuple[date, date, i
 
 def _telemetry_history(days: int) -> dict:
     """Legacy facade: delegate history retrieval to the injectable provider."""
+    with summary_build_stage("telemetry_fetch"):
+        return _telemetry_history_impl(days)
+
+
+def _telemetry_history_impl(days: int) -> dict:
     return fetch_telemetry_history(
         days=days,
         max_days=MAX_DAYS,

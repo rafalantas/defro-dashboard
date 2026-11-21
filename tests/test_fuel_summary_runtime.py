@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from fuel_errors import FuelError
-from fuel_summary_runtime import get_summary, summary_job, summary_kick, warmup
+from fuel_summary_runtime import get_summary, summary_build_profile, summary_build_stage, summary_job, summary_kick, warmup
 
 
 class FakeThread:
@@ -163,6 +163,58 @@ class SummaryRuntimeTests(unittest.TestCase):
             with self.assertLogs("fuel_summary_runtime", level="WARNING") as logs:
                 summary_job(deps)
         self.assertEqual(logs.output, ["WARNING:fuel_summary_runtime:Fuel summary prefetch took 12.0s"])
+
+    def test_profile_reports_exclusive_stage_times_and_counts(self):
+        with patch("fuel_summary_runtime.perf_counter", side_effect=[0, 2, 3, 8, 10, 12, 22, 23, 24, 30]):
+            with self.assertLogs("fuel_summary_runtime", level="WARNING") as logs:
+                with summary_build_profile():
+                    with summary_build_stage("calibration"):
+                        with summary_build_stage("temperature_offset"):
+                            pass
+                    with summary_build_stage("telemetry_fetch"):
+                        pass
+                    with summary_build_stage("telemetry_fetch"):
+                        pass
+        self.assertEqual(logs.output, [
+            "WARNING:fuel_summary_runtime:Fuel summary build profile status=ok total=30.000s "
+            "temperature_offset=5.000s/1 calibration=3.000s/1 telemetry_fetch=11.000s/2 other=11.000s"
+        ])
+
+    def test_profile_marks_failed_build_and_resets_after_error(self):
+        with self.assertLogs("fuel_summary_runtime", level="WARNING") as logs:
+            with self.assertRaisesRegex(ValueError, "private details"):
+                with summary_build_profile():
+                    with summary_build_stage("calibration"):
+                        raise ValueError("private details")
+        self.assertIn("status=failed", logs.output[0])
+        self.assertNotIn("private details", logs.output[0])
+        with patch("fuel_summary_runtime.perf_counter") as clock:
+            with summary_build_stage("calibration"):
+                pass
+        clock.assert_not_called()
+
+    def test_runtime_profiles_real_summary_entry_points(self):
+        import thermoflow2_runtime as runtime
+
+        def fake_build(deps):
+            deps["om_offset"]()
+            deps["om_offset"]()  # Fresh cache: no second refresh is timed.
+            deps["calibration_inputs"]([])
+            self.assertEqual(runtime._telemetry_history(120), {"telemetry": "fixture"})
+            return {"result": "unchanged"}
+
+        with (
+            patch("fuel_summary_service.build_summary", side_effect=fake_build),
+            patch.object(runtime, "_offset_cache", {"at": 0.0, "data": None}),
+            patch.object(runtime, "_temps_data_start", return_value=None),
+            patch.object(runtime, "_periods", return_value=[]),
+            patch.object(runtime, "_calibration", return_value={}),
+            patch.object(runtime, "_counter_calibration_impl", return_value={}),
+            patch.object(runtime, "fetch_telemetry_history", return_value={"telemetry": "fixture"}),
+            self.assertLogs("fuel_summary_runtime", level="WARNING") as logs,
+        ):
+            self.assertEqual(runtime._summary_build(), {"result": "unchanged"})
+        self.assertRegex(logs.output[0], r"temperature_offset=\d+\.\d+s/1 calibration=\d+\.\d+s/2 telemetry_fetch=\d+\.\d+s/1")
 
 
 if __name__ == "__main__":
