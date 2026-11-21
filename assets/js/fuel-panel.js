@@ -119,18 +119,47 @@
         refillData=refills.refills||[];
         renderRefills();
       }).catch(error=>detailError('Historia dosypek',error));
-      const auditTask=get('/api/fuel/telemetry-audit?days=30').then(audit=>{
-        telemetryAudit=audit?.raw_ingestion_quality||null;
-        renderTelemetryQuality();
-      }).catch(error=>{
-        telemetryAudit=null;
-        renderTelemetryQuality();
-        detailError('Audyt telemetrii',error);
-      });
-      await Promise.allSettled([dailyTask,statsTask,refillsTask,auditTask]);
+      await Promise.allSettled([dailyTask,statsTask,refillsTask]);
     })().finally(()=>{detailsLoadPromise=null;});
     return detailsLoadPromise;
   }
+  let auditPollTimer=null;
+  async function refreshAuditStatus(){
+    try{
+      const status=await get('/api/fuel/telemetry-audit');
+      const button=$('fuelTelemetryAuditRun'), meta=$('fuelTelemetryAuditMeta');
+      if(button)button.disabled=status.state==='running';
+      if(status.state==='completed'&&status.result){
+        telemetryAudit=status.result.raw_ingestion_quality||null;
+        renderTelemetryQuality();
+        if(meta)meta.textContent='Ostatni audyt: '+date(status.finished_at);
+      }else if(status.state==='running'){
+        if(meta)meta.textContent='Audyt trwa… rozpoczęto '+date(status.started_at);
+        if(!auditPollTimer)auditPollTimer=setTimeout(()=>{auditPollTimer=null;refreshAuditStatus();},2000);
+      }else if(status.state==='failed'){
+        if(meta)meta.textContent='Błąd audytu: '+(status.error||'nieznany błąd');
+      }else if(meta){
+        meta.textContent='Audyt nie był jeszcze uruchamiany';
+      }
+    }catch(error){detailError('Status audytu telemetrii',error);}
+  }
+  async function runTelemetryAudit(){
+    const button=$('fuelTelemetryAuditRun'), meta=$('fuelTelemetryAuditMeta');
+    if(button)button.disabled=true;
+    if(meta)meta.textContent='Uruchamianie audytu…';
+    try{
+      const response=await ThermoFlowApi.post('/api/fuel/telemetry-audit');
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      await refreshAuditStatus();
+    }catch(error){
+      if(meta)meta.textContent='Nie udało się uruchomić audytu: '+(error.message||'błąd');
+      if(button)button.disabled=false;
+    }
+  }
+  const auditButton=$('fuelTelemetryAuditRun');
+  if(auditButton)auditButton.addEventListener('click',runTelemetryAudit);
+  refreshAuditStatus();
+
   function updateSummary(s){summaryData=s;renderModel();renderForecast();renderPlanning();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
   window.addEventListener('thermoflow:fuel',e=>updateSummary(e.detail||{}));
   window.addEventListener('resize',renderChart);
