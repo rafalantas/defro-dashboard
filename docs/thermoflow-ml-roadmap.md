@@ -52,6 +52,8 @@ Kandydat OLS uczy się wyłącznie na starszych cyklach. Porównanie na nowszym 
 
 ## Porównanie zużycia paliwa na zweryfikowanych okresach (#95)
 
+Jeśli historia dosypek jest w istniejącym kanale Pelet, użyj [importera ThingSpeak](thermoflow-fuel-thingspeak-import.md) zamiast ręcznie przepisywać kilogramy.
+
 ```sh
 python3 -m thermoflow_fuel_ml verified-fuel-periods.json > fuel-benchmark.json
 ```
