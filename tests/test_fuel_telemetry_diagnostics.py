@@ -124,7 +124,8 @@ class RawTelemetryDiagnosticsTests(unittest.TestCase):
         cycle = ignition["cycles"][0]
         self.assertEqual(cycle["minutes_to_flame"], 1.0)
         self.assertEqual(cycle["minutes_to_flue_activity"], 2.0)
-        self.assertEqual(cycle["minutes_to_temperature_recovery"], 9.0)
+        # Request is detected at minute 1; recovery at minute 9 is 8 minutes later.
+        self.assertEqual(cycle["minutes_to_temperature_recovery"], 8.0)
 
     def test_hysteresis_crossing_does_not_bridge_long_telemetry_gap(self):
         start = datetime(2026, 11, 20, 8, tzinfo=timezone.utc)
