@@ -93,9 +93,43 @@
     const days=(summaryData?.forecast||[]).slice(0,7);
     el.innerHTML=days.length?days.map(d=>'<div class="fuel-forecast-day"><span>'+esc(new Date(d.day+'T12:00:00').toLocaleDateString('pl-PL',{weekday:'short',day:'2-digit',month:'2-digit'}))+'</span><b>'+n(d.kg,1)+' kg</b><small>'+n(d.t_mean,1)+' °C</small></div>').join(''):'<div class="fuel-empty">Prognoza niedostępna.</div>';
   }
-  async function loadDetails(){
-    try { const [daily,stats,refills,audit]=await Promise.all([get('/api/fuel/daily?days=30'),get('/api/fuel/stats?days=30'),get('/api/fuel/refills'),get('/api/fuel/telemetry-audit?days=30').catch(()=>null)]); const burnerByDay=new Map((stats.daily||[]).map(r=>[r.day,r.est_kg])); dailyData=(daily.days||[]).map(r=>({...r,est_kg:burnerByDay.get(r.day)??null}));refillData=refills.refills||[];telemetryAudit=audit?.raw_ingestion_quality||null;renderChart();renderRefills();renderTelemetryQuality(); }
-    catch(e){ const el=$('fuelDetailStatus');if(el)el.textContent='Nie udało się pobrać historii: '+e.message;renderTelemetryQuality(); }
+  let detailsLoadPromise=null, burnerEstimates=new Map();
+  function detailError(label,error){
+    const el=$('fuelDetailStatus');
+    if(el)el.textContent=label+': '+(error?.message||'błąd pobierania');
+  }
+  function applyBurnerEstimates(){
+    dailyData=dailyData.map(row=>({...row,est_kg:burnerEstimates.get(row.day)??null}));
+    renderChart();
+  }
+  function loadDetails(){
+    if(detailsLoadPromise)return detailsLoadPromise;
+    detailsLoadPromise=(async()=>{
+      // Each section paints as soon as its own endpoint responds. The expensive
+      // telemetry audit must never hold the daily chart or refill history.
+      const dailyTask=get('/api/fuel/daily?days=30').then(daily=>{
+        dailyData=daily.days||[];
+        applyBurnerEstimates();
+      }).catch(error=>detailError('Historia dobowa',error));
+      const statsTask=get('/api/fuel/stats?days=30').then(stats=>{
+        burnerEstimates=new Map((stats.daily||[]).map(row=>[row.day,row.est_kg]));
+        applyBurnerEstimates();
+      }).catch(error=>detailError('Estymacja mocy palnika',error));
+      const refillsTask=get('/api/fuel/refills').then(refills=>{
+        refillData=refills.refills||[];
+        renderRefills();
+      }).catch(error=>detailError('Historia dosypek',error));
+      const auditTask=get('/api/fuel/telemetry-audit?days=30').then(audit=>{
+        telemetryAudit=audit?.raw_ingestion_quality||null;
+        renderTelemetryQuality();
+      }).catch(error=>{
+        telemetryAudit=null;
+        renderTelemetryQuality();
+        detailError('Audyt telemetrii',error);
+      });
+      await Promise.allSettled([dailyTask,statsTask,refillsTask,auditTask]);
+    })().finally(()=>{detailsLoadPromise=null;});
+    return detailsLoadPromise;
   }
   function updateSummary(s){summaryData=s;renderModel();renderForecast();renderPlanning();const p=$('fuelStockMethod');if(p&&s.hopper)p.textContent=s.hopper.method||'metoda szacowania niedostępna';setTimeout(renderChart,120);}
   window.addEventListener('thermoflow:fuel',e=>updateSummary(e.detail||{}));
