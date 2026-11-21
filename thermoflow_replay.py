@@ -20,9 +20,26 @@ def replay_telemetry(
     control actions. Callers can persist the returned JSON as a replay artifact.
     """
     timestamp = now or datetime.now(timezone.utc)
-    raw = {key: [list(sample) for sample in values] for key, values in points.items()}
+    # The intelligence pipeline consumes Unix timestamps, while the raw
+    # diagnostics provider consumes timezone-aware datetimes. Adapt only the
+    # replay copy; never mutate the caller's snapshot or synthesize samples.
+    raw = {}
+    for key, values in points.items():
+        converted = []
+        for sample in values:
+            row = list(sample)
+            if len(row) >= 2 and isinstance(row[0], (int, float)):
+                row[0] = datetime.fromtimestamp(row[0], timezone.utc)
+            converted.append(row)
+        raw[key] = converted
+
+    intelligence_raw = {
+        key: [[int(sample[0].timestamp()) if isinstance(sample[0], datetime) else sample[0],
+               *sample[1:]] for sample in values]
+        for key, values in raw.items()
+    }
     raw_result = build_raw_diagnostics(raw, timestamp)
-    intelligence = build_thermoflow_intelligence(raw, cycles or {})
+    intelligence = build_thermoflow_intelligence(intelligence_raw, cycles or {})
     return {
         "replay_version": 1,
         "generated_at": timestamp.isoformat(),
