@@ -51,6 +51,20 @@ def build_diagnostic_summary(raw_diagnostics: dict, quality: dict,
             "message": "Zestawienie czasowe próbek przed i po zmianie stanu pompy lub ruchu zaworu; współwystępowanie nie dowodzi przyczynowości i nie zmienia nastaw.",
         })
 
+    cycle_hydraulic = raw.get("cycle_hydraulic_response") or {}
+    if cycle_hydraulic.get("cycles_analyzed"):
+        findings.append({
+            "code": "ignition_hydraulic_response",
+            "severity": "info",
+            "title": "Hydraulika w cyklach rozpalenia",
+            "cycles_analyzed": cycle_hydraulic.get("cycles_analyzed", 0),
+            "cycles_with_return_coverage": cycle_hydraulic.get("cycles_with_return_coverage", 0),
+            "cycles_with_pump_events": cycle_hydraulic.get("cycles_with_pump_events", 0),
+            "cycles_with_valve_movements": cycle_hydraulic.get("cycles_with_valve_movements", 0),
+            "confidence": "timestamped_cooccurrence",
+            "message": "Zestawienie temperatury powrotu, przełączeń pomp i ruchu zaworu wokół żądań rozpalenia; współwystępowanie nie dowodzi przyczynowości.",
+        })
+
     ignition = raw.get("ignition_activity") or {}
     cycles = ignition.get("cycles") or []
     if cycles:
