@@ -101,7 +101,7 @@ class FuelCacheState:
         self.weather = {}
         self.weather_fetched = {}
         self.daily_model = {"key": None, "data": None}
-        self.telemetry_history = {"key": None, "at": 0.0, "data": None}
+        self.telemetry_history = {"key": None, "at": 0.0, "data": None, "entries": {}}
 
         self.cache_locks = {
             "daily": threading.Lock(),
