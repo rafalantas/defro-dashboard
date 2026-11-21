@@ -53,3 +53,16 @@ def test_refill_history_does_not_render_notes():
     assert "Bez notatki" not in render
     assert "date(r.ts)" in render
     assert "n(r.kg,1)+' kg'" in render
+
+
+def test_telemetry_quality_panel_uses_read_only_audit_endpoint_and_handles_missing_data():
+    source = (ROOT / "assets/js/fuel-panel.js").read_text(encoding="utf-8")
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert 'id="fuelTelemetryQuality"' in html
+    assert "/api/fuel/telemetry-audit?days=30" in source
+    assert "audit?.raw_ingestion_quality||null" in source
+    assert "timestamp_unusable_samples" in source
+    assert "duplicate_timestamp_feeds" in source
+    assert "loss_percent" in source
+    assert "Audyt read-only" in source
+    assert "fuelTelemetryQuality" in source
