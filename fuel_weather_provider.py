@@ -18,6 +18,11 @@ def openmeteo_mean(*, day, latitude, longitude, timezone, archive_url,
     common = {"latitude": latitude, "longitude": longitude,
               "daily": "temperature_2m_mean", "timezone": str(timezone)}
 
+    # Values from *this* response. Reading the requested day from here (and
+    # not back from the shared cache) keeps concurrent callers for "today"
+    # from popping each other's freshly fetched value.
+    fetched = {}
+
     def fill(url, params):
         try:
             daily = request_json(url, params).get("daily", {})
@@ -26,6 +31,7 @@ def openmeteo_mean(*, day, latitude, longitude, timezone, archive_url,
         for stamp, value in zip(daily.get("time", []),
                                 daily.get("temperature_2m_mean", [])):
             if value is not None:
+                fetched[stamp] = float(value)
                 cache[stamp] = float(value)
 
     if day < today - timedelta(days=7):
@@ -38,8 +44,9 @@ def openmeteo_mean(*, day, latitude, longitude, timezone, archive_url,
         fill(forecast_url, {**common, "past_days": 14, "forecast_days": 1})
     if day >= today:
         # Today's forecast changes during the day; do not freeze it in cache.
-        return cache.pop(key, None)
-    return cache.get(key)
+        shared = cache.pop(key, None)
+        return fetched[key] if key in fetched else shared
+    return fetched.get(key, cache.get(key))
 
 
 def weather_for_day(*, day, latitude, longitude, timezone, archive_url,
