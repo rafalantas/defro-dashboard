@@ -13,18 +13,23 @@ class TelemetryAuditJobTests(unittest.TestCase):
             threading.Event().wait(0.01)
         return job.status()
 
-    def test_audit_runs_only_after_start_and_retains_result(self):
+    def test_audit_runs_only_after_start_and_can_be_repeated(self):
         calls = []
         job = TelemetryAuditJob(lambda: calls.append("run") or {"total": 12})
         self.assertEqual(job.status()["state"], "never_run")
         self.assertEqual(calls, [])
+
         self.assertEqual(job.start()["state"], "running")
         status = self.wait_for_finish(job)
         self.assertEqual(status["state"], "completed")
         self.assertEqual(status["result"], {"total": 12})
         self.assertEqual(calls, ["run"])
-        self.assertEqual(job.start()["state"], "completed")
-        self.assertEqual(calls, ["run"])
+
+        self.assertEqual(job.start()["state"], "running")
+        status = self.wait_for_finish(job)
+        self.assertEqual(status["state"], "completed")
+        self.assertEqual(status["result"], {"total": 12})
+        self.assertEqual(calls, ["run", "run"])
 
     def test_concurrent_start_requests_share_one_running_audit(self):
         entered, release = threading.Event(), threading.Event()
