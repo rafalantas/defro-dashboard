@@ -11,3 +11,9 @@
 ## Diagnostic AI
 
 `diagnostic_hypotheses` zgłasza tylko zgodne czasowo odchylenia, odwołując się do odpowiedniego rekordu w `screens`. Rozróżnia „brak sygnału w ocenionych składowych” od „nie wiadomo”. Zmiana warunków pracy i zmiana pomiaru pozostają alternatywnymi hipotezami. To deterministyczne reguły na danych, bez LLM, ustalania przyczyny, automatycznych komend ani zmian nastaw.
+
+## API i Dashboard
+
+`GET /api/thermoflow/v1/shadow` (`thermoflow-shadow/1`, `Cache-Control: no-store`) czyta gotowy wynik pollera. Nie pobiera danych, nie trenuje modelu i nie udostępnia surowej historii. Możliwe stany to `collecting`, `telemetry_unavailable`, `screened` oraz `stale` (90 s od ostatniej oceny; bez wyniku i hipotez). Widok „Ocena obserwacyjna” pokazuje czas oceny i stan; przy wejściu do zakładki lub kliknięciu przycisku pobiera nowy widok.
+
+Bufor RAM mieści maksymalnie 49 próbek. Zmiana odczytanego FIRE, stanu pomp 4D/podłogówki/CWU lub luka powyżej 75 s zaczynają nowy segment. Są to przybliżenia porównywalnej fazy, nie gwarancja identycznych warunków. Próg obserwacyjny (spaliny 8°C, powrót 3°C) wymaga walidacji i nie jest nastawą kotła. Po restarcie ocena jest budowana na nowo; żadna historia w ThingSpeak nie jest modyfikowana. Wyniki benchmarków ML pozostają offline.
