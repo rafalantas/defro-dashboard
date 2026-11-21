@@ -148,7 +148,7 @@
     if(button)button.disabled=true;
     if(meta)meta.textContent='Uruchamianie audytu…';
     try{
-      const response=await fetch('/api/fuel/telemetry-audit',{method:'POST',headers:{'Accept':'application/json'}});
+      const response=await ThermoFlowApi.post('/api/fuel/telemetry-audit');
       if(!response.ok)throw new Error('HTTP '+response.status);
       await refreshAuditStatus();
     }catch(error){
