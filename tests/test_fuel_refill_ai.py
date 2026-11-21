@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fuel_refill_ai import build_refill_period_rows
+from fuel_refill_ai import TELEMETRY_FEATURES, build_refill_period_rows
 import fuel_ai
 
 
@@ -93,8 +93,10 @@ class RefillPeriodAiTests(unittest.TestCase):
             {"ts": datetime(2026, 1, 2, 8, tzinfo=tz).isoformat(), "kg": 12},
         ]
         def features(start, end):
+            # Only return temperature is partial; the other required inputs
+            # must be present for the whole period to be telemetry_complete.
             common = {"hdd_lag": 8, "solar_mj": 2, "wind_max_kmh": 10,
-                      "telemetry_pump_floor_h": 10}
+                      **{name: 10 for name in TELEMETRY_FEATURES if name != "telemetry_return_c"}}
             return [
                 dict(common, fraction=0.9, telemetry_return_c=55),
                 dict(common, fraction=0.1, telemetry_return_c=None),
