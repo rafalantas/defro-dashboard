@@ -40,6 +40,10 @@ assert len(audit.ids) == len(set(audit.ids)), "Duplicate HTML IDs"
 assert not audit.inline_scripts, "JavaScript must stay in external modules"
 assert not audit.inline_styles, "CSS must stay in external stylesheets"
 assert audit.schematic, "Original inline installation SVG must remain present"
+assert '<section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="intelligenceTitle" hidden>' in HTML
+assert "assets/js/intelligence-panel.js" in audit.assets
+assert {"intelligenceLive", "intelligenceBenchmarks", "intelligenceRefresh", "intelligenceStatus",
+        "shadowStatus", "diagnosticsHistoryTitle"}.issubset(audit.ids)
 for asset in audit.assets:
     assert (ROOT / asset).is_file(), f"Missing frontend asset: {asset}"
 print(f"Frontend assets: {len(audit.assets)} paths, {len(audit.ids)} stable IDs, inline SVG: OK")
