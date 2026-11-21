@@ -49,7 +49,7 @@ def build_stats(query: dict, deps: dict) -> dict:
     try:
         periods = deps["periods"](refills)
     except deps["fuel_error"] as error:
-        periods = []
+        refills, periods, model = [], [], None
         errors.append(error.message)
     daily = [safe_daily(day) for day in wanted]
     calibration = deps["calibration"](periods)
