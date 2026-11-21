@@ -42,6 +42,7 @@
         // Navigation remains usable when browser storage is unavailable.
       }
     }
+    window.dispatchEvent(new CustomEvent('thermoflow:view', {detail: {view}}));
     return activeIndex;
   }
 
