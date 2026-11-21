@@ -48,6 +48,7 @@ from fuel_counter import (
     counter_factor as _counter_factor_impl,
     counter_kg as _counter_kg_impl,
     counter_method as _counter_method_impl,
+    movement_diagnostics as _counter_movement_diagnostics_impl,
     counter_regime as _counter_regime_impl,
     span_estimate as _span_estimate_impl,
 )
@@ -376,6 +377,7 @@ def _counter_day_diagnostic(day: date, counter: dict):
     before_start = [point for point in all_points if point[0] <= t0]
     inside = [point for point in all_points if t0 < point[0] <= t1]
     sequence = ([before_start[-1]] if before_start else []) + inside
+    diagnostic.update(_counter_movement_diagnostics_impl(sequence, TZ))
     if len(sequence) < 2:
         return finish("insufficient_samples_for_daily_drop")
     if not before_start:

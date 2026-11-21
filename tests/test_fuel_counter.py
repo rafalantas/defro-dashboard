@@ -105,5 +105,18 @@ class FuelCounterTests(unittest.TestCase):
         self.assertEqual(counter_regime(date(2026, 11, 14), bounds, EPOCH), "new")
 
 
+    def test_daily_counter_movement_diagnostics_keep_rises_and_drops_separate(self):
+        from fuel_counter import movement_diagnostics
+        # 83 -> 80 -> 88 -> 85 -> 92: 6 pp down, 15 pp up, +9 pp net.
+        samples = [(0, 83.0), (60, 80.0), (120, 88.0), (180, 85.0), (240, 92.0)]
+        result = movement_diagnostics(samples, timezone.utc)
+        self.assertEqual(result["upward_total_pct"], 15.0)
+        self.assertEqual(result["downward_total_pct"], 6.0)
+        self.assertEqual(result["net_change_pct"], 9.0)
+        self.assertEqual(result["upward_changes"], 2)
+        self.assertEqual(result["downward_changes"], 2)
+        self.assertEqual(result["max_gap_seconds"], 60)
+
+
 if __name__ == "__main__":
     unittest.main()
