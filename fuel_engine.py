@@ -58,7 +58,9 @@ class ThermoFlowEngine:
             if method == "GET" and path == "/api/fuel/daily":
                 return 200, self._handlers["daily"](query)
             if method == "GET" and path == "/api/fuel/telemetry-audit":
-                return 200, self._handlers["telemetry_audit"](query)
+                return 200, self._handlers["telemetry_audit_status"]()
+            if method == "POST" and path == "/api/fuel/telemetry-audit":
+                return 202, self._handlers["telemetry_audit_start"]()
             if method == "GET" and path == "/api/fuel/refills":
                 return 200, {"refills": self._handlers["refills"]()}
             if method == "POST" and path == "/api/fuel/refill":
