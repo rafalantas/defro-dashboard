@@ -94,6 +94,8 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
         if first is not None and second is not None and float(first) >= warm_threshold and float(second) >= warm_threshold:
             season_end = date(year, month, 1)
             break
+    season_start_detected = season_start is not None
+    season_end_detected = season_end is not None and season_end > today
     if season_start is None:
         season_start = date(today.year, 10, 1) if today.month >= 10 else (date(today.year - 1, 10, 1) if today.month <= 4 else today)
     if season_end is None or season_end <= today:
