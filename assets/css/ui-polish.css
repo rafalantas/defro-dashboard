@@ -284,3 +284,82 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .intelligence-note{max-width:76ch;line-height:1.6}
 @media(max-width:900px){#fuelCard .fuel-analysis-layout{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:650px){#fuelCard .fuel-planning-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.view-nav{top:0}}
+
+
+/* Fuel panel polish: theme-aware surfaces and a compact model scorecard. */
+#fuelCard .fuel-detail-section{
+  background:var(--panel2);
+  border-color:var(--line);
+}
+#fuelCard .fuel-analysis-side .fuel-detail-panel{
+  background:var(--panel);
+  border-color:var(--line);
+}
+#fuelCard .fuel-forecast-panel{
+  background:color-mix(in srgb,var(--teal) 7%,var(--panel));
+  border-color:color-mix(in srgb,var(--teal) 34%,var(--line));
+}
+#fuelCard .fuel-forecast-panel h4:before{
+  background:color-mix(in srgb,var(--teal) 14%,var(--panel2));
+}
+#fuelCard .fuel-model-panel #fuelModelDetails{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  align-items:stretch;
+}
+#fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row{
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:flex-start!important;
+  align-items:stretch!important;
+  gap:5px!important;
+  padding:10px 11px!important;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--panel2);
+  overflow-wrap:anywhere;
+}
+#fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row:nth-child(6){
+  grid-column:1/-1;
+}
+#fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row>span{
+  color:var(--muted)!important;
+  font-size:10px!important;
+  line-height:1.4!important;
+}
+#fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row>b{
+  color:var(--text)!important;
+  font-family:var(--font-ui,var(--sans))!important;
+  font-size:12px!important;
+  font-weight:700!important;
+  line-height:1.5!important;
+  font-variant-numeric:tabular-nums;
+}
+#fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row:nth-child(6)>b{
+  font-size:11px!important;
+  font-weight:600!important;
+}
+#fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading{
+  flex-direction:row;
+  align-items:center;
+}
+#fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading .button{
+  flex:0 0 auto;
+}
+#fuelCard .fuel-planning-card{
+  background:var(--panel2);
+  border-color:var(--line);
+}
+@media(max-width:900px){
+  #fuelCard .fuel-analysis-layout{grid-template-columns:minmax(0,1fr)}
+  #fuelCard .fuel-analysis-main,#fuelCard .fuel-analysis-side{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+  #fuelCard .fuel-planning-panel,#fuelCard .fuel-forecast-panel{grid-column:auto}
+}
+@media(max-width:600px){
+  #fuelCard .fuel-model-panel #fuelModelDetails{grid-template-columns:minmax(0,1fr);gap:6px}
+  #fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row:nth-child(6){grid-column:auto}
+  #fuelCard .fuel-model-panel #fuelModelDetails>.fuel-model-row{padding:9px 10px!important}
+  #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading{align-items:flex-start;flex-wrap:wrap}
+  #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading .button{margin-left:auto}
+}
