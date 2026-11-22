@@ -8,7 +8,6 @@ from bisect import bisect_right
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from math import isfinite
-from math import isfinite
 from pathlib import Path
 from statistics import median
 from urllib.error import HTTPError
@@ -110,7 +109,7 @@ def _groups(rows, as_of, start):
 
 
 def build_snapshot(rows, *, start, as_of, epochs, verified_ids=(), assume_equal_fill=False,
-                   archived_baselines=None, counter_reader=None):
+                   archived_baselines=None, archived_forecasts=(), counter_reader=None):
     if start >= as_of or start.utcoffset() is None or as_of.utcoffset() is None:
         raise ValueError("invalid snapshot range")
     if assume_equal_fill and verified_ids:
@@ -152,12 +151,39 @@ def build_snapshot(rows, *, start, as_of, epochs, verified_ids=(), assume_equal_
             prior.append(right["kg"] / ((end - begin).total_seconds() / 86400))
         periods.append(row)
 
+    # Keep only forecasts captured for the exact refill interval and available
+    # no later than its start. Missing historical forecasts are never inferred.
+    period_ends = {_stamp(row["start"]): _stamp(row["end"]) for row in periods}
+    forecasts, seen_forecasts = [], set()
+    if not isinstance(archived_forecasts, list):
+        raise ValueError("archived forecasts must be a list")
+    for item in archived_forecasts:
+        if not isinstance(item, dict):
+            raise ValueError("invalid archived forecast record")
+        forecast_start, forecast_end = _stamp(item["start"]), _stamp(item["end"])
+        issued, available = _stamp(item["issued_at"]), _stamp(item["available_at"])
+        value = item["forecast_mean_outdoor_c"]
+        if forecast_start in seen_forecasts:
+            raise ValueError("duplicate archived forecast period")
+        if (period_ends.get(forecast_start) != forecast_end
+                or item.get("kind") != "forecast"
+                or not issued <= available <= forecast_start
+                or type(value) not in (int, float) or not isfinite(value)
+                or not -90 <= value <= 65):
+            raise ValueError("archived forecast is invalid or not available at period start")
+        seen_forecasts.add(forecast_start)
+        forecasts.append({
+            "start": forecast_start.isoformat(), "end": forecast_end.isoformat(),
+            "issued_at": issued.isoformat(), "available_at": available.isoformat(),
+            "kind": "forecast", "forecast_mean_outdoor_c": float(value),
+        })
+
     return {
         "schema": INPUT_SCHEMA, "source": "existing_thingspeak_refills",
         "baseline_mode": REPLAY if archived_baselines is None else AS_ISSUED, "label_mode": label_mode,
         "as_of": as_of.isoformat(), "range_start": start.isoformat(),
         "calibration_epochs": [epoch.isoformat() for epoch in epochs],
-        "refills": groups, "periods": periods,
+        "refills": groups, "periods": periods, "forecasts": forecasts,
     }
 
 
@@ -173,8 +199,8 @@ def _metadata(path):
             or any(type(value) is not int or value <= 0 for value in verified)
             or len(set(verified)) != len(verified)):
         raise ValueError("verified refill IDs must be unique positive integers")
-    if "archived_baselines" not in doc:
-        return verified, None
+    if "archived_baselines" not in doc and "archived_forecasts" not in doc:
+        return verified, None, []
     archive = doc["archived_baselines"]
     if not isinstance(archive, list):
         raise ValueError("archived baselines must be a list")
@@ -193,7 +219,10 @@ def _metadata(path):
             raise ValueError("archived baseline rate must be positive and finite")
         baselines[ts] = {"baseline_issued_at": issued.isoformat(),
                          "baseline_kg_per_day": float(rate)}
-    return verified, baselines
+    forecasts = doc.get("archived_forecasts", [])
+    if not isinstance(forecasts, list):
+        raise ValueError("archived forecasts must be a list")
+    return verified, baselines, forecasts
 
 def main(argv=None, *, now=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -208,12 +237,13 @@ def main(argv=None, *, now=None):
     args = parser.parse_args(argv)
     now = now if now is not None else datetime.now(timezone.utc)
     try:
-        verified, baselines = _metadata(args.metadata)
+        verified, baselines, forecasts = _metadata(args.metadata)
         snapshot = build_snapshot(
             _read(TS_CHANNEL_FUEL, TS_READ_KEY_FUEL),
             start=now - timedelta(days=args.days), as_of=now,
             epochs=[COUNTER_EPOCH.isoformat()], verified_ids=verified,
             assume_equal_fill=args.assume_equal_fill, archived_baselines=baselines,
+            archived_forecasts=forecasts,
             counter_reader=(None if args.without_counter else
                             lambda start, end: _read(TS_CHANNEL_VALVE, TS_READ_KEY_VALVE,
                                                      field=FIELD_COUNTER, bounds=(start, end))),
