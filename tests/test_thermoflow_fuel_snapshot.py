@@ -203,9 +203,82 @@ class FuelSnapshotTests(unittest.TestCase):
                 "verified_refill_ids": [11, 12],
                 "archived_baselines": [item],
             }))
-            verified, baselines = thermoflow_fuel_snapshot._metadata(path)
+            verified, baselines, forecasts = thermoflow_fuel_snapshot._metadata(path)
         self.assertEqual(verified, [11, 12])
+        self.assertEqual(forecasts, [])
         self.assertEqual(baselines[stamp(3)], {
             "baseline_issued_at": stamp(2, 55).isoformat(),
             "baseline_kg_per_day": 12.5,
         })
+
+
+    def test_archived_weather_forecast_is_joined_to_exact_verified_period(self):
+        rows = [feed(i + 1, i, i + 10) for i in range(5)]
+        period_start = stamp(1)
+        period_end = stamp(2)
+        archive = [{
+            "start": period_start.isoformat(),
+            "end": period_end.isoformat(),
+            "issued_at": stamp(0, 60).isoformat(),
+            "available_at": stamp(0, 90).isoformat(),
+            "kind": "forecast",
+            "forecast_mean_outdoor_c": -4.5,
+        }]
+        result = build_snapshot(
+            rows, start=START, as_of=END, epochs=[], verified_ids=[1, 2, 3, 4, 5],
+            archived_forecasts=archive,
+        )
+        self.assertEqual(result["forecasts"], [{
+            "start": period_start.isoformat(), "end": period_end.isoformat(),
+            "issued_at": stamp(0, 60).isoformat(),
+            "available_at": stamp(0, 90).isoformat(),
+            "kind": "forecast", "forecast_mean_outdoor_c": -4.5,
+        }])
+
+    def test_archived_weather_forecast_rejects_late_availability_and_wrong_window(self):
+        rows = [feed(i + 1, i, i + 10) for i in range(5)]
+        valid = {
+            "start": stamp(1).isoformat(), "end": stamp(2).isoformat(),
+            "issued_at": stamp(0).isoformat(), "available_at": stamp(1, 1).isoformat(),
+            "kind": "forecast", "forecast_mean_outdoor_c": -4.5,
+        }
+        cases = [
+            {**valid, "available_at": stamp(2).isoformat()},
+            {**valid, "end": stamp(3).isoformat()},
+            {**valid, "kind": "observation"},
+            {**valid, "forecast_mean_outdoor_c": float("nan")},
+        ]
+        for item in cases:
+            with self.subTest(item=item):
+                with self.assertRaises(ValueError):
+                    build_snapshot(rows, start=START, as_of=END, epochs=[],
+                                   archived_forecasts=[item])
+
+    def test_archived_weather_forecast_rejects_duplicate_periods(self):
+        rows = [feed(i + 1, i, i + 10) for i in range(5)]
+        item = {
+            "start": stamp(1).isoformat(), "end": stamp(2).isoformat(),
+            "issued_at": stamp(0).isoformat(), "available_at": stamp(0, 30).isoformat(),
+            "kind": "forecast", "forecast_mean_outdoor_c": -4.5,
+        }
+        with self.assertRaisesRegex(ValueError, "duplicate archived forecast"):
+            build_snapshot(rows, start=START, as_of=END, epochs=[],
+                           archived_forecasts=[item, item])
+
+    def test_metadata_parser_returns_archived_forecasts(self):
+        forecast = {
+            "start": stamp(1).isoformat(), "end": stamp(2).isoformat(),
+            "issued_at": stamp(0).isoformat(), "available_at": stamp(0, 30).isoformat(),
+            "kind": "forecast", "forecast_mean_outdoor_c": -4.5,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_text(json.dumps({
+                "schema": "thermoflow-fuel-import-metadata/1",
+                "verified_refill_ids": [11, 12],
+                "archived_forecasts": [forecast],
+            }))
+            verified, baselines, forecasts = thermoflow_fuel_snapshot._metadata(path)
+        self.assertEqual(verified, [11, 12])
+        self.assertIsNone(baselines)
+        self.assertEqual(forecasts, [forecast])
