@@ -9,6 +9,8 @@
   const modules = {
     health_score: ['Health Score', 'Ocena spalin i powrotu względem zakresu odniesienia.'],
     diagnostic_ai: ['Diagnostic AI', 'Hipotezy dotyczące odchyleń, nie diagnoza ani ocena bezpieczeństwa.'],
+    anomaly_v3: ['Anomaly Detection 3.0', 'Wzorce wielosygnałowe: pompy, powrót, kocioł i reakcja zaworu 4D.'],
+    causal_diagnostics: ['Causal Diagnostics', 'Wyjaśnienia oparte na powtarzalnych zdarzeniach, z oceną pewności i czynnikami zakłócającymi.'],
     burner_ml: ['Burner ML', 'Długość cykli palnika potwierdzonych sygnałem FIRE.', 'min',
       {candidate: 'Model', training_median: 'Mediana treningowa', previous_cycle: 'Poprzedni cykl'}],
     fuel_ml: ['Fuel ML', 'Zużycie peletu w zweryfikowanych okresach między dosypkami.', 'kg/d',
@@ -30,7 +32,7 @@
     bundle_outside_freshness_window: 'Paczka wymaga ponownej ewaluacji.',
   };
   const states = {
-    screened: 'Ocena dostępna', review: 'Do sprawdzenia',
+    screened: 'Ocena dostępna', available: 'Ocena dostępna', review: 'Do sprawdzenia',
     no_signal_in_observed_components: 'Bez sygnału odchylenia', evaluated: 'Test zakończony',
     collecting: 'Oczekuje na dane', stale: 'Nieaktualne', telemetry_unavailable: 'Brak telemetrii',
     unavailable: 'Niedostępne', unavailable_module: 'Brak raportu', loading: 'Pobieranie',
@@ -92,6 +94,73 @@
         note(card, 'Możliwe wyjaśnienia: zmiana warunków pracy albo różnica pomiaru. Przyczyna niepotwierdzona.');
       } else note(card, 'Szczegóły obserwacji niedostępne.');
     }
+  }
+
+  function anomaly(card, entry) {
+    const report = entry.result;
+    if (!report) {
+      note(card, 'Brak wystarczającej ilości świeżych, zsynchronizowanych próbek.');
+      return;
+    }
+    const coverage = report.coverage || {};
+    if (Number.isInteger(coverage.samples)) {
+      note(card, 'Próbki w buforze: ' + coverage.samples + '.');
+    }
+    if (report.data_state !== 'usable') {
+      const states = {
+        missing: 'Brak danych.',
+        stale: 'Ostatni odczyt jest nieaktualny.',
+        ambiguous_timestamps: 'Powielone znaczniki czasu uniemożliwiają bezpieczne łączenie sygnałów.',
+        discontinuous_history: 'Luka w telemetrii przerwała analizę.',
+        insufficient_history: 'Zbieranie ciągłej historii do analizy.'
+      };
+      note(card, states[report.data_state] || 'Dane nie pozwalają na wiarygodną ocenę.');
+      return;
+    }
+    if (!Array.isArray(report.patterns) || !report.patterns.length) {
+      note(card, 'Nie wykryto powtarzalnego wzorca. Alarm wymaga co najmniej trzech sparowanych zdarzeń.');
+      return;
+    }
+    const labels = {floor: 'Pompa podłogowa', dhw: 'Pompa CWU', valve4d: 'Pompa zaworu 4D', circulation: 'Pompa cyrkulacyjna'};
+    const list = element('ul', undefined, 'intelligence-list');
+    for (const pattern of report.patterns) {
+      const details = [
+        labels[pattern.pump] || pattern.pump,
+        'mediana zmiany powrotu ' + number.format(pattern.median_return_delta_c) + ' °C',
+        pattern.paired_events + ' sparowane zdarzenia',
+        'pewność: ' + (pattern.confidence === 'moderate' ? 'umiarkowana' : 'niska')
+      ];
+      if (Number.isFinite(pattern.median_valve_opening_delta_pct)) {
+        details.push('zmiana otwarcia 4D ' + number.format(pattern.median_valve_opening_delta_pct) + ' p.p.');
+      }
+      list.append(element('li', details.join(' — ') + '.'));
+    }
+    card.append(list);
+    note(card, 'To wzorce czasowe do sprawdzenia, nie automatyczne alarmy ani dowód przyczyny.');
+  }
+
+  function causal(card, entry) {
+    const report = entry.result;
+    if (!report || !Array.isArray(report.findings) || !report.findings.length) {
+      note(card, 'Brak potwierdzonej powtarzalnej zależności. System zbiera zsynchronizowane zdarzenia.');
+      return;
+    }
+    const list = element('ul', undefined, 'intelligence-list');
+    for (const finding of report.findings) {
+      const label = finding.pump === 'floor' ? 'pompa podłogowa' :
+        finding.pump === 'dhw' ? 'pompa CWU' :
+        finding.pump === 'valve4d' ? 'pompa zaworu 4D' :
+        finding.pump === 'circulation' ? 'pompa cyrkulacyjna' : finding.pump;
+      list.append(element('li', label + ': ' + finding.hypothesis +
+        ' (n=' + finding.paired_events + ', mediana ' +
+        number.format(finding.median_return_delta_c) + ' °C, pewność ' +
+        (finding.confidence === 'moderate' ? 'umiarkowana' : 'niska') + ').'));
+      if (Array.isArray(finding.confounders) && finding.confounders.length) {
+        note(card, 'Czynnik zakłócający: ' + finding.confounders.join(', ') + '.');
+      }
+    }
+    card.append(list);
+    note(card, 'Korelacja nie dowodzi przyczynowości. Brak pomiaru przepływu i pełnego stanu odbiorników ogranicza wnioski.');
   }
 
   function metrics(card, entry, unit, variants) {
@@ -243,6 +312,8 @@
         if (id === 'burner_ml' || id === 'fuel_ml') livePrediction(card, id, data?.live_predictions?.[id]);
         if (id === 'weather_impact') weatherForecast(card, data?.weather_forecast);
       } else if (id === 'health_score') health(card, entry);
+      else if (id === 'anomaly_v3') anomaly(card, entry);
+      else if (id === 'causal_diagnostics') causal(card, entry);
       else diagnostic(card, entry, data?.screens);
       timestamp(card, entry, offline);
       (offline ? benchmarks : live).append(card);
