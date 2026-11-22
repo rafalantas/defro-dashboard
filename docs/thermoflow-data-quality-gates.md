@@ -21,3 +21,6 @@ remain collecting; observations or hindsight reanalysis cannot substitute.
 
 All results are offline, read-only and advisory. No label is fabricated, no
 gap is interpolated, and no model is trained or promoted.
+
+
+Quality gate output is a screening aid; the operator remains responsible for confirming physical provenance before model use.
