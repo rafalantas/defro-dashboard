@@ -133,6 +133,12 @@
       if (Number.isFinite(pattern.median_valve_opening_delta_pct)) {
         details.push('zmiana otwarcia 4D ' + number.format(pattern.median_valve_opening_delta_pct) + ' p.p.');
       }
+      if (Number.isFinite(pattern.median_valve_response_delay_seconds)) {
+        details.push('mediana czasu reakcji zaworu ' + number.format(pattern.median_valve_response_delay_seconds) + ' s');
+      }
+      if (Number.isFinite(pattern.median_boiler_delta_after_15m_c)) {
+        details.push('zmiana temp. kotła po 15 min ' + number.format(pattern.median_boiler_delta_after_15m_c) + ' °C');
+      }
       list.append(element('li', details.join(' — ') + '.'));
     }
     card.append(list);
