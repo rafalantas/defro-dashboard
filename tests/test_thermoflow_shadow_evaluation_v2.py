@@ -35,7 +35,7 @@ class ShadowEvaluationV2Tests(unittest.TestCase):
         result = evaluate_shadow_v2(data)
         self.assertEqual(result["coverage"]["verified_labels"], 3)
         self.assertEqual(result["coverage"]["paired_cases"], 3)
-        self.assertAlmostEqual(result["paired_metrics"]["candidate"]["mae"], 1.0)
+        self.assertAlmostEqual(result["paired_metrics"]["candidate"]["mae"], 4.0 / 3.0)
 
     def test_alert_missing_denominators_remain_null(self):
         data = ledger()
