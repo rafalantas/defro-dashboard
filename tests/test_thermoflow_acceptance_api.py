@@ -36,6 +36,8 @@ class AcceptanceApiTests(unittest.TestCase):
                         self.assertEqual(payload["schema"], SCHEMA)
                         self.assertEqual(payload["status"], "incomplete")
                         self.assertFalse(payload["automatic_signoff"])
+                        self.assertEqual(next(g for g in payload["gates"] if g["name"] == "Data quality")["status"], "collecting")
+                        self.assertEqual(next(g for g in payload["gates"] if g["name"] == "Model monitoring")["status"], "collecting")
                         for method in ("POST", "PUT", "PATCH", "DELETE"):
                             client.request(method, PATH)
                             self.assertIn(client.getresponse().status, (404, 405, 501))
