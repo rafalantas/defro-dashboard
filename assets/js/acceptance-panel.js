@@ -4,8 +4,9 @@
   const $ = id => document.getElementById(id);
   const card = $('acceptanceCard'), status = $('acceptanceStatus');
   const summary = $('acceptanceSummary'), gates = $('acceptanceGates');
+  const twin = $('acceptanceTwin');
   const refresh = $('acceptanceRefresh');
-  if (!card || !status || !summary || !gates || !refresh || !window.ThermoFlowApi) return;
+  if (!card || !status || !summary || !gates || !twin || !refresh || !window.ThermoFlowApi) return;
 
   const names = {
     telemetry: 'Telemetria obserwacyjna', 'Burner ML': 'Burner ML',
@@ -31,7 +32,37 @@
     if (className) el.className = className;
     return el;
   }
+  function renderTwin(report) {
+    twin.replaceChildren(node('h3', 'Digital Twin · trend obserwacyjny'));
+    if (!report || report.status !== 'observing' || !report.state) {
+      const label = report?.status === 'stale' ? 'Telemetria nieaktualna' : 'Zbieranie zsynchronizowanych pomiarów';
+      twin.append(node('p', label + '. Projekcja nie jest dostępna.', 'acceptance-empty'));
+      return;
+    }
+    const grid = node('div', undefined, 'acceptance-twin-grid');
+    for (const [key, label] of [['boiler_c','Kocioł'],['return_c','Powrót'],['flue_c','Spaliny']]) {
+      if (!Number.isFinite(report.state[key])) continue;
+      const metric = node('div', undefined, 'acceptance-metric');
+      metric.append(node('span', label), node('strong', report.state[key].toFixed(1) + '°C'));
+      grid.append(metric);
+    }
+    twin.append(grid);
+    const forecasts = report.projections || {};
+    const list = node('div', undefined, 'acceptance-twin-projections');
+    for (const key of ['boiler_c','return_c','flue_c']) {
+      const values = forecasts[key] || {};
+      for (const horizon of ['5','15','30']) {
+        const point = values[horizon];
+        if (!point) continue;
+        list.append(node('p', key.replace('_c','') + ' · ' + horizon + ' min: ' + point.value_c.toFixed(1) + '°C (' + point.range_low_c.toFixed(1) + '–' + point.range_high_c.toFixed(1) + '°C)'));
+      }
+    }
+    twin.append(list);
+    twin.append(node('p', 'Ekstrapolacja trendu pomiarów, nie symulacja fizyczna ani przedział prawdopodobieństwa.', 'acceptance-empty'));
+  }
   function render(data) {
+    renderTwin(data.digital_twin);
+
     const counts = data.summary || {};
     const state = data.status;
     status.replaceChildren(node('strong', reportNames[state] || 'Status nieznany',
@@ -78,6 +109,7 @@
       status.replaceChildren(node('strong', 'Odbiór niedostępny', 'acceptance-overall acceptance-error'));
       summary.replaceChildren();
       gates.replaceChildren(node('p', 'Nie można pobrać raportu odbioru. Brak danych nie oznacza zaliczenia bramek. Spróbuj ponownie.', 'acceptance-empty'));
+      twin.replaceChildren(node('h3', 'Digital Twin'), node('p', 'Raport niedostępny.', 'acceptance-empty'));
     } finally {
       pending = false;
       refresh.disabled = false;
