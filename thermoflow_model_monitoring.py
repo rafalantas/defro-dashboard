@@ -1,7 +1,7 @@
 """Read-only monitoring for artifact freshness, shadow quality and drift."""
 from datetime import datetime
 from math import isfinite
-from thermoflow_shadow_evaluation_v2 import evaluate_shadow_v2
+from thermoflow_shadow_evaluation import evaluate_shadow
 
 SCHEMA = "thermoflow-model-monitoring/1"
 
@@ -50,8 +50,10 @@ def monitor_models(*, now, artifacts=None, ledgers=None, max_artifact_age_second
         if ledger is None:
             alerts.append("shadow_ledger_missing")
         else:
-            evaluation = evaluate_shadow_v2(ledger)
-            coverage = evaluation["coverage"]["paired_coverage"]
+            evaluation = evaluate_shadow(ledger)
+            eligible = sum(window["eligible_cases"] for window in evaluation["windows"])
+            paired = sum(window["paired_labeled"] for window in evaluation["windows"])
+            coverage = paired / eligible if eligible else None
             if coverage is None:
                 alerts.append("shadow_coverage_unavailable")
             elif coverage < minimum_coverage:
@@ -64,10 +66,11 @@ def monitor_models(*, now, artifacts=None, ledgers=None, max_artifact_age_second
                         alerts.append("candidate_error_regression")
                 elif baseline and candidate and baseline["mae"] == 0 and candidate["mae"] > 0:
                     alerts.append("candidate_error_regression")
-                stability = evaluation["chronological_stability"]
-                candidate_stability = next((x for x in stability if x["variant"] == "candidate"), None)
-                if candidate_stability and candidate_stability.get("mae_change") is not None:
-                    if candidate_stability["mae_change"] > max(0.25, candidate_stability["first_mae"] * regression_worsening_ratio):
+                populated = [window["paired_metrics"]["candidate"] for window in evaluation["windows"]
+                             if window["paired_metrics"]["candidate"] is not None]
+                if len(populated) >= 2:
+                    first_mae, last_mae = populated[0]["mae"], populated[-1]["mae"]
+                    if last_mae - first_mae > max(0.25, first_mae * regression_worsening_ratio):
                         alerts.append("chronological_error_drift")
         if state["status"] in ("missing", "invalid", "stale"):
             status = state["status"]
