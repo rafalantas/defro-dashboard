@@ -32,9 +32,9 @@
 <body><div class="app">
   <header class="topbar"><div class="brand"><div class="brandmark"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M35 8C31 19 19 28 19 40a13 13 0 0 0 26 0c0-8-5-15-10-21 1 8-3 11-7 14 1-9 8-15 7-25Z" fill="currentColor"/><path d="M24 47c5 3 12 3 17-1" fill="none" stroke="#153b3c" stroke-linecap="round" stroke-width="4"/></svg></div><div>Centrum sterowania ogrzewaniem<small>THERMOFLOW · PANEL INSTALACJI <span class="build-version-inline" id="buildVersion" title="Wersja obrazu dashboardu">WERSJA —</span></small></div></div><div class="topright"><span class="clock" id="clock">--:--</span><span class="badge warn" id="modeBadge">● OCZEKIWANIE NA API</span><button class="button" id="pauseBtn">Ⅱ &nbsp; Wstrzymaj</button></div></header>
   <nav class="view-nav" aria-label="Nawigacja ThermoFlow" role="tablist">
-    <button type="button" class="view-tab active" data-view-target="overview" aria-selected="true">Overview</button>
+    <button type="button" class="view-tab active" data-view-target="overview" aria-selected="true">Przegląd</button>
     <button type="button" class="view-tab" data-view-target="installation" aria-selected="false">Instalacja</button>
-    <button type="button" class="view-tab" data-view-target="fuel" aria-selected="false">Paliwo</button>
+    <button type="button" class="view-tab" data-view-target="fuel" aria-selected="false">Paliwo i prognoza</button>
     <button type="button" class="view-tab" data-view-target="history" aria-selected="false">Historia</button>
     <button type="button" class="view-tab" data-view-target="diagnostics" aria-selected="false">Diagnostyka</button>
   </nav>
@@ -155,7 +155,7 @@
         <div class="telemetry-tile wide"><div class="telemetry-label">Sterownik i wersja</div><div class="telemetry-value small" id="tileController">DEfRO · ST-9730</div><div class="telemetry-meta" id="tileVersion">wersja modułu</div></div>
       </div><div class="subhead" id="extraTempHeading" style="display:none;padding:0 18px 8px">Dodatkowe temperatury udostępnione przez sterownik</div><div class="telemetry-grid" id="extraTempGrid" style="display:none;padding-top:0"></div><div class="telemetry-footer" id="telemetryFooter">Oczekiwanie na dane sterownika przez eModul API.</div>
     </section>
-    <section class="card" data-view="fuel" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Zużycie peletu</h2><div class="subhead">Dosypki z kanału ThingSpeak „Pelet” · zużycie bieżące z licznika podajnika lub mocy palnika, kalibrowane do dosypek</div></div></div>
+    <section class="card" data-view="fuel" id="fuelCard" aria-labelledby="fuelTitle" hidden><div class="cardhead"><div><h2 id="fuelTitle">Paliwo i prognoza zużycia</h2><div class="subhead">Jedno miejsce dla pomiarów, modeli i prognozy peletu · dane z dosypek, licznika podajnika, palnika i pogody</div></div></div>
       <div class="telemetry-grid fuel-grid">
         <div class="telemetry-tile live"><div class="telemetry-label">Ostatnie 7 dni</div><div class="telemetry-value" id="fuelWeek">—</div><div class="telemetry-meta" id="fuelWeekMeta">szacunek z mocy palnika</div></div>
         <div class="telemetry-tile live"><div class="telemetry-label" id="fuelHddLabel">kg na stopniodzień</div><div class="telemetry-value" id="fuelHdd">—</div><div class="telemetry-meta" id="fuelHddMeta">z rzeczywistych dosypek</div></div>
@@ -163,7 +163,7 @@
         <div class="telemetry-tile ok" id="fuelHopperTile"><div class="telemetry-label">W zasobniku · szacunek</div><div class="telemetry-value" id="fuelHopper">—</div><div class="telemetry-meta" id="fuelHopperMeta">—</div></div>
       </div><div class="telemetry-footer" id="fuelFooter">Oczekiwanie na dane zużycia peletu.</div>
       <div class="fuel-detail-section">
-        <div class="fuel-detail-heading"><div><h3>ANALITYKA ZUŻYCIA</h3><small>Ostatnie 30 pełnych dób · kg</small></div><span class="telemetry-meta" id="fuelDetailStatus">Dane z ThingSpeak</span></div>
+        <div class="fuel-detail-heading"><div><h3>ANALITYKA ZUŻYCIA</h3><small>Rzeczywiste i modelowane zużycie · ostatnie 30 pełnych dób</small></div><span class="telemetry-meta" id="fuelDetailStatus">Dane z ThingSpeak</span></div>
         <div class="fuel-analysis-layout">
           <div class="fuel-analysis-main">
             <div class="fuel-detail-panel fuel-chart-panel"><h4>Zużycie dobowe</h4><canvas id="fuelDailyChart" aria-label="Wykres dobowego zużycia peletu: licznik podajnika, moc palnika i model domu"></canvas><div class="fuel-chart-legend" id="fuelChartLegend"></div><div class="fuel-detail-footnote">Licznik i moc palnika to źródła szacunku zużycia. Model domu jest wartością obliczeniową, nie pomiarem.</div></div>
@@ -171,8 +171,8 @@
           </div>
           <div class="fuel-analysis-side">
             <div class="fuel-detail-panel fuel-model-panel"><h4>Model i jakość danych</h4><div id="fuelModelDetails"><div class="fuel-empty">Oczekiwanie na podsumowanie…</div></div></div><div class="fuel-detail-panel fuel-telemetry-quality-panel"><div class="fuel-detail-heading"><h4>Jakość telemetrii ThingSpeak</h4><button type="button" class="button" id="fuelTelemetryAuditRun">Uruchom audyt</button></div><div class="telemetry-meta" id="fuelTelemetryAuditMeta">Audyt nie był jeszcze uruchamiany</div><div id="fuelTelemetryQuality"><div class="fuel-empty">Audyt uruchamiany na żądanie; wejście do widoku nie pobiera historii.</div></div></div>
-            <div class="fuel-detail-panel fuel-planning-panel"><h4>Planowanie zapasu pelletu</h4><div id="fuelPlanning"><div class="fuel-empty">Oczekiwanie na prognozę…</div></div></div>
-            <div class="fuel-detail-panel fuel-forecast-panel"><h4>Prognoza zużycia</h4><div id="fuelForecast"><div class="fuel-empty">Oczekiwanie na prognozę…</div></div><div class="fuel-detail-footnote" id="fuelStockMethod">Prognoza zależy od modelu domu i danych pogodowych. Jest szacunkiem, nie gwarantowanym terminem dosypki.</div></div>
+            <div class="fuel-detail-panel fuel-planning-panel"><h4>Plan zapasu · różne horyzonty</h4><div id="fuelPlanning"><div class="fuel-empty">Oczekiwanie na prognozę…</div></div></div>
+            <div class="fuel-detail-panel fuel-forecast-panel"><h4>Prognoza dobowa peletu · 7 dni</h4><div id="fuelForecast"><div class="fuel-empty">Oczekiwanie na prognozę…</div></div><div class="fuel-detail-footnote" id="fuelStockMethod">Prognoza zależy od modelu domu i danych pogodowych. Jest szacunkiem, nie gwarantowanym terminem dosypki.</div></div>
           </div>
         </div>
       </div>
@@ -188,16 +188,16 @@
     <div class="sensor-chip" id="sensorSupply"><i></i><span>Czujnik zasilania kotła · oczekiwanie na API</span></div>
   </div></section>
   <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="intelligenceTitle" hidden>
-    <div class="cardhead"><div><h2 id="intelligenceTitle">ThermoFlow Unified Intelligence</h2><div class="subhead">Bieżąca ocena i testy historyczne · tylko odczyt</div></div></div>
+    <div class="cardhead"><div><h2 id="intelligenceTitle">Inteligencja i diagnostyka</h2><div class="subhead">Anomalie, zależności hydrauliczne i testy modeli na danych historycznych · tylko odczyt</div></div></div>
     <div class="diagnostics-toolbar intelligence-toolbar">
       <p id="intelligenceStatus" role="status">Oczekiwanie na odczyt.</p>
       <button type="button" class="button diagnostics-refresh" id="intelligenceRefresh">Odśwież wyniki</button>
     </div>
     <div class="intelligence-content" id="intelligenceResults">
-      <h3>Bieżąca ocena</h3>
+      <h3>Stan bieżący · diagnostyka</h3>
       <div class="intelligence-grid" id="intelligenceLive"></div>
-      <h3>Benchmarki historyczne</h3>
-      <p class="intelligence-note">Porównanie na odłożonych danych testowych, nie prognoza na żywo. MAE i RMSE: im niższe, tym lepiej.</p>
+      <h3>Testy modeli · dane historyczne</h3>
+      <p class="intelligence-note">To testy na zakończonych, zweryfikowanych okresach — nie bieżąca prognoza zużycia. Prognoza peletu i pogody jest dostępna wyłącznie w zakładce „Paliwo i prognoza”. MAE i RMSE: im niższe, tym lepiej.</p>
       <div class="intelligence-grid" id="intelligenceBenchmarks"></div>
     </div>
   </section>

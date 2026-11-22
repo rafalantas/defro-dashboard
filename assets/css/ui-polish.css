@@ -259,3 +259,28 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   overflow-wrap:anywhere !important;
   word-break:break-word !important;
 }
+
+
+/* Fuel and diagnostics: clear ownership and visual hierarchy */
+.view-nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(14px);padding:12px 0 0}
+.view-tab{font-size:12px;letter-spacing:.01em}
+.view-tab[data-view-target="fuel"]{color:var(--teal)}
+#fuelCard>.cardhead{padding-bottom:18px;border-bottom:1px solid var(--line)}
+#fuelCard>.cardhead h2{font-size:clamp(20px,2vw,26px);letter-spacing:-.035em}
+#fuelCard .fuel-detail-section{margin-top:16px;padding:clamp(14px,2vw,22px);background:linear-gradient(145deg,rgba(73,215,189,.035),rgba(8,18,25,.12))}
+#fuelCard .fuel-detail-heading h3{font-size:12px;letter-spacing:.09em;color:var(--teal)}
+#fuelCard .fuel-analysis-layout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,.9fr);gap:14px;align-items:start}
+#fuelCard .fuel-analysis-main,#fuelCard .fuel-analysis-side{display:grid;gap:14px;min-width:0}
+#fuelCard .fuel-analysis-side .fuel-detail-panel{background:rgba(8,18,25,.38)}
+#fuelCard .fuel-planning-panel,#fuelCard .fuel-forecast-panel{grid-column:1/-1}
+#fuelCard .fuel-forecast-panel{border-color:rgba(73,215,189,.28);background:linear-gradient(145deg,rgba(73,215,189,.08),rgba(8,18,25,.42))}
+#fuelCard .fuel-forecast-panel h4:before{content:"7 DNI";display:inline-block;margin-right:8px;padding:3px 6px;border-radius:5px;background:rgba(73,215,189,.12);color:var(--teal);font:10px var(--mono);vertical-align:1px}
+#fuelCard .fuel-forecast-day{padding:11px 4px}
+#fuelCard .fuel-forecast-day b{font-size:13px;color:var(--teal)}
+#fuelCard .fuel-planning-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+#intelligenceTitle{letter-spacing:-.025em}
+#intelligenceResults>h3{margin-top:24px;padding-bottom:9px;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+#intelligenceResults>h3:first-child{margin-top:8px}
+.intelligence-note{max-width:76ch;line-height:1.6}
+@media(max-width:900px){#fuelCard .fuel-analysis-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:650px){#fuelCard .fuel-planning-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.view-nav{top:0}}
