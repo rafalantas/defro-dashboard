@@ -109,7 +109,7 @@ def _groups(rows, as_of, start):
 
 
 def build_snapshot(rows, *, start, as_of, epochs, verified_ids=(), assume_equal_fill=False,
-                   archived_baselines=None, archived_forecasts=(), counter_reader=None):
+                   archived_baselines=None, archived_forecasts=None, counter_reader=None):
     if start >= as_of or start.utcoffset() is None or as_of.utcoffset() is None:
         raise ValueError("invalid snapshot range")
     if assume_equal_fill and verified_ids:
@@ -155,6 +155,8 @@ def build_snapshot(rows, *, start, as_of, epochs, verified_ids=(), assume_equal_
     # no later than its start. Missing historical forecasts are never inferred.
     period_ends = {_stamp(row["start"]): _stamp(row["end"]) for row in periods}
     forecasts, seen_forecasts = [], set()
+    if archived_forecasts is None:
+        archived_forecasts = []
     if not isinstance(archived_forecasts, list):
         raise ValueError("archived forecasts must be a list")
     for item in archived_forecasts:
@@ -190,7 +192,7 @@ def build_snapshot(rows, *, start, as_of, epochs, verified_ids=(), assume_equal_
 def _metadata(path):
     """Load provenance metadata without silently accepting ambiguous records."""
     if path is None:
-        return (), None
+        return (), None, []
     doc = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict) or doc.get("schema") != "thermoflow-fuel-import-metadata/1":
         raise ValueError("invalid fuel import metadata schema")
