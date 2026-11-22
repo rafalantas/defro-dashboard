@@ -123,6 +123,38 @@
     card.append(table);
   }
 
+  function livePrediction(card, moduleId, prediction) {
+    if (!prediction) return;
+    const labels = {predicted: 'Prognoza live', collecting: 'Zbieranie danych', stale: 'Dane nieaktualne', unavailable: 'Model niedostępny'};
+    const reasons = {
+      not_configured: 'Nie skonfigurowano ścieżki artefaktu modelu.',
+      not_loaded: 'Model nie został jeszcze wczytany.',
+      missing_artifact: 'Brak pliku modelu.',
+      invalid_or_stale_artifact: 'Artefakt modelu jest nieprawidłowy lub przeterminowany.',
+      waiting_for_previous_complete_cycle_and_model: 'Prognoza pojawi się po zarejestrowaniu pełnego cyklu i rozpoczęciu następnego.',
+      waiting_for_next_fire_cycle: 'Oczekiwanie na następny cykl FIRE.',
+      fire_telemetry_stale: 'Odczyt FIRE jest zbyt stary.',
+      fuel_baseline_or_fresh_summary_unavailable: 'Brak świeżej prognozy bazowej lub zweryfikowanego okresu paliwowego.'
+    };
+    const box = element('div', undefined, 'intelligence-live-prediction');
+    box.append(element('strong', labels[prediction.status] || 'Prognoza niedostępna'));
+    const value = prediction.value ?? prediction.prediction;
+    if (prediction.status === 'predicted' && Number.isFinite(value)) {
+      const unit = prediction.unit || (moduleId === 'burner_ml' ? 'min' : 'kg/d');
+      box.append(element('p', number.format(value) + ' ' + unit, 'intelligence-live-value'));
+      if (moduleId === 'burner_ml' && Number.isFinite(prediction.elapsed_minutes)) {
+        note(box, 'Bieżący cykl trwa ' + number.format(prediction.elapsed_minutes) + ' min. To przewidywany czas całego cyklu, nie pozostały czas.');
+      }
+      if (moduleId === 'fuel_ml') {
+        if (Number.isFinite(prediction.baseline_kg_per_day)) note(box, 'Model bazowy: ' + number.format(prediction.baseline_kg_per_day) + ' kg/d.');
+        if (Number.isFinite(prediction.previous_kg_per_day)) note(box, 'Ostatni zweryfikowany okres: ' + number.format(prediction.previous_kg_per_day) + ' kg/d.');
+      }
+      note(box, 'Wynik doradczy. Nie steruje kotłem ani nie zmienia szacunku zapasu.');
+    } else {
+      note(box, reasons[prediction.reason] || 'Brak wystarczających świeżych danych do prognozy.');
+    }
+    card.append(box);
+  }
   function render(data, fallback, referenceNow = Date.now()) {
     clearTimeout(expiryTimer);
     live.replaceChildren();
@@ -151,8 +183,10 @@
       note(card, description);
       if (Object.hasOwn(reasons, entry.reason)) note(card, reasons[entry.reason]);
       else if (!offline && entry.status === 'collecting') note(card, 'Potrzeba więcej świeżych próbek z porównywalnych warunków pracy.');
-      if (offline) metrics(card, entry, unit, variants);
-      else if (id === 'health_score') health(card, entry);
+      if (offline) {
+        metrics(card, entry, unit, variants);
+        if (id === 'burner_ml' || id === 'fuel_ml') livePrediction(card, id, data?.live_predictions?.[id]);
+      } else if (id === 'health_score') health(card, entry);
       else diagnostic(card, entry, data?.screens);
       timestamp(card, entry, offline);
       (offline ? benchmarks : live).append(card);
