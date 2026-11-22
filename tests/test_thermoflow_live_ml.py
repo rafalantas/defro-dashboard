@@ -189,7 +189,7 @@ class FuelLiveArtifactTests(unittest.TestCase):
 class LiveMLApiTests(unittest.TestCase):
     def test_unified_intelligence_exposes_separate_live_predictions(self):
         class FakeLiveRuntime:
-            fuel_path = ""
+            fuel_path = "/configured/fuel-model.json"
 
             def read(self, _now, _fuel_summary):
                 return {
