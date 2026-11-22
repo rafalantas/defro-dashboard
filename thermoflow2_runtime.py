@@ -907,12 +907,13 @@ def _planning_forecast(model: dict | None, daily_model: dict | None,
     # observed daily temperatures for seasonal transition detection. The provider
     # fetches a month at a time, so this does not issue one request per day.
     season_temps = dict(known_temps)
+    season_offset = _om_offset()["offset"]
     for offset_days in range(8, 366):
         day = now.date() - timedelta(days=offset_days)
         if day not in season_temps:
             temperature = _openmeteo_mean(day)
             if temperature is not None:
-                season_temps[day] = temperature
+                season_temps[day] = temperature + season_offset
     return _planning_forecast_impl(
         model, daily_model, forecast, now, season_temps, climate, _weather, _om_offset,
         _predict_daily, _predict_kg_per_day, _lagged_temperature,
