@@ -9,7 +9,7 @@
   if (!card || !status || !summary || !gates || !twin || !refresh || !window.ThermoFlowApi) return;
 
   const names = {
-    telemetry: 'Telemetria obserwacyjna', 'Burner ML': 'Burner ML',
+    telemetry: 'Telemetria obserwacyjna', digital_twin: 'Digital Twin', 'Burner ML': 'Burner ML',
     'Fuel ML': 'Fuel ML', 'Data quality': 'Jakość danych',
     'Model monitoring': 'Monitoring modeli', api_health: 'API health',
     intelligence_endpoint: 'Endpoint inteligencji', http_5xx: 'Błędy HTTP 5xx',
