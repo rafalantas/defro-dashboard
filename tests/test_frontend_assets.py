@@ -116,3 +116,16 @@ def test_production_acceptance_card_never_treats_unknown_as_passed():
     assert "Brak danych nie oznacza zaliczenia" in script
     assert "ready_for_manual_signoff" in script
     assert "automatic_signoff" not in script
+
+
+def test_fuel_analytics_layout_keeps_mobile_panels_full_width():
+    css = (ROOT / "assets/css/fuel.css").read_text(encoding="utf-8")
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert 'class="fuel-analysis-layout"' in html
+    assert 'class="fuel-analysis-main"' in html
+    assert 'class="fuel-analysis-side"' in html
+    assert ".fuel-analysis-layout{" in css
+    assert "grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)" in css
+    assert "@media(max-width:760px)" in css
+    assert "grid-template-columns:minmax(0,1fr)" in css
+    assert ".fuel-analysis-layout .fuel-detail-panel" in css
