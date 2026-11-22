@@ -167,10 +167,10 @@ class FuelLiveArtifactTests(unittest.TestCase):
             observe(120, 1)
             summary = {
                 "configured": True,
-                "fetched_at": iso(NOW + 120),
+                "fetched_at": iso(NOW - 180),
                 "planning": {"today": {"average_kg_day": 4.5}},
             }
-            result = runtime.read(NOW + 150, summary)
+            result = runtime.read(NOW - 150, summary)
             self.assertEqual(result["burner_ml"]["status"], "predicted")
             self.assertEqual(result["burner_ml"]["prediction"], 12.0)
             self.assertEqual(result["fuel_ml"]["status"], "predicted")
