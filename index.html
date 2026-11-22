@@ -201,6 +201,13 @@
       <div class="intelligence-grid" id="intelligenceBenchmarks"></div>
     </div>
   </section>
+  <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="acceptanceTitle" hidden id="acceptanceCard">
+    <div class="cardhead"><div><h2 id="acceptanceTitle">Odbiór produkcyjny ThermoFlow</h2><div class="subhead">Bramki jakości danych, modeli i wdrożenia · read-only · wymagany ręczny sign-off</div></div></div>
+    <div class="acceptance-toolbar"><p id="acceptanceStatus" role="status" aria-live="polite">Oczekiwanie na raport odbioru…</p><button type="button" class="button diagnostics-refresh" id="acceptanceRefresh">Odśwież odbiór</button></div>
+    <div class="acceptance-summary" id="acceptanceSummary"><div class="overview-muted">Oczekiwanie na dane…</div></div>
+    <div class="acceptance-gates" id="acceptanceGates" aria-live="polite"></div>
+    <p class="acceptance-footnote">Status „gotowe do ręcznego odbioru” nie oznacza automatycznej certyfikacji ani promocji modelu. Brak danych nie jest zaliczeniem. AI/ML nie steruje kotłem; ochrona temperatury powrotu pozostaje 55°C ±1°C.</p>
+  </section>
   <section class="card diagnostics-history-card" data-view="diagnostics" aria-labelledby="shadowTitle" hidden>
     <div class="cardhead"><div><h2 id="shadowTitle">Ocena obserwacyjna</h2><div class="subhead">Spaliny i powrót · tylko odczyt</div></div></div>
     <div class="diagnostics-toolbar"><button type="button" class="button diagnostics-refresh" id="shadowRefresh" data-testid="button-refresh-shadow">Odśwież ocenę</button></div>
@@ -230,4 +237,5 @@
   <script src="/assets/js/diagnostics.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/shadow-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/intelligence-panel.js?v=__APP_COMMIT__" defer></script>
+  <script src="/assets/js/acceptance-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/navigation.js?v=__APP_COMMIT__" defer></script></body></html>
