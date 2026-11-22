@@ -81,8 +81,10 @@ def build_acceptance_report(*, shadow=None, live_predictions=None, intelligence=
         "summary": {"gates": len(gates), "passed": sum(g["status"] in ("ready", "shadow_ready") for g in gates),
                     "blockers": len(blockers), "outstanding": len(outstanding)},
         "blockers": blockers, "outstanding": outstanding, "gates": gates,
-        "digital_twin": {"status": twin_state or "not_assessed",
-                         "mode": twin.get("mode") if twin else None},
+        "digital_twin": ({key: twin[key] for key in
+                          ("status", "mode", "coverage", "state", "trends", "projections",
+                           "pump_states", "limitations", "safety") if key in twin}
+                         if twin else {"status": "not_assessed", "mode": None}),
         "safety": {"control": "read_only_advisory", "return_protection_c": "55°C ±1°C"},
         "limitations": ["This report does not certify model quality or boiler safety.",
                        "CI success is not a substitute for production smoke tests.",
