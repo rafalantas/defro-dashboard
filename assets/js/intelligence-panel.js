@@ -207,6 +207,8 @@
       missing_artifact: 'Brak pliku modelu.',
       invalid_or_stale_artifact: 'Artefakt modelu jest nieprawidłowy lub przeterminowany.',
       waiting_for_previous_complete_cycle_and_model: 'Prognoza pojawi się po zarejestrowaniu pełnego cyklu i rozpoczęciu następnego.',
+      waiting_for_confirmed_fire_transition: 'Sterownik/API uruchomiły obserwację w trakcie cyklu. Czekamy na pełną granicę OFF → FIRE.',
+      cycle_exceeded_max_duration: 'Bieżący cykl przekroczył maksymalny zakres modelu. Prognoza została wycofana.',
       waiting_for_next_fire_cycle: 'Oczekiwanie na następny cykl FIRE.',
       fire_telemetry_stale: 'Odczyt FIRE jest zbyt stary.',
       fuel_baseline_or_fresh_summary_unavailable: 'Brak świeżej prognozy bazowej lub zweryfikowanego okresu paliwowego.'
