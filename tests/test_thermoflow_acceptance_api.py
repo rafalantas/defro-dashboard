@@ -40,7 +40,8 @@ class AcceptanceApiTests(unittest.TestCase):
                             client.request(method, PATH)
                             self.assertIn(client.getresponse().status, (404, 405, 501))
                     shadow.read.assert_called_once()
-                    live.read.assert_called_once_with(unittest.mock.ANY)
+                    live.read.assert_called_once()
+                    self.assertEqual(len(live.read.call_args.args), 1)
                     evidence.assert_called_once()
             finally:
                 server.shutdown()
