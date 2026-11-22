@@ -13,7 +13,10 @@ def _read_json(path):
     if not path:
         return None
     flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_EVIDENCE_BYTES:
