@@ -1,5 +1,7 @@
 import io
 import json
+import tempfile
+from pathlib import Path
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
@@ -132,3 +134,78 @@ class FuelSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(SnapshotError, "invalid refill ledger"):
                 build_snapshot([feed(1, 1, 2), row, feed(3, 3, 4)],
                                start=START, as_of=END, epochs=[])
+
+
+    def test_import_metadata_rejects_duplicate_verified_refill_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_text(json.dumps({
+                "schema": "thermoflow-fuel-import-metadata/1",
+                "verified_refill_ids": [11, 11],
+            }))
+            with self.assertRaisesRegex(ValueError, "unique positive integers"):
+                thermoflow_fuel_snapshot._metadata(path)
+
+    def test_import_metadata_rejects_duplicate_archived_baseline_periods(self):
+        item = {"start": stamp(3).isoformat(),
+                "baseline_issued_at": stamp(2).isoformat(),
+                "baseline_kg_per_day": 12.5}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_text(json.dumps({
+                "schema": "thermoflow-fuel-import-metadata/1",
+                "verified_refill_ids": [],
+                "archived_baselines": [item, item],
+            }))
+            with self.assertRaisesRegex(ValueError, "duplicate archived baseline"):
+                thermoflow_fuel_snapshot._metadata(path)
+
+    def test_import_metadata_rejects_late_or_nonphysical_archived_baselines(self):
+        cases = [
+            {"start": stamp(3).isoformat(), "baseline_issued_at": stamp(3, 1).isoformat(),
+             "baseline_kg_per_day": 12.5},
+            {"start": stamp(3).isoformat(), "baseline_issued_at": stamp(2).isoformat(),
+             "baseline_kg_per_day": float("nan")},
+            {"start": stamp(3).isoformat(), "baseline_issued_at": stamp(2).isoformat(),
+             "baseline_kg_per_day": 0},
+        ]
+        for item in cases:
+            with self.subTest(item=item):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "metadata.json"
+                    path.write_text(json.dumps({
+                        "schema": "thermoflow-fuel-import-metadata/1",
+                        "verified_refill_ids": [],
+                        "archived_baselines": [item],
+                    }))
+                    with self.assertRaises(ValueError):
+                        thermoflow_fuel_snapshot._metadata(path)
+
+    def test_import_metadata_rejects_non_list_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_text(json.dumps({
+                "schema": "thermoflow-fuel-import-metadata/1",
+                "verified_refill_ids": [],
+                "archived_baselines": {},
+            }))
+            with self.assertRaisesRegex(ValueError, "must be a list"):
+                thermoflow_fuel_snapshot._metadata(path)
+
+    def test_import_metadata_accepts_valid_verified_provenance(self):
+        item = {"start": stamp(3).isoformat(),
+                "baseline_issued_at": stamp(2, 55).isoformat(),
+                "baseline_kg_per_day": 12.5}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_text(json.dumps({
+                "schema": "thermoflow-fuel-import-metadata/1",
+                "verified_refill_ids": [11, 12],
+                "archived_baselines": [item],
+            }))
+            verified, baselines = thermoflow_fuel_snapshot._metadata(path)
+        self.assertEqual(verified, [11, 12])
+        self.assertEqual(baselines[stamp(3)], {
+            "baseline_issued_at": stamp(2, 55).isoformat(),
+            "baseline_kg_per_day": 12.5,
+        })
