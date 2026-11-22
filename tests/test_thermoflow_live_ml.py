@@ -201,9 +201,21 @@ class LiveMLApiTests(unittest.TestCase):
             worker = threading.Thread(target=server.serve_forever, daemon=True)
             worker.start()
             try:
+                weather_summary = {
+                    "fetched_at": datetime.now(timezone.utc).isoformat(),
+                    "model": {"periods_used": 30},
+                    "daily_model": {"status": "aktywny", "days": 30,
+                                    "terms": ["hdd", "solar"],
+                                    "rmse_loo_kg_per_day": 0.8},
+                    "forecast": [
+                        {"day": "2026-11-23", "t_mean": 2.0, "solar_mj": 3.0,
+                         "wind_max_kmh": 20.0, "kg": 14.5},
+                    ],
+                }
                 with (patch.object(api, "_intelligence_runtime", UnifiedRuntime()),
                       patch.object(api, "_shadow_runtime", ShadowRuntime()),
-                      patch.object(api, "_live_ml_runtime", FakeLiveRuntime())):
+                      patch.object(api, "_live_ml_runtime", FakeLiveRuntime()),
+                      patch.object(api, "_fuel_summary_for_intelligence", return_value=weather_summary)):
                     client = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
                     try:
                         client.request("GET", "/api/thermoflow/v1/intelligence")
@@ -213,6 +225,8 @@ class LiveMLApiTests(unittest.TestCase):
                         self.assertEqual(response.getheader("Cache-Control"), "no-store")
                         self.assertEqual(payload["live_predictions"]["burner_ml"]["prediction"], 18.5)
                         self.assertEqual(payload["live_predictions"]["fuel_ml"]["status"], "collecting")
+                        self.assertEqual(payload["weather_forecast"]["status"], "ready")
+                        self.assertEqual(payload["weather_forecast"]["days"][0]["kg"], 14.5)
                     finally:
                         client.close()
             finally:
