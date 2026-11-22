@@ -8,6 +8,7 @@ from thermoflow_anomaly_v2 import screen_series
 from thermoflow_anomaly_v3 import analyze_multisignal
 from thermoflow_diagnostic_ai import diagnostic_hypotheses
 from thermoflow_health_score import build_health_score
+from thermoflow_digital_twin import build_digital_twin
 
 PATH = "/api/thermoflow/v1/shadow"
 SCHEMA = "thermoflow-shadow/1"
@@ -97,9 +98,10 @@ class ShadowRuntime:
             state = "telemetry_unavailable"
         else:
             state = "collecting"
+        digital_twin = build_digital_twin(tuple(self._anomaly_rows), as_of=timestamp)
         self._publish(_envelope(state, timestamp=timestamp, screens=screens,
                                 health=health, diagnostics=diagnostics,
-                                anomaly_v3=anomaly,
+                                digital_twin=digital_twin, anomaly_v3=anomaly,
                                 causal_diagnostics=anomaly.get("causal_diagnostics", {
                                     "status": "collecting", "findings": [],
                                     "causality": "not_established"})))
