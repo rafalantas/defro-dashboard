@@ -141,3 +141,14 @@ def test_digital_twin_is_rendered_in_acceptance_card():
     assert "acceptance-twin-grid" in script
     assert ".acceptance-twin" in css
     assert "heuristic_not_probability" not in script
+
+
+def test_unified_intelligence_renders_digital_twin_trends():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "assets/js/intelligence-panel.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/css/components.css").read_text(encoding="utf-8")
+    assert 'id="intelligenceDigitalTwin"' in html
+    assert "renderDigitalTwin(data?.digital_twin)" in script
+    assert "Ekstrapolacja ostatniego trendu" in script
+    assert "intelligence-twin-values" in script
+    assert ".intelligence-digital-twin" in css
