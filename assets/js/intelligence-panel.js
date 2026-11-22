@@ -181,11 +181,18 @@
       (forecast.source || 'Prognoza Open-Meteo i model paliwowy.'));
     const model = forecast.model || {};
     const modelNames = {
-      weather_daily_model: 'model dobowy: temperatura, bezwładność, słońce i wiatr',
+      weather_daily_model: 'model dobowy',
       temperature_hdd_house_model: 'model budynku oparty na stopniodniach',
       unavailable: 'model niedostępny'
     };
-    note(box, 'Podstawa: ' + (modelNames[model.kind] || 'model paliwowy') +
+    const termNames = {
+      hdd: 'temperatura zewnętrzna', hdd_lag: 'bezwładność budynku',
+      solar: 'promieniowanie słoneczne', wind_hdd: 'wiatr',
+      wind_hdd_lag: 'wiatr przy uwzględnieniu bezwładności'
+    };
+    const terms = Array.isArray(model.terms) ? model.terms.map(term => termNames[term]).filter(Boolean) : [];
+    const detail = model.kind === 'weather_daily_model' && terms.length ? ': ' + terms.join(', ') : '';
+    note(box, 'Podstawa: ' + (modelNames[model.kind] || 'model paliwowy') + detail +
       (Number.isInteger(model.training_days) ? ' (' + model.training_days + ' dób treningowych).' : '.'));
     const list = element('ul', undefined, 'intelligence-weather-days');
     for (const day of forecast.days) {
