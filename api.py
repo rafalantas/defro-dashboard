@@ -1510,13 +1510,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == ACCEPTANCE_PATH:
             now = time.time()
             shadow = _shadow_runtime.read(now)
-            fuel_summary = (
-                _fuel_summary_for_intelligence(self.headers)
-                if _live_ml_runtime.fuel_path else None
-            )
-            predictions = _live_ml_runtime.read(
-                now, fuel_summary if _live_ml_runtime.fuel_path else None
-            )
+            # Acceptance is a local projection only: do not fetch fuel summary,
+            # ThingSpeak or Open-Meteo from this endpoint.
+            predictions = _live_ml_runtime.read(now)
             evidence = build_acceptance_evidence(now=now)
             self._send_json(200, build_acceptance_report(
                 shadow=shadow, live_predictions=predictions,
