@@ -12,6 +12,7 @@ Wykrywać powtarzalne zależności między sygnałami instalacji, a nie oceniać
 - Start pompy jest parowany z bezpośrednio sąsiednimi próbkami przed/po zdarzeniu, jeśli odstęp nie przekracza 75 sekund.
 - Powtarzalny wzorzec wymaga co najmniej trzech sparowanych startów, trzech spadków powrotu o minimum 1°C i mediany zmian nie większej niż -1°C.
 - Równoczesna zmiana innej pompy jest pokazywana jako czynnik zakłócający i obniża poziom pewności.
+- Dla zdarzeń z wystarczającą historią raportowany jest czas do pierwszej zmiany otwarcia zaworu w oknie 5 min oraz zmiana temperatury kotła po 15 min. To kontekst, nie próg sterowania ani automatyczna ocena zapotrzebowania cieplnego.
 - Brak danych, nieaktualność, duplikaty czasu lub luka w historii zamykają analizę; dane nie są interpolowane.
 
 ## Interpretacja
