@@ -76,7 +76,10 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
     for index in range(13, len(observed)):
         previous = observed[index - 13:index - 6]
         window = observed[index - 6:index + 1]
-        if all(item[1] >= balance_temp for item in previous) and all(item[1] < balance_temp for item in window):
+        consecutive = all((observed[pos][0] - observed[pos - 1][0]).days == 1
+                         for pos in range(index - 13, index + 1))
+        if (consecutive and all(item[1] >= balance_temp for item in previous)
+                and all(item[1] < balance_temp for item in window)):
             season_start = window[0][0]
     season_end = None
     warm_threshold = balance_temp + 1.0
