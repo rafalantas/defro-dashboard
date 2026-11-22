@@ -19,7 +19,10 @@ class AcceptanceApiTests(unittest.TestCase):
                 with (patch.object(api, "_shadow_runtime") as shadow,
                       patch.object(api, "_live_ml_runtime") as live,
                       patch.object(api, "_fuel_summary_for_intelligence",
-                                   side_effect=AssertionError("unexpected upstream call"))):
+                                   side_effect=AssertionError("unexpected upstream call")),
+                      patch.object(api, "build_acceptance_evidence", return_value={
+                          "data_quality": {"status": "collecting"},
+                          "monitoring": {"status": "collecting"}}) as evidence):
                     shadow.read.return_value = {"status":"collecting"}
                     live.fuel_path = None
                     live.read.return_value = {
@@ -33,11 +36,15 @@ class AcceptanceApiTests(unittest.TestCase):
                         self.assertEqual(payload["schema"], SCHEMA)
                         self.assertEqual(payload["status"], "incomplete")
                         self.assertFalse(payload["automatic_signoff"])
+                        self.assertEqual(next(g for g in payload["gates"] if g["name"] == "Data quality")["status"], "collecting")
+                        self.assertEqual(next(g for g in payload["gates"] if g["name"] == "Model monitoring")["status"], "collecting")
                         for method in ("POST", "PUT", "PATCH", "DELETE"):
                             client.request(method, PATH)
                             self.assertIn(client.getresponse().status, (404, 405, 501))
                     shadow.read.assert_called_once()
                     live.read.assert_called_once()
+                    self.assertEqual(len(live.read.call_args.args), 1)
+                    evidence.assert_called_once()
             finally:
                 server.shutdown()
                 worker.join(timeout=2)

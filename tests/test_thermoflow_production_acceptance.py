@@ -28,11 +28,13 @@ class ProductionAcceptanceTests(unittest.TestCase):
             shadow={"status":"screened"},
             live_predictions={"burner_ml":{"status":"predicted"}, "fuel_ml":{"status":"predicted"}},
             data_quality={"status":"ready"}, monitoring={"status":"observing"},
+            digital_twin={"status":"observing","mode":"read_only_observational_projection"},
             deployment_checks=checks)
         self.assertEqual(result["status"], "ready_for_manual_signoff")
         self.assertEqual(result["summary"]["outstanding"], 0)
         self.assertFalse(result["automatic_signoff"])
         self.assertEqual(result["safety"]["return_protection_c"], "55°C ±1°C")
+        self.assertEqual(result["digital_twin"]["mode"], "read_only_observational_projection")
 
     def test_partial_operator_checks_do_not_pass(self):
         result = build_acceptance_report(deployment_checks={"api_health":True})
