@@ -57,8 +57,7 @@ class AnomalyV3Tests(unittest.TestCase):
         for values, as_of, expected in cases:
             with self.subTest(expected=expected):
                 self.assertEqual(analyze_multisignal(values, as_of=as_of)["data_state"], expected)
-        broken = [dict(row) for row in rows]
-        broken[2]["timestamp"] += 600
+        broken = [dict(row) for index, row in enumerate(rows) if index not in (2, 3)]
         self.assertEqual(analyze_multisignal(broken, as_of=now)["data_state"], "discontinuous_history")
 
     def test_other_pump_transition_reduces_confidence_and_is_reported(self):
