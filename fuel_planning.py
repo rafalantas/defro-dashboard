@@ -161,7 +161,7 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
         "climate_years": climate_years, "generated_at": now.isoformat(),
         "today": total(today, today), "week": total(today, today + timedelta(days=6)),
         "month": total(today, month_end), "season": total(max(today, season_start), season_end),
-        "season_detection": {"start": season_start.isoformat(), "end": season_end.isoformat(), "method": "temperature_history_and_climate" if observed else "calendar_fallback", "balance_temp": balance_temp},
+        "season_detection": {"start": season_start.isoformat(), "end": season_end.isoformat(), "method": "temperature_history_and_climate" if season_start_detected and season_end_detected else ("climate_normals" if season_end_detected else "calendar_fallback"), "balance_temp": balance_temp},
         "daily": rows[:7],
         "note": "Orientacyjnie; po 7 dniach używane są średnie klimatyczne. Worki zaokrąglone w górę do 15 kg.",
     }
