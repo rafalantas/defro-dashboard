@@ -17,6 +17,7 @@ from thermoflow_shadow_runtime import PATH as SHADOW_PATH, ShadowRuntime
 from thermoflow_unified_runtime import PATH as INTELLIGENCE_PATH, REFRESH_SECONDS, UnifiedRuntime
 from thermoflow_live_ml import LiveMLRuntime
 from thermoflow_production_acceptance import PATH as ACCEPTANCE_PATH, build_acceptance_report
+from thermoflow_acceptance_evidence import build_acceptance_evidence
 from thermoflow_weather_forecast import project_weather_forecast
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -1503,6 +1504,7 @@ class Handler(BaseHTTPRequestHandler):
             response["live_predictions"] = _live_ml_runtime.read(
                 now, fuel_summary if _live_ml_runtime.fuel_path else None
             )
+            response["digital_twin"] = shadow.get("digital_twin")
             self._send_json(200, response)
             return
         if path == ACCEPTANCE_PATH:
@@ -1515,8 +1517,12 @@ class Handler(BaseHTTPRequestHandler):
             predictions = _live_ml_runtime.read(
                 now, fuel_summary if _live_ml_runtime.fuel_path else None
             )
+            evidence = build_acceptance_evidence(now=now)
             self._send_json(200, build_acceptance_report(
-                shadow=shadow, live_predictions=predictions
+                shadow=shadow, live_predictions=predictions,
+                data_quality=evidence["data_quality"],
+                monitoring=evidence["monitoring"],
+                digital_twin=shadow.get("digital_twin"),
             ))
             return
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
