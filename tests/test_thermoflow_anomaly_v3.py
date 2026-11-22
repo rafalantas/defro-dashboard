@@ -72,7 +72,7 @@ class AnomalyV3Tests(unittest.TestCase):
 
     def test_invalid_sensor_values_are_missing_not_zero(self):
         rows, now = samples(floor_starts=3, drop=-1.5)
-        rows[-1]["return_c"] = float("nan")
+        rows[1]["return_c"] = float("nan")
         result = analyze_multisignal(rows, as_of=now)
         self.assertEqual(result["patterns"], [])
 
