@@ -84,7 +84,8 @@ def analyze_multisignal(samples, *, as_of):
     base["data_state"] = "usable"
 
     events_by_pump = {pump: [] for pump in PUMPS}
-    for previous, current in zip(rows, rows[1:]):
+    for index in range(1, len(rows)):
+        previous, current = rows[index - 1], rows[index]
         changed = [pump for pump in PUMPS
                    if previous["pumps"][pump] is not None
                    and current["pumps"][pump] is not None
@@ -101,11 +102,29 @@ def analyze_multisignal(samples, *, as_of):
             valve_delta = (after["valve_opening_pct"] - before["valve_opening_pct"]
                            if before["valve_opening_pct"] is not None
                            and after["valve_opening_pct"] is not None else None)
+            future = rows[index + 1:]
+            valve_delay = None
+            if before["valve_opening_pct"] is not None:
+                response = next((row for row in future
+                                 if row["timestamp"] - current["timestamp"] <= 300
+                                 and row["valve_opening_pct"] is not None
+                                 and abs(row["valve_opening_pct"] - before["valve_opening_pct"]) >= 1.0), None)
+                if response is not None:
+                    valve_delay = response["timestamp"] - current["timestamp"]
+            target = current["timestamp"] + 900
+            followup = next((row for row in reversed(future)
+                             if row["timestamp"] <= target
+                             and target - row["timestamp"] <= MAX_GAP_SECONDS), None)
+            boiler_followup = (round(followup["boiler_c"] - before["boiler_c"], 2)
+                               if followup is not None and followup["boiler_c"] is not None
+                               and before["boiler_c"] is not None else None)
             events_by_pump[pump].append({
                 "timestamp": current["timestamp"], "return_delta_c": round(delta, 2) if delta is not None else None,
                 "valve_opening_delta_pct": round(valve_delta, 2) if valve_delta is not None else None,
+                "valve_response_delay_seconds": valve_delay,
                 "boiler_delta_c": round(after["boiler_c"] - before["boiler_c"], 2)
                     if before["boiler_c"] is not None and after["boiler_c"] is not None else None,
+                "boiler_delta_after_15m_c": boiler_followup,
                 "flue_delta_c": round(after["flue_c"] - before["flue_c"], 2)
                     if before["flue_c"] is not None and after["flue_c"] is not None else None,
                 "other_pumps_changed": [other for other in changed if other != pump],
@@ -118,6 +137,10 @@ def analyze_multisignal(samples, *, as_of):
         paired = [event for event in events if event["return_delta_c"] is not None]
         drops = [event for event in paired if event["return_delta_c"] <= RETURN_DROP_C]
         values = [event["return_delta_c"] for event in paired]
+        valve_delays = [event["valve_response_delay_seconds"] for event in events
+                        if event["valve_response_delay_seconds"] is not None]
+        boiler_followups = [event["boiler_delta_after_15m_c"] for event in events
+                            if event["boiler_delta_after_15m_c"] is not None]
         median_delta = round(median(values), 2) if values else None
         record = {
             "pump": pump, "start_events": len(events), "paired_events": len(paired),
@@ -139,6 +162,9 @@ def analyze_multisignal(samples, *, as_of):
                 "paired_events": len(paired), "return_drop_events": len(drops),
                 "median_return_delta_c": median_delta,
                 "median_valve_opening_delta_pct": round(median(valve_values), 2) if valve_values else None,
+                "median_valve_response_delay_seconds": record["median_valve_response_delay_seconds"],
+                "median_boiler_delta_after_15m_c": record["median_boiler_delta_after_15m_c"],
+                "boiler_followup_events": record["boiler_followup_events"],
                 "events_with_concurrent_pump_changes": concurrent,
                 "confidence": "low" if concurrent else "moderate",
                 "interpretation": (
@@ -161,6 +187,7 @@ def analyze_multisignal(samples, *, as_of):
                     "obserwacja czasowa nie dowodzi przyczynowości",
                     "próbki przed i po zdarzeniu są sąsiednimi odczytami, nie eksperymentem kontrolowanym",
                     "brak pomiaru przepływu i pełnego stanu wszystkich odbiorników",
+                    "15-minutowa zmiana temperatury kotła jest kontekstem, nie rozstrzyga o zapotrzebowaniu budynku",
                 ],
             } for pattern in patterns],
             "causality": "not_established",
