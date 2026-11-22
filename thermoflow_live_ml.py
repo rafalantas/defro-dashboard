@@ -122,7 +122,9 @@ class LiveMLRuntime:
             if self._last_fire is None:
                 self._last_fire = fire
                 if fire:
-                    self._cycle_started = stamp
+                    # A process start (or telemetry gap) during FIRE is not a
+                    # confirmed cycle boundary; never learn from a partial cycle.
+                    self._cycle_started = None
                 else:
                     self._last_off = stamp
             elif fire != self._last_fire:
@@ -171,19 +173,36 @@ class LiveMLRuntime:
         if burner is not None:
             if last_timestamp is None or now - last_timestamp > MAX_TELEMETRY_AGE or now < last_timestamp:
                 burner_result = {"status": "stale", "reason": "fire_telemetry_stale", "mode": "live_advisory"}
-            elif fire is True and cycle_started is not None:
-                if prediction is not None:
-                    prediction["elapsed_minutes"] = round(max(0.0, (now - cycle_started) / 60.0), 1)
-                    prediction["cycle_active"] = True
-                    burner_result = {**prediction, "status": "predicted", "mode": "live_advisory"}
-                else:
+            elif fire is True:
+                if cycle_started is None:
                     burner_result = {
                         "status": "collecting",
-                        "reason": "waiting_for_previous_complete_cycle_and_model",
-                        "cycle_active": True,
-                        "elapsed_minutes": round(max(0.0, (now - cycle_started) / 60.0), 1),
+                        "reason": "waiting_for_confirmed_fire_transition",
                         "mode": "live_advisory",
                     }
+                else:
+                    elapsed_seconds = max(0.0, now - cycle_started)
+                    elapsed_minutes = round(elapsed_seconds / 60.0, 1)
+                    if elapsed_seconds > MAX_BURNER_CYCLE_SECONDS:
+                        burner_result = {
+                            "status": "collecting",
+                            "reason": "cycle_exceeded_max_duration",
+                            "cycle_active": True,
+                            "elapsed_minutes": elapsed_minutes,
+                            "mode": "live_advisory",
+                        }
+                    elif prediction is not None:
+                        prediction["elapsed_minutes"] = elapsed_minutes
+                        prediction["cycle_active"] = True
+                        burner_result = {**prediction, "status": "predicted", "mode": "live_advisory"}
+                    else:
+                        burner_result = {
+                            "status": "collecting",
+                            "reason": "waiting_for_previous_complete_cycle_and_model",
+                            "cycle_active": True,
+                            "elapsed_minutes": elapsed_minutes,
+                            "mode": "live_advisory",
+                        }
             else:
                 burner_result = {
                     "status": "collecting",
