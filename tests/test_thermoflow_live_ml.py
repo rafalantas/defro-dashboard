@@ -204,7 +204,8 @@ class LiveMLApiTests(unittest.TestCase):
                 with (patch.object(api, "_intelligence_runtime", UnifiedRuntime()),
                       patch.object(api, "_shadow_runtime", ShadowRuntime()),
                       patch.object(api, "_live_ml_runtime", FakeLiveRuntime())):
-                    with http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3) as client:
+                    client = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+                    try:
                         client.request("GET", "/api/thermoflow/v1/intelligence")
                         response = client.getresponse()
                         payload = json.loads(response.read())
@@ -212,6 +213,8 @@ class LiveMLApiTests(unittest.TestCase):
                         self.assertEqual(response.getheader("Cache-Control"), "no-store")
                         self.assertEqual(payload["live_predictions"]["burner_ml"]["prediction"], 18.5)
                         self.assertEqual(payload["live_predictions"]["fuel_ml"]["status"], "collecting")
+                    finally:
+                        client.close()
             finally:
                 server.shutdown()
                 worker.join(timeout=2)
