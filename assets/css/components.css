@@ -79,3 +79,12 @@
 .intelligence-live-prediction>strong{font-size:10px;color:var(--teal);letter-spacing:.25px}
 .intelligence-live-value{margin:0;color:var(--text);font:600 22px var(--mono);font-variant-numeric:tabular-nums}
 .intelligence-live-prediction .intelligence-context{font-size:10px}
+
+/* Weather-aware forecast — inherits the active dashboard theme */
+.intelligence-weather-forecast{margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--text);display:grid;gap:6px}
+.intelligence-weather-forecast>strong{font-size:11px;color:var(--teal)}
+.intelligence-weather-total{margin:0;color:var(--text);font:600 21px var(--mono);font-variant-numeric:tabular-nums}
+.intelligence-weather-state{margin:0;color:var(--muted);font-size:11px;font-weight:700}
+.intelligence-weather-days{display:grid;gap:5px;margin:3px 0;padding:0;list-style:none}
+.intelligence-weather-days li{padding:6px 8px;border:1px solid var(--line);border-radius:6px;color:var(--text);font-size:10px;line-height:1.45}
+.intelligence-weather-forecast .intelligence-context{font-size:10px}
