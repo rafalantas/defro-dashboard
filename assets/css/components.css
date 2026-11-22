@@ -88,3 +88,23 @@
 .intelligence-weather-days{display:grid;gap:5px;margin:3px 0;padding:0;list-style:none}
 .intelligence-weather-days li{padding:6px 8px;border:1px solid var(--line);border-radius:6px;color:var(--text);font-size:10px;line-height:1.45}
 .intelligence-weather-forecast .intelligence-context{font-size:10px}
+
+/* Production acceptance — explicit evidence and manual sign-off. */
+.acceptance-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 18px 12px}
+.acceptance-toolbar p{margin:0;color:var(--muted);font-size:11px}
+.acceptance-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding:0 18px 14px}
+.acceptance-metric{padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+.acceptance-metric span{display:block;color:var(--muted);font-size:10px}
+.acceptance-metric strong{display:block;margin-top:5px;color:var(--text);font:600 21px var(--mono)}
+.acceptance-overall{display:inline-block;padding:5px 9px;border:1px solid var(--line);border-radius:7px;font-size:11px}
+.acceptance-ready{color:var(--teal)}.acceptance-blocked,.acceptance-error{color:#e58b7d}.acceptance-pending{color:#d5b86b}
+.acceptance-gates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 18px 14px}
+.acceptance-gate{min-width:0;padding:10px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.acceptance-gate-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.acceptance-gate-heading strong{font-size:11px;color:var(--text)}
+.acceptance-state{flex:none;font-size:9px;font-weight:700;white-space:nowrap}
+.acceptance-state-ready{color:var(--teal)}.acceptance-state-shadow_ready{color:#8eb5e8}
+.acceptance-state-blocked{color:#e58b7d}.acceptance-state-collecting,.acceptance-state-not_assessed,.acceptance-state-unknown{color:#d5b86b}
+.acceptance-gate p,.acceptance-empty{margin:6px 0 0;color:var(--muted);font-size:10px;line-height:1.5}
+.acceptance-footnote{padding:0 18px 15px;color:var(--muted);font-size:10px;line-height:1.5}
+@media(max-width:760px){.acceptance-toolbar{padding-left:12px;padding-right:12px}.acceptance-summary{padding-left:12px;padding-right:12px;gap:6px}.acceptance-metric{padding:9px}.acceptance-gates{grid-template-columns:1fr;padding-left:12px;padding-right:12px}.acceptance-footnote{padding-left:12px;padding-right:12px}}
