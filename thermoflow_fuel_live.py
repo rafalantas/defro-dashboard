@@ -119,6 +119,9 @@ def build_live_artifact(benchmark, snapshot, *, created_at=None):
             or latest_period.get("mass_reference") != "verified_equal_fill_level"
             or not latest_period.get("baseline_issued_at")):
         raise ValueError("latest holdout period has no verified source provenance")
+    period_start = _instant(latest_period.get("start"))
+    if _instant(latest_period["baseline_issued_at"]) > period_start:
+        raise ValueError("latest period baseline was issued after the period started")
     period_end = _instant(latest_period.get("end"))
     as_of = _instant(snapshot.get("as_of"))
     if period_end > as_of or as_of - period_end > MAX_VERIFIED_PERIOD_AGE_SECONDS:
@@ -131,8 +134,8 @@ def build_live_artifact(benchmark, snapshot, *, created_at=None):
 
     model = _validated_model(benchmark["model"])
     stamp = int(time.time() if created_at is None else created_at)
-    if type(stamp) is not int or stamp <= 0:
-        raise ValueError("created_at must be a positive Unix timestamp")
+    if type(stamp) is not int or stamp <= 0 or stamp < as_of:
+        raise ValueError("created_at must be a positive timestamp after the source snapshot")
     return {
         "schema": ARTIFACT_SCHEMA,
         "created_at": stamp,
