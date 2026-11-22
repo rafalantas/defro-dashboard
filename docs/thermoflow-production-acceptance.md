@@ -35,7 +35,8 @@ Potrzebny jest ciągły, surowy zrzut binarnego stanu FIRE z kompletnymi cyklami
 Po przygotowaniu artefaktów należy sprawdzić na rzeczywistym runtime:
 - czy statusy `collecting`, `stale`, `unavailable` i `predicted` są prawidłowe;
 - czy prognoza znika po utracie świeżości danych;
-- czy Burner ML pojawia się dopiero po potwierdzonym starcie FIRE i pokazuje całkowity czas cyklu, nie czas do zapłonu ani pozostały czas;
+- czy Burner ML pojawia się dopiero po zaobserwowanej granicy OFF → FIRE; start procesu w trakcie FIRE ani luka telemetrii nie mogą tworzyć pozornego pełnego cyklu;
+- czy prognoza Burner ML znika po przekroczeniu sześciogodzinnego limitu cyklu oraz po utracie świeżości telemetrii;
 - czy Fuel ML nie zastępuje istniejącego planera, stanu zasobnika ani ewidencji paliwa;
 - czy porównanie predykcji z późniejszą etykietą odbywa się poza ścieżką sterowania.
 
