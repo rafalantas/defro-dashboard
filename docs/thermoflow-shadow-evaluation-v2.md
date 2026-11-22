@@ -19,3 +19,6 @@ The evaluator is offline and read-only. It does not train, promote, or write
 models. Synthetic fixtures prove evaluator mechanics only. Timestamp and
 schema checks cannot independently prove that a label was physically verified
 or that historical data provenance is genuine; that remains an operator task.
+
+
+Use only frozen, reviewable ledgers; never treat generated fixtures as measured installation outcomes.
