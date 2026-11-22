@@ -16,6 +16,7 @@ from fuel_schema import timezone as thermoflow_timezone
 from thermoflow_shadow_runtime import PATH as SHADOW_PATH, ShadowRuntime
 from thermoflow_unified_runtime import PATH as INTELLIGENCE_PATH, REFRESH_SECONDS, UnifiedRuntime
 from thermoflow_live_ml import LiveMLRuntime
+from thermoflow_production_acceptance import PATH as ACCEPTANCE_PATH, build_acceptance_report
 from thermoflow_weather_forecast import project_weather_forecast
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -1503,6 +1504,20 @@ class Handler(BaseHTTPRequestHandler):
                 now, fuel_summary if _live_ml_runtime.fuel_path else None
             )
             self._send_json(200, response)
+            return
+        if path == ACCEPTANCE_PATH:
+            now = time.time()
+            shadow = _shadow_runtime.read(now)
+            fuel_summary = (
+                _fuel_summary_for_intelligence(self.headers)
+                if _live_ml_runtime.fuel_path else None
+            )
+            predictions = _live_ml_runtime.read(
+                now, fuel_summary if _live_ml_runtime.fuel_path else None
+            )
+            self._send_json(200, build_acceptance_report(
+                shadow=shadow, live_predictions=predictions
+            ))
             return
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
             self.send_error(404)

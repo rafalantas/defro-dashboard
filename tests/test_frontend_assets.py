@@ -90,3 +90,42 @@ def test_weather_aware_pellet_forecast_has_one_canonical_fuel_location():
     assert "Prognoza peletu i pogody jest dostępna wyłącznie w zakładce" in html
     assert "data-view-target=\"overview\" aria-selected=\"true\">Przegląd" in html
     assert "data-view-target=\"fuel\" aria-selected=\"false\">Paliwo i prognoza" in html
+
+
+def test_production_acceptance_card_is_present_and_versioned():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "assets/js/acceptance-panel.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/css/components.css").read_text(encoding="utf-8")
+    assert 'id="acceptanceCard"' in html
+    assert 'id="acceptanceSummary"' in html
+    assert 'id="acceptanceGates"' in html
+    assert 'id="acceptanceRefresh"' in html
+    assert "assets/js/acceptance-panel.js" in html
+    assert "acceptance-panel.js?v=__APP_COMMIT__" in html
+    assert "/api/thermoflow/v1/acceptance" in script
+    assert "thermoflow-production-acceptance/2" in script
+    assert "Brak danych nie oznacza zaliczenia" in html
+    assert "55°C ±1°C" in html
+    assert ".acceptance-gates" in css
+
+
+def test_production_acceptance_card_never_treats_unknown_as_passed():
+    script = (ROOT / "assets/js/acceptance-panel.js").read_text(encoding="utf-8")
+    assert "Nieznany status" in script
+    assert "Odbiór niedostępny" in script
+    assert "Brak danych nie oznacza zaliczenia" in script
+    assert "ready_for_manual_signoff" in script
+    assert "automatic_signoff" not in script
+
+
+def test_fuel_analytics_layout_keeps_mobile_panels_full_width():
+    css = (ROOT / "assets/css/fuel.css").read_text(encoding="utf-8")
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert 'class="fuel-analysis-layout"' in html
+    assert 'class="fuel-analysis-main"' in html
+    assert 'class="fuel-analysis-side"' in html
+    assert ".fuel-analysis-layout{" in css
+    assert "grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)" in css
+    assert "@media(max-width:760px)" in css
+    assert "grid-template-columns:minmax(0,1fr)" in css
+    assert ".fuel-analysis-layout .fuel-detail-panel" in css
