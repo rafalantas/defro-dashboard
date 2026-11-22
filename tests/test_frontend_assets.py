@@ -75,3 +75,18 @@ def test_telemetry_quality_panel_uses_read_only_audit_endpoint_and_handles_missi
 def test_fuel_chart_does_not_draw_zero_or_negative_counter_values():
     source = (ROOT / "assets/js/fuel-panel.js").read_text(encoding="utf-8")
     assert "if(!Number.isFinite(v)||v<=0)return" in source
+
+
+def test_weather_aware_pellet_forecast_has_one_canonical_fuel_location():
+    """Live kg/day forecast belongs to Fuel; Diagnostics keeps historical benchmark only."""
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    intelligence = (ROOT / "assets/js/intelligence-panel.js").read_text(encoding="utf-8")
+    fuel_panel = (ROOT / "assets/js/fuel-panel.js").read_text(encoding="utf-8")
+    assert 'id="fuelForecast"' in html
+    assert "function renderForecast()" in fuel_panel
+    assert "weatherForecast" not in intelligence
+    assert "data?.weather_forecast" not in intelligence
+    assert "Wpływ pogody · test historyczny" in intelligence
+    assert "Prognoza peletu i pogody jest dostępna wyłącznie w zakładce" in html
+    assert "data-view-target=\"overview\" aria-selected=\"true\">Przegląd" in html
+    assert "data-view-target=\"fuel\" aria-selected=\"false\">Paliwo i prognoza" in html
