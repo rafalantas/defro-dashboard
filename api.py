@@ -1493,7 +1493,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == INTELLIGENCE_PATH:
             now = time.time()
-            fuel_summary = _fuel_summary_for_intelligence(self.headers)
+            fuel_summary = (
+                _fuel_summary_for_intelligence(self.headers)
+                if _live_ml_runtime.fuel_path else None
+            )
             response = _intelligence_runtime.read(now, _shadow_runtime.read(now))
             response["weather_forecast"] = project_weather_forecast(fuel_summary, now=now)
             response["live_predictions"] = _live_ml_runtime.read(
