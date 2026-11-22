@@ -57,6 +57,8 @@ def build_acceptance_evidence(*, now, environ=None):
             if not isinstance(ids, list):
                 raise ValueError("invalid verified refill ID allowlist")
             quality = build_data_quality_report(fire=fire, fuel=fuel, verified_refill_ids=ids)
+            if fire is None or fuel is None:
+                quality["status"] = "collecting"
         except (OSError, ValueError, TypeError, RecursionError, OverflowError):
             quality = {"schema": "thermoflow-data-quality-report/1", "status": "blocked",
                        "modules": {}, "error": "configured_data_quality_evidence_invalid"}
