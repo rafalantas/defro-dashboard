@@ -363,3 +363,86 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading{align-items:flex-start;flex-wrap:wrap}
   #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading .button{margin-left:auto}
 }
+
+/* Fuel mobile containment: keep nested analytics grids from shrinking to
+   their longest word when the side column is stacked on narrow screens. */
+@media(max-width:600px){
+  #fuelCard,
+  #fuelCard .fuel-detail-section,
+  #fuelCard .fuel-analysis-layout,
+  #fuelCard .fuel-analysis-main,
+  #fuelCard .fuel-analysis-side{
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    box-sizing:border-box;
+  }
+  #fuelCard .fuel-analysis-layout{
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    gap:12px;
+  }
+  #fuelCard .fuel-analysis-main,
+  #fuelCard .fuel-analysis-side{
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    grid-column:1/-1;
+    gap:12px;
+  }
+  #fuelCard .fuel-analysis-main>.fuel-detail-panel,
+  #fuelCard .fuel-analysis-side>.fuel-detail-panel{
+    grid-column:1/-1;
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    box-sizing:border-box;
+  }
+  #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading{
+    display:flex;
+    flex-direction:row;
+    align-items:flex-start;
+    flex-wrap:wrap;
+    min-width:0;
+  }
+  #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading h4{
+    flex:1 1 100%;
+    min-width:0;
+    overflow-wrap:normal;
+    word-break:normal;
+  }
+  #fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading .button{
+    flex:0 1 auto;
+    max-width:100%;
+    margin-left:0;
+  }
+  #fuelCard .fuel-quality-channel,
+  #fuelCard .fuel-quality-channel summary,
+  #fuelCard .fuel-quality-fields,
+  #fuelCard .fuel-quality-field{
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    box-sizing:border-box;
+  }
+  #fuelCard .fuel-quality-channel summary{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:5px;
+  }
+  #fuelCard .fuel-quality-channel summary>span,
+  #fuelCard .fuel-quality-channel summary small,
+  #fuelCard .fuel-quality-field span,
+  #fuelCard .fuel-quality-field small{
+    min-width:0;
+    max-width:100%;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:normal;
+    text-align:left;
+  }
+  #fuelCard .fuel-quality-fields{grid-template-columns:minmax(0,1fr)}
+  #fuelCard .fuel-detail-footnote{overflow-wrap:anywhere}
+  #fuelCard .fuel-chart-panel{overflow:hidden}
+  #fuelCard #fuelDailyChart{max-width:100%}
+}
