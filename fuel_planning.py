@@ -69,11 +69,32 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
     forecast_map = dict(forecast)
     today = now.date()
     month_end = today + timedelta(days=29)
-    if 5 <= now.month < 10:
-        season_start, season_end = date(now.year, 10, 1), date(now.year + 1, 4, 30)
-    else:
-        season_start = today
-        season_end = date(now.year, 4, 30) if now.month <= 4 else date(now.year + 1, 4, 30)
+    balance_temp = float((daily_model or {}).get("balance_temp", model.get("balance_temp", 15.5)))
+    observed = sorted((day, float(temp)) for day, temp in known_temps.items()
+                      if temp is not None and day <= today)
+    season_start = None
+    for index in range(13, len(observed)):
+        previous = observed[index - 13:index - 6]
+        window = observed[index - 6:index + 1]
+        if all(item[1] >= balance_temp for item in previous) and all(item[1] < balance_temp for item in window):
+            season_start = window[0][0]
+    season_end = None
+    warm_threshold = balance_temp + 1.0
+    for month_offset in range(1, 14):
+        month_index = today.month - 1 + month_offset
+        year = today.year + month_index // 12
+        month = month_index % 12 + 1
+        next_index = month_index + 1
+        next_month = next_index % 12 + 1
+        first = climate.get(month, {}).get("t_mean")
+        second = climate.get(next_month, {}).get("t_mean")
+        if first is not None and second is not None and float(first) >= warm_threshold and float(second) >= warm_threshold:
+            season_end = date(year, month, 1)
+            break
+    if season_start is None:
+        season_start = date(today.year, 10, 1) if today.month >= 10 else (date(today.year - 1, 10, 1) if today.month <= 4 else today)
+    if season_end is None or season_end <= today:
+        season_end = date(today.year, 4, 30) if today.month <= 4 else date(today.year + 1, 4, 30)
     horizon = max(month_end, season_end)
     temperatures = {}
     for offset in range((horizon - today).days + 1):
@@ -128,7 +149,8 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
         "weather": "prognoza 7 dni + średnie miesięczne z 5 lat",
         "climate_years": climate_years, "generated_at": now.isoformat(),
         "today": total(today, today), "week": total(today, today + timedelta(days=6)),
-        "month": total(today, month_end), "season": total(season_start, season_end),
+        "month": total(today, month_end), "season": total(today, season_end),
+        "season_detection": {"start": season_start.isoformat(), "end": season_end.isoformat(), "method": "temperature_history_and_climate" if observed else "calendar_fallback", "balance_temp": balance_temp},
         "daily": rows[:7],
         "note": "Orientacyjnie; po 7 dniach używane są średnie klimatyczne. Worki zaokrąglone w górę do 15 kg.",
     }
