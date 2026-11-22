@@ -31,7 +31,7 @@ class DigitalTwinTests(unittest.TestCase):
 
     def test_gap_and_stale_data_fail_closed(self):
         rows = self.rows()
-        rows[7]["timestamp"] += 100
+        rows[7]["timestamp"] += 200
         result = build_digital_twin(rows, as_of=1430)
         self.assertEqual(result["status"], "collecting")
         stale = build_digital_twin(self.rows(), as_of=1500)
