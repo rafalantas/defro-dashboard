@@ -903,8 +903,18 @@ def _planning_forecast(model: dict | None, daily_model: dict | None,
         climate = _climate_monthly(now.date())
     except FuelError as exc:
         return {"status": "unavailable", "message": f"Brak norm pogodowych: {exc.message}"}
+    # Reuse Open-Meteo's monthly archive cache to provide up to one year of
+    # observed daily temperatures for seasonal transition detection. The provider
+    # fetches a month at a time, so this does not issue one request per day.
+    season_temps = dict(known_temps)
+    for offset_days in range(8, 366):
+        day = now.date() - timedelta(days=offset_days)
+        if day not in season_temps:
+            temperature = _openmeteo_mean(day)
+            if temperature is not None:
+                season_temps[day] = temperature
     return _planning_forecast_impl(
-        model, daily_model, forecast, now, known_temps, climate, _weather, _om_offset,
+        model, daily_model, forecast, now, season_temps, climate, _weather, _om_offset,
         _predict_daily, _predict_kg_per_day, _lagged_temperature,
         "Hajnówka, Podlaskie", FUEL_LAT, FUEL_LON, CLIMATE_YEARS,
     )
