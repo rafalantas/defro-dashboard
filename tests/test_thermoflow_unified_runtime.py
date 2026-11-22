@@ -134,6 +134,9 @@ class UnifiedRuntimeTests(unittest.TestCase):
         result = response["modules"]["diagnostic_ai"]["result"]
         self.assertEqual(result["items"][0]["evidence_ref"], "/screens/return")
         self.assertIn("return", response["screens"])
+        self.assertIn("anomaly_v3", response["modules"])
+        self.assertIn("causal_diagnostics", response["modules"])
+        self.assertEqual(response["modules"]["anomaly_v3"]["status"], "available")
         response["screens"].clear()
         self.assertIn("return", original["screens"])
         stale = runtime.read(NOW + 91, shadow.read(NOW + 91))
@@ -167,7 +170,7 @@ class UnifiedHTTPTests(unittest.TestCase):
                     result = json.loads(body)
                     self.assertEqual(result["schema"], SCHEMA)
                     self.assertEqual(set(result["modules"]),
-                                     {"burner_ml", "fuel_ml", "weather_impact", "health_score", "diagnostic_ai"})
+                                     {"burner_ml", "fuel_ml", "weather_impact", "health_score", "diagnostic_ai", "anomaly_v3", "causal_diagnostics"})
                     self.assertFalse(result["live_predictions_enabled"])
                     for name in ("burner_ml", "fuel_ml", "weather_impact"):
                         self.assertIsNone(result["modules"][name]["prediction"])
