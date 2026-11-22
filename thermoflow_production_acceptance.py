@@ -8,7 +8,8 @@ def _item(name, status, detail, *, blocking=False):
 
 
 def build_acceptance_report(*, shadow=None, live_predictions=None, intelligence=None,
-                            data_quality=None, monitoring=None, deployment_checks=None):
+                            data_quality=None, monitoring=None, digital_twin=None,
+                            deployment_checks=None):
     """Build explicit gates from supplied evidence; never infer missing checks."""
     gates = []
     telemetry_status = shadow.get("status") if isinstance(shadow, dict) else None
@@ -20,6 +21,16 @@ def build_acceptance_report(*, shadow=None, live_predictions=None, intelligence=
         gates.append(_item("telemetry", "blocked", "Telemetry is unavailable.", blocking=True))
     else:
         gates.append(_item("telemetry", "collecting", "No complete fresh shadow assessment yet."))
+
+    twin = digital_twin if isinstance(digital_twin, dict) else {}
+    twin_state = twin.get("status")
+    if twin_state == "observing":
+        gates.append(_item("digital_twin", "shadow_ready",
+                           "Fresh synchronized temperatures support a read-only trend projection; not a physical simulation."))
+    elif twin_state == "stale":
+        gates.append(_item("digital_twin", "blocked", "Digital twin input telemetry is stale.", blocking=True))
+    else:
+        gates.append(_item("digital_twin", "collecting", "Insufficient synchronized history for a trend projection."))
 
     predictions = live_predictions if isinstance(live_predictions, dict) else {}
     for key, label in (("burner_ml", "Burner ML"), ("fuel_ml", "Fuel ML")):
@@ -70,6 +81,8 @@ def build_acceptance_report(*, shadow=None, live_predictions=None, intelligence=
         "summary": {"gates": len(gates), "passed": sum(g["status"] in ("ready", "shadow_ready") for g in gates),
                     "blockers": len(blockers), "outstanding": len(outstanding)},
         "blockers": blockers, "outstanding": outstanding, "gates": gates,
+        "digital_twin": {"status": twin_state or "not_assessed",
+                         "mode": twin.get("mode") if twin else None},
         "safety": {"control": "read_only_advisory", "return_protection_c": "55°C ±1°C"},
         "limitations": ["This report does not certify model quality or boiler safety.",
                        "CI success is not a substitute for production smoke tests.",
