@@ -72,7 +72,7 @@ Przykład formatu (wartości demonstracyjne, nie dane z instalacji):
 Po zbudowaniu zrzutu uruchom:
 
 ```sh
-docker exec -i defro-dashboard-api python -m thermoflow_fuel_snapshot --metadata /dev/stdin --evaluate < fuel-metadata.json > verified-fuel-periods.json
+docker exec -i defro-dashboard-api python -m thermoflow_fuel_snapshot --metadata /dev/stdin < fuel-metadata.json > verified-fuel-periods.json
 python3 -m thermoflow_weather_impact verified-fuel-periods.json
 ```
 
