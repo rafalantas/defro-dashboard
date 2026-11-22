@@ -85,7 +85,7 @@
     const el=$('fuelPlanning');if(!el)return;
     const p=summaryData?.planning||{};
     if(p.status!=='ready'){el.innerHTML='<div class="fuel-empty">'+esc(p.message||'Oczekiwanie na dane pogodowe i model domu')+'</div>';return;}
-    const periods=[['Dziś',p.today],['7 dni',p.week],['30 dni',p.month],['Sezon grzewczy',p.season]];
+    const periods=[['Dziś',p.today],['7 dni',p.week],['30 dni',p.month],['Do końca sezonu',p.season]];
     el.innerHTML='<div class="fuel-planning-grid">'+periods.map(([label,v])=>'<div class="fuel-planning-card"><span>'+label+'</span><strong>'+n(v.kg,0)+' kg</strong><small>≈ '+v.bags_15kg+' worków po 15 kg</small><small>'+n(v.average_kg_day,1)+' kg/dobę</small></div>').join('')+'</div><p class="fuel-detail-footnote">'+esc(p.location)+' · '+esc(p.weather)+' · '+esc(p.note)+'</p>';
   }
   function renderForecast(){
