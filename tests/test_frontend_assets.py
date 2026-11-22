@@ -152,3 +152,12 @@ def test_unified_intelligence_renders_digital_twin_trends():
     assert "Ekstrapolacja ostatniego trendu" in script
     assert "intelligence-twin-values" in script
     assert ".intelligence-digital-twin" in css
+
+def test_fuel_mobile_telemetry_panel_cannot_collapse_to_narrow_column():
+    css = (ROOT / "assets/css/ui-polish.css").read_text(encoding="utf-8")
+    assert "@media(max-width:600px)" in css
+    assert "#fuelCard .fuel-analysis-side{\n    display:grid;" in css
+    assert "grid-column:1/-1;" in css
+    assert "#fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading h4" in css
+    assert "#fuelCard .fuel-quality-fields{grid-template-columns:minmax(0,1fr)}" in css
+    assert "overflow-wrap:anywhere" in css
