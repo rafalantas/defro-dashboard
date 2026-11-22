@@ -39,7 +39,44 @@ Format `--metadata` (przykład wyłącznie formatu):
 }
 ```
 
-Usuń klucz `archived_baselines`, aby użyć mediany retrospektywnej. Gdy klucz występuje, nie uzupełniamy braków medianą. `start` identyfikuje początek okresu (końcowy czas wpisu po scaleniu); prognoza musi być zachowana w tej chwili lub wcześniej. Nie wyliczaj jej dzisiejszym modelem wstecz. Jeśli metadata jest potrzebna, uruchom narzędzie w środowisku z dostępem do tego pliku, np. `docker exec -i defro-dashboard-api python -m thermoflow_fuel_snapshot --metadata /dev/stdin --status < fuel-metadata.json`. Plik zostaje na komputerze roboczym; wewnątrz kontenera nie powstaje kopia.
+Usuń klucz `archived_baselines`, aby użyć mediany retrospektywnej. Gdy klucz występuje, nie uzupełniamy braków medianą.
+
+### Archiwum pogody z chwili decyzji
+
+Ten sam plik może zawierać `archived_forecasts`. Są one dołączane do zrzutu, dzięki czemu `thermoflow_weather_impact` może ocenić dokładnie te prognozy, które były dostępne przed początkiem okresu. Każdy wpis musi wskazywać dokładne granice okresu dosypka–dosypka, mieć `kind: "forecast"` oraz strefowe znaczniki `issued_at` i `available_at` spełniające warunek `issued_at <= available_at <= start`. Wartość `forecast_mean_outdoor_c` musi być skończoną temperaturą w zakresie -90..65°C. Duplikaty, obserwacje, późne prognozy, złe okna i błędne wartości są odrzucane.
+
+Przykład formatu (wartości demonstracyjne, nie dane z instalacji):
+
+```json
+{
+  "schema": "thermoflow-fuel-import-metadata/1",
+  "verified_refill_ids": [14, 15, 17],
+  "archived_baselines": [{
+    "start": "2026-11-21T09:00:00Z",
+    "baseline_issued_at": "2026-11-21T08:50:00Z",
+    "baseline_kg_per_day": 11.4
+  }],
+  "archived_forecasts": [{
+    "start": "2026-11-21T09:00:00Z",
+    "end": "2026-11-28T09:00:00Z",
+    "issued_at": "2026-11-21T08:40:00Z",
+    "available_at": "2026-11-21T08:42:00Z",
+    "kind": "forecast",
+    "forecast_mean_outdoor_c": 2.5
+  }]
+}
+```
+
+`archived_forecasts` jest opcjonalne. Bez niego zrzut zawiera pustą listę prognoz i Weather Impact pozostaje `collecting`; nie pobieramy pogody wstecz ani nie zastępujemy prognozy obserwacją.
+
+Po zbudowaniu zrzutu uruchom:
+
+```sh
+docker exec -i defro-dashboard-api python -m thermoflow_fuel_snapshot --metadata /dev/stdin < fuel-metadata.json > verified-fuel-periods.json
+python3 -m thermoflow_weather_impact verified-fuel-periods.json
+```
+
+Wpisy `archived_forecasts` muszą być ręcznie zarchiwizowanymi prognozami z rzeczywistymi czasami wydania i dostępności. Nie wpisuj dzisiejszych wartości ani czasu importu jako historycznych znaczników. `start` identyfikuje początek okresu (końcowy czas wpisu po scaleniu); prognoza musi być zachowana w tej chwili lub wcześniej. Nie wyliczaj jej dzisiejszym modelem wstecz. Jeśli metadata jest potrzebna, uruchom narzędzie w środowisku z dostępem do tego pliku, np. `docker exec -i defro-dashboard-api python -m thermoflow_fuel_snapshot --metadata /dev/stdin --status < fuel-metadata.json`. Plik zostaje na komputerze roboczym; wewnątrz kontenera nie powstaje kopia.
 
 Bez dodatkowych opcji narzędzie wypisuje zrzut kompatybilny z `python -m thermoflow_fuel_ml`. Zrzut zawiera czasy operacji i identyfikatory wpisów, ale nie notatki i nie klucze. Przechowuj go poza repozytorium. `collecting` nie oznacza awarii odczytu, tylko brak wystarczającej liczby kwalifikujących się okresów. Testy syntetyczne nie stanowią pomiaru jakości na instalacji.
 
