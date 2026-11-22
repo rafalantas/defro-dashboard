@@ -145,6 +145,9 @@ def analyze_multisignal(samples, *, as_of):
         record = {
             "pump": pump, "start_events": len(events), "paired_events": len(paired),
             "return_drop_events": len(drops), "median_return_delta_c": median_delta,
+            "median_valve_response_delay_seconds": round(median(valve_delays), 1) if valve_delays else None,
+            "median_boiler_delta_after_15m_c": round(median(boiler_followups), 2) if boiler_followups else None,
+            "boiler_followup_events": len(boiler_followups),
             "status": "insufficient_evidence",
         }
         if len(paired) >= MIN_PAIRED_EVENTS:
