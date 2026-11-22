@@ -155,6 +155,54 @@
     }
     card.append(box);
   }
+  function weatherForecast(card, forecast) {
+    const box = element('section', undefined, 'intelligence-weather-forecast');
+    box.append(element('strong', 'Prognoza peletu zależna od pogody'));
+    const reasons = {
+      forecast_unavailable: 'Prognoza pogodowa lub model paliwowy nie są jeszcze dostępne.',
+      invalid_forecast_timestamp: 'Brak wiarygodnego czasu wygenerowania prognozy.',
+      fuel_summary_stale: 'Dane prognozy są nieaktualne — odświeżenie silnika paliwowego jest potrzebne.',
+      invalid_forecast: 'Dane prognozy mają nieprawidłowy format.',
+      no_valid_forecast_days: 'Brak poprawnych dni prognozy.'
+    };
+    if (!forecast || forecast.status !== 'ready' || !forecast.week) {
+      const state = forecast?.status === 'stale' ? 'Prognoza nieaktualna' :
+        forecast?.status === 'unavailable' ? 'Prognoza niedostępna' : 'Zbieranie danych';
+      box.append(element('p', state, 'intelligence-weather-state'));
+      note(box, reasons[forecast?.reason] || reasons.forecast_unavailable);
+      card.append(box);
+      return;
+    }
+    const total = forecast.week.kg;
+    const average = forecast.week.average_kg_per_day;
+    box.append(element('p', number.format(total) + ' kg / ' + forecast.week.days + ' dni',
+      'intelligence-weather-total'));
+    note(box, 'Średnio ' + number.format(average) + ' kg/d. ' +
+      (forecast.source || 'Prognoza Open-Meteo i model paliwowy.'));
+    const model = forecast.model || {};
+    const modelNames = {
+      weather_daily_model: 'model dobowy: temperatura, bezwładność, słońce i wiatr',
+      temperature_hdd_house_model: 'model budynku oparty na stopniodniach',
+      unavailable: 'model niedostępny'
+    };
+    note(box, 'Podstawa: ' + (modelNames[model.kind] || 'model paliwowy') +
+      (Number.isInteger(model.training_days) ? ' (' + model.training_days + ' dób treningowych).' : '.'));
+    const list = element('ul', undefined, 'intelligence-weather-days');
+    for (const day of forecast.days) {
+      const details = [number.format(day.t_mean) + ' °C'];
+      if (Number.isFinite(day.solar_mj)) details.push('słońce ' + number.format(day.solar_mj) + ' MJ/m²');
+      if (Number.isFinite(day.wind_max_kmh)) details.push('wiatr ' + number.format(day.wind_max_kmh) + ' km/h');
+      list.append(element('li', day.day + ': ' + number.format(day.kg) + ' kg — ' + details.join(', ')));
+    }
+    box.append(list);
+    if (Number.isFinite(model.loo_rmse_kg_per_day)) {
+      note(box, 'Błąd LOO modelu na danych historycznych: ' +
+        number.format(model.loo_rmse_kg_per_day) + ' kg/d — to miara błędu, nie gwarantowany przedział prognozy.');
+    }
+    note(box, 'Prognoza doradcza. Nie zmienia nastaw kotła ani istniejącego rozliczenia paliwa.');
+    card.append(box);
+  }
+
   function render(data, fallback, referenceNow = Date.now()) {
     clearTimeout(expiryTimer);
     live.replaceChildren();
@@ -186,6 +234,7 @@
       if (offline) {
         metrics(card, entry, unit, variants);
         if (id === 'burner_ml' || id === 'fuel_ml') livePrediction(card, id, data?.live_predictions?.[id]);
+        if (id === 'weather_impact') weatherForecast(card, data?.weather_forecast);
       } else if (id === 'health_score') health(card, entry);
       else diagnostic(card, entry, data?.screens);
       timestamp(card, entry, offline);
