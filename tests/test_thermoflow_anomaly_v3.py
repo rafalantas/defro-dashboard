@@ -70,6 +70,19 @@ class AnomalyV3Tests(unittest.TestCase):
         self.assertEqual(result["patterns"][0]["confidence"], "low")
         self.assertEqual(result["patterns"][0]["events_with_concurrent_pump_changes"], 1)
 
+    def test_fifteen_minute_boiler_trend_is_exposed_as_context(self):
+        rows, now = samples(floor_starts=3, drop=-1.5)
+        for offset in range(1, 32):
+            rows.append({
+                "timestamp": now + offset * 30, "return_c": 60.0, "boiler_c": 65.0,
+                "flue_c": 100.0, "valve_opening_pct": 20.0,
+                "pumps": {"floor": False, "dhw": False, "valve4d": True, "circulation": False},
+            })
+        result = analyze_multisignal(rows, as_of=rows[-1]["timestamp"])
+        pattern = result["patterns"][0]
+        self.assertEqual(pattern["boiler_followup_events"], 3)
+        self.assertEqual(pattern["median_boiler_delta_after_15m_c"], -5.0)
+
     def test_invalid_sensor_values_are_missing_not_zero(self):
         rows, now = samples(floor_starts=3, drop=-1.5)
         rows[1]["return_c"] = float("nan")
