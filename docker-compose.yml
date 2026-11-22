@@ -40,6 +40,10 @@ services:
       FUEL_TZ: ${FUEL_TZ:-Europe/Warsaw}
       FUEL_TEMPS_DATA_START: ${FUEL_TEMPS_DATA_START:-}
       THINGSPEAK_WRITE_ENABLED: ${THINGSPEAK_WRITE_ENABLED:-true}
+      THERMOFLOW_BURNER_MODEL_PATH: ${THERMOFLOW_BURNER_MODEL_PATH:-/run/thermoflow/burner-model.json}
+      THERMOFLOW_FUEL_MODEL_PATH: ${THERMOFLOW_FUEL_MODEL_PATH:-/run/thermoflow/fuel-model.json}
+    volumes:
+      - ./data/thermoflow:/run/thermoflow:ro
     expose:
       - "8000"
     restart: unless-stopped
