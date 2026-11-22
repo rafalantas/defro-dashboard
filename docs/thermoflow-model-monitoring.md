@@ -14,3 +14,6 @@ Run as an offline report from a trusted operator process. Keep ledgers and
 artifacts outside source control. Monitoring never trains, retrains, promotes,
 or replaces a model. A review alert requires human inspection and cannot alter
 the boiler, pumps, valve, feeder, ignition or STB.
+
+
+Aggregated window metrics are weighted by the number of paired labeled cases; keep window boundaries chronological and non-overlapping.
