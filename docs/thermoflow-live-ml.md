@@ -21,9 +21,13 @@ the immediately preceding complete FIRE-confirmed cycle duration and the
 observed idle time. It displays the predicted total cycle duration and elapsed
 time; it does not claim to predict ignition in advance or remaining time.
 
-A cycle is accepted only when consecutive poll observations are no more than
-75 seconds apart. A telemetry gap, disconnect, invalid FIRE value, or stale
-sample breaks the evidence chain. The live prediction expires with telemetry.
+A cycle is accepted only when its OFF → FIRE boundary was observed by the
+running poller and consecutive observations are no more than 75 seconds apart.
+If the process starts while FIRE is already on, or a telemetry gap occurs while
+FIRE remains on, that partial cycle is not used as a completed training example.
+The next complete OFF → FIRE → OFF cycle is required. A live prediction is also
+withdrawn when the active cycle exceeds the runtime's six-hour evidence bound,
+or when telemetry expires.
 
 ## 2. Build the Fuel ML artifact
 
