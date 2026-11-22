@@ -89,15 +89,22 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
         month = month_index % 12 + 1
         next_index = month_index + 1
         next_month = next_index % 12 + 1
+        previous_month = 12 if month == 1 else month - 1
+        previous_year = year - 1 if month == 1 else year
+        previous_mean = climate.get(previous_month, {}).get("t_mean")
         first = climate.get(month, {}).get("t_mean")
         second = climate.get(next_month, {}).get("t_mean")
-        if first is not None and second is not None and float(first) >= warm_threshold and float(second) >= warm_threshold:
+        if (previous_mean is not None and first is not None and second is not None
+                and float(previous_mean) < warm_threshold
+                and float(first) >= warm_threshold and float(second) >= warm_threshold):
             season_end = date(year, month, 1)
             break
     season_start_detected = season_start is not None
     season_end_detected = season_end is not None and season_end > today
+    if season_start is not None and 5 <= today.month < 10 and season_start.year < today.year:
+        season_start = season_start.replace(year=today.year)
     if season_start is None:
-        season_start = date(today.year, 10, 1) if today.month >= 10 else (date(today.year - 1, 10, 1) if today.month <= 4 else today)
+        season_start = date(today.year, 10, 1) if 5 <= today.month < 10 or today.month >= 10 else date(today.year - 1, 10, 1)
     if season_end is None or season_end <= today:
         season_end = date(today.year, 4, 30) if today.month <= 4 else date(today.year + 1, 4, 30)
     horizon = max(month_end, season_end)
@@ -154,7 +161,7 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
         "weather": "prognoza 7 dni + średnie miesięczne z 5 lat",
         "climate_years": climate_years, "generated_at": now.isoformat(),
         "today": total(today, today), "week": total(today, today + timedelta(days=6)),
-        "month": total(today, month_end), "season": total(today, season_end),
+        "month": total(today, month_end), "season": total(max(today, season_start), season_end),
         "season_detection": {"start": season_start.isoformat(), "end": season_end.isoformat(), "method": "temperature_history_and_climate" if observed else "calendar_fallback", "balance_temp": balance_temp},
         "daily": rows[:7],
         "note": "Orientacyjnie; po 7 dniach używane są średnie klimatyczne. Worki zaokrąglone w górę do 15 kg.",
