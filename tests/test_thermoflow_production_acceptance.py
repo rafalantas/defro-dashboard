@@ -28,6 +28,7 @@ class ProductionAcceptanceTests(unittest.TestCase):
             shadow={"status":"screened"},
             live_predictions={"burner_ml":{"status":"predicted"}, "fuel_ml":{"status":"predicted"}},
             data_quality={"status":"ready"}, monitoring={"status":"observing"},
+            digital_twin={"status":"observing","mode":"read_only_observational_projection"},
             deployment_checks=checks)
         self.assertEqual(result["status"], "ready_for_manual_signoff")
         self.assertEqual(result["summary"]["outstanding"], 0)
