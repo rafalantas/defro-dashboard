@@ -185,6 +185,61 @@ class FuelLiveArtifactTests(unittest.TestCase):
         self.assertEqual(runtime.read(NOW)["burner_ml"]["status"], "collecting")
         self.assertEqual(runtime.read(NOW)["fuel_ml"]["status"], "collecting")
 
+    def test_startup_or_gap_mid_fire_never_counts_partial_cycle_as_training_evidence(self):
+        burner = burner_artifact()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "burner.json"
+            path.write_text(json.dumps(burner), encoding="utf-8")
+
+            def sample(runtime, offset, fire):
+                runtime.observe({"connected": True, "fetched_at": iso(NOW + offset),
+                                 "data": {"fire": fire}})
+
+            runtime = LiveMLRuntime(burner_path=str(path))
+            runtime.refresh(now=NOW)
+            sample(runtime, 0, 1)       # Process starts in the middle of FIRE.
+            sample(runtime, 30, 1)
+            sample(runtime, 60, 0)      # Partial cycle must be discarded.
+            sample(runtime, 90, 1)
+            result = runtime.read(NOW + 90)
+            self.assertEqual(result["burner_ml"]["status"], "collecting")
+            self.assertEqual(result["burner_ml"]["reason"],
+                             "waiting_for_previous_complete_cycle_and_model")
+
+            sample(runtime, 120, 0)
+            sample(runtime, 150, 1)
+            self.assertEqual(runtime.read(NOW + 150)["burner_ml"]["status"], "predicted")
+
+            after_gap = LiveMLRuntime(burner_path=str(path))
+            after_gap.refresh(now=NOW)
+            sample(after_gap, 0, 0)
+            sample(after_gap, 30, 1)
+            sample(after_gap, 120, 1)  # >75 s gap while FIRE remains on.
+            sample(after_gap, 150, 0)
+            sample(after_gap, 180, 1)
+            result = after_gap.read(NOW + 180)
+            self.assertEqual(result["burner_ml"]["status"], "collecting")
+            self.assertEqual(result["burner_ml"]["reason"],
+                             "waiting_for_previous_complete_cycle_and_model")
+
+    def test_burner_prediction_expires_when_cycle_exceeds_physical_safety_bound(self):
+        burner = burner_artifact()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "burner.json"
+            path.write_text(json.dumps(burner), encoding="utf-8")
+            runtime = LiveMLRuntime(burner_path=str(path))
+            runtime.refresh(now=NOW)
+            for offset, fire in ((0, 0), (30, 1), (60, 0), (90, 1)):
+                runtime.observe({"connected": True, "fetched_at": iso(NOW + offset),
+                                 "data": {"fire": fire}})
+            with patch("thermoflow_live_ml.MAX_BURNER_CYCLE_SECONDS", 60):
+                runtime.observe({"connected": True, "fetched_at": iso(NOW + 150),
+                                 "data": {"fire": 1}})
+                result = runtime.read(NOW + 150)
+            self.assertEqual(result["burner_ml"]["status"], "collecting")
+            self.assertEqual(result["burner_ml"]["reason"], "cycle_exceeded_max_duration")
+            self.assertNotIn("prediction", result["burner_ml"])
+
 
 class LiveMLApiTests(unittest.TestCase):
     def test_unified_intelligence_exposes_separate_live_predictions(self):
