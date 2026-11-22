@@ -2,3 +2,5 @@
 /secrets/tech_api_token
 
 .DS_Store
+
+/data/thermoflow/
