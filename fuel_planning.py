@@ -69,7 +69,7 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
     forecast_map = dict(forecast)
     today = now.date()
     month_end = today + timedelta(days=29)
-    balance_temp = float((daily_model or {}).get("balance_temp", model.get("balance_temp", 15.5)))
+    balance_temp = float(model.get("balance_temp", (daily_model or {}).get("balance_temp", 15.5)))
     observed = sorted((day, float(temp)) for day, temp in known_temps.items()
                       if temp is not None and day <= today)
     season_start = None
