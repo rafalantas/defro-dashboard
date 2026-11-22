@@ -1,9 +1,16 @@
 import json
+import http.client
+import threading
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+from http.server import ThreadingHTTPServer
+
+import api
+from thermoflow_shadow_runtime import ShadowRuntime
+from thermoflow_unified_runtime import UnifiedRuntime
 
 from thermoflow_fuel_live import (
     ARTIFACT_SCHEMA as FUEL_SCHEMA,
@@ -177,6 +184,37 @@ class FuelLiveArtifactTests(unittest.TestCase):
         runtime.observe({"connected": False})
         self.assertEqual(runtime.read(NOW)["burner_ml"]["status"], "collecting")
         self.assertEqual(runtime.read(NOW)["fuel_ml"]["status"], "collecting")
+
+
+class LiveMLApiTests(unittest.TestCase):
+    def test_unified_intelligence_exposes_separate_live_predictions(self):
+        class FakeLiveRuntime:
+            fuel_path = ""
+
+            def read(self, _now, _fuel_summary):
+                return {
+                    "burner_ml": {"status": "predicted", "prediction": 18.5, "unit": "minutes"},
+                    "fuel_ml": {"status": "collecting", "reason": "missing_artifact"},
+                }
+
+        with ThreadingHTTPServer(("127.0.0.1", 0), api.Handler) as server:
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                with (patch.object(api, "_intelligence_runtime", UnifiedRuntime()),
+                      patch.object(api, "_shadow_runtime", ShadowRuntime()),
+                      patch.object(api, "_live_ml_runtime", FakeLiveRuntime())):
+                    with http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3) as client:
+                        client.request("GET", "/api/thermoflow/v1/intelligence")
+                        response = client.getresponse()
+                        payload = json.loads(response.read())
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.getheader("Cache-Control"), "no-store")
+                        self.assertEqual(payload["live_predictions"]["burner_ml"]["prediction"], 18.5)
+                        self.assertEqual(payload["live_predictions"]["fuel_ml"]["status"], "collecting")
+            finally:
+                server.shutdown()
+                worker.join(timeout=2)
 
 
 if __name__ == "__main__":
