@@ -59,8 +59,19 @@ def monitor_models(*, now, artifacts=None, ledgers=None, max_artifact_age_second
             elif coverage < minimum_coverage:
                 alerts.append("shadow_coverage_low")
             if ledger["kind"] == "regression":
-                metrics = evaluation["paired_metrics"]
-                baseline, candidate = metrics["baseline"], metrics["candidate"]
+                def aggregate(side):
+                    rows = [window["paired_metrics"][side] for window in evaluation["windows"]
+                            if window["paired_metrics"][side] is not None]
+                    total = sum(row["samples"] for row in rows)
+                    if not total:
+                        return None
+                    return {
+                        "mae": sum(row["mae"] * row["samples"] for row in rows) / total,
+                        "rmse": (sum(row["rmse"] ** 2 * row["samples"] for row in rows) / total) ** 0.5,
+                        "bias": sum(row["bias"] * row["samples"] for row in rows) / total,
+                        "samples": total,
+                    }
+                baseline, candidate = aggregate("baseline"), aggregate("candidate")
                 if baseline and candidate and baseline["mae"] > 0:
                     if candidate["mae"] > baseline["mae"] * (1 + regression_worsening_ratio):
                         alerts.append("candidate_error_regression")
