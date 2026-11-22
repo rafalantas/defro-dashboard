@@ -90,7 +90,6 @@ def planning_forecast(model: dict, daily_model, forecast: list, now: datetime,
         next_index = month_index + 1
         next_month = next_index % 12 + 1
         previous_month = 12 if month == 1 else month - 1
-        previous_year = year - 1 if month == 1 else year
         previous_mean = climate.get(previous_month, {}).get("t_mean")
         first = climate.get(month, {}).get("t_mean")
         second = climate.get(next_month, {}).get("t_mean")
