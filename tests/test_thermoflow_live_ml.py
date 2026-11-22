@@ -233,9 +233,9 @@ class FuelLiveArtifactTests(unittest.TestCase):
                 runtime.observe({"connected": True, "fetched_at": iso(NOW + offset),
                                  "data": {"fire": fire}})
             with patch("thermoflow_live_ml.MAX_BURNER_CYCLE_SECONDS", 60):
-                runtime.observe({"connected": True, "fetched_at": iso(NOW + 150),
+                runtime.observe({"connected": True, "fetched_at": iso(NOW + 151),
                                  "data": {"fire": 1}})
-                result = runtime.read(NOW + 150)
+                result = runtime.read(NOW + 151)
             self.assertEqual(result["burner_ml"]["status"], "collecting")
             self.assertEqual(result["burner_ml"]["reason"], "cycle_exceeded_max_duration")
             self.assertNotIn("prediction", result["burner_ml"])
