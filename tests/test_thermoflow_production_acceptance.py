@@ -15,11 +15,11 @@ class ProductionAcceptanceTests(unittest.TestCase):
             shadow={"status":"stale"},
             live_predictions={"burner_ml":{"status":"stale"}, "fuel_ml":{"status":"unavailable"}},
             data_quality={"status":"blocked"}, monitoring={"status":"review"},
-            deployment_checks={"api_health":False, "http_5xx":True})
+            deployment_checks={"api_health":False, "http_5xx":False})
         self.assertEqual(result["status"], "blocked")
         self.assertIn("telemetry", result["blockers"])
         self.assertIn("api_health", result["blockers"])
-        self.assertIn("http_5xx", result["outstanding"])
+        self.assertIn("http_5xx", result["blockers"])
 
     def test_full_acceptance_requires_every_operator_check(self):
         checks = {key:True for key in ("api_health","intelligence_endpoint","http_5xx",
