@@ -201,11 +201,13 @@ def _metadata(path):
         raise ValueError("verified refill IDs must be unique positive integers")
     if "archived_baselines" not in doc and "archived_forecasts" not in doc:
         return verified, None, []
-    archive = doc["archived_baselines"]
-    if not isinstance(archive, list):
-        raise ValueError("archived baselines must be a list")
-    baselines = {}
-    for item in archive:
+    baselines = None
+    if "archived_baselines" in doc:
+        archive = doc["archived_baselines"]
+        if not isinstance(archive, list):
+            raise ValueError("archived baselines must be a list")
+        baselines = {}
+    for item in (archive if baselines is not None else []):
         if not isinstance(item, dict):
             raise ValueError("invalid archived baseline record")
         ts = _stamp(item["start"])
