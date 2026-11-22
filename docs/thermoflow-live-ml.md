@@ -53,12 +53,16 @@ it does not replace the existing hopper estimate or fuel accounting.
 
 ## 3. Mount artifacts into the API container
 
-Mount the two generated files read-only and set:
+Place the generated files in the host-side `./data/thermoflow/` directory:
 
-```text
-THERMOFLOW_BURNER_MODEL_PATH=/run/thermoflow/burner-model.json
-THERMOFLOW_FUEL_MODEL_PATH=/run/thermoflow/fuel-model.json
-```
+- `./data/thermoflow/burner-model.json`
+- `./data/thermoflow/fuel-model.json`
+
+The supplied `docker-compose.yml` mounts that directory at `/run/thermoflow`
+read-only and sets both model paths by default. Either artifact may be omitted;
+the corresponding module remains in a collecting/missing-artifact state. The
+paths can also be overridden with `THERMOFLOW_BURNER_MODEL_PATH` and
+`THERMOFLOW_FUEL_MODEL_PATH`.
 
 Either model may be configured independently. Missing, invalid, oversized,
 future-dated, or stale artifacts fail closed. Burner artifacts are limited to
