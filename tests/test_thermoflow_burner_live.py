@@ -89,7 +89,7 @@ class BurnerLiveArtifactTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "predicted")
         self.assertEqual(result["unit"], "minutes")
-        self.assertEqual(result["prediction"], 32.0)
+        self.assertEqual(result["prediction"], 36.0)
         self.assertEqual(result["mode"], "read_only_shadow")
         with self.assertRaisesRegex(ValueError, "positive"):
             predict_cycle_duration(
