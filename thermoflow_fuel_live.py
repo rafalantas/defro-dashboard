@@ -98,7 +98,7 @@ def build_live_artifact(benchmark, snapshot, *, created_at=None):
             and candidate["mae_kg_per_day"] < previous["mae_kg_per_day"]):
         raise ValueError("Fuel ML candidate must beat both as-issued and previous-period baselines")
 
-    dataset = benchmark.get("dataset", {}).get("dataset")
+    dataset = benchmark.get("dataset")
     holdout = dataset.get("holdout") if isinstance(dataset, dict) else None
     if not isinstance(holdout, list) or len(holdout) < 5:
         raise ValueError("Fuel ML verified holdout rows are missing")
