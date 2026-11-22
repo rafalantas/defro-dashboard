@@ -168,13 +168,17 @@ def load_live_artifact(value, *, now=None):
     if not isinstance(value, dict) or value.get("schema") != ARTIFACT_SCHEMA:
         raise ValueError("invalid Fuel ML artifact schema")
     clock = time.time() if now is None else now
-    created, period_end = value.get("created_at"), value.get("latest_verified_period_end")
+    created, source_as_of = value.get("created_at"), value.get("source_as_of")
+    period_end = value.get("latest_verified_period_end")
     if (type(clock) not in (int, float) or not math.isfinite(clock)
-            or type(created) is not int or type(period_end) is not int):
+            or type(created) is not int or type(source_as_of) is not int
+            or type(period_end) is not int):
         raise ValueError("invalid Fuel ML artifact timestamps")
     if clock < created - 300 or clock - created > MAX_ARTIFACT_AGE_SECONDS:
         raise ValueError("Fuel ML artifact is future-dated or stale")
-    if clock < period_end or clock - period_end > MAX_VERIFIED_PERIOD_AGE_SECONDS:
+    if not period_end <= source_as_of <= created or clock < period_end:
+        raise ValueError("Fuel ML source timestamps are inconsistent")
+    if clock - period_end > MAX_VERIFIED_PERIOD_AGE_SECONDS:
         raise ValueError("latest verified Fuel ML period is future-dated or stale")
     if value.get("mode") != "read_only_shadow" or value.get("promotion") != "manual_review_required":
         raise ValueError("Fuel ML artifact is not marked for manual shadow review")
