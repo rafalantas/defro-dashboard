@@ -57,4 +57,4 @@ COPY thermoflow_unified_runtime.py thermoflow_intelligence_bundle.py thermoflow_
 COPY thermoflow_burner_live.py thermoflow_fuel_live.py thermoflow_live_ml.py /app/
 COPY thermoflow_weather_forecast.py /app/thermoflow_weather_forecast.py
 
-COPY thermoflow_production_acceptance.py /app/thermoflow_production_acceptance.py
+COPY thermoflow_production_acceptance.py thermoflow_acceptance_evidence.py thermoflow_data_quality_gates.py thermoflow_model_monitoring.py thermoflow_shadow_evaluation.py thermoflow_digital_twin.py /app/
