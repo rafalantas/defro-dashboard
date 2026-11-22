@@ -131,7 +131,7 @@ jobs:
           assert result["digital_twin"]["status"] == "not_assessed"
           gates = {gate["name"]: gate["status"] for gate in result["gates"]}
           assert gates["Data quality"] == "not_assessed"
-          assert gates["Model monitoring"] == "collecting"
+          assert gates["Model monitoring"] == "not_assessed"
           assert result["safety"]["return_protection_c"] == "55°C ±1°C"
           '
       - name: Stop API container
