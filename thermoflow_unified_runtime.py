@@ -108,6 +108,20 @@ def _live_entries(shadow):
             "reason": None if available else "insufficient_or_stale_telemetry",
             "evaluated_at": stamp, "result": deepcopy(report) if readable else None,
         }
+    for name, key, accepted in (
+        ("anomaly_v3", "anomaly_v3", ("available", "collecting")),
+        ("causal_diagnostics", "causal_diagnostics", ("available", "collecting")),
+    ):
+        report = shadow.get(key) if valid and state not in ("stale", "telemetry_unavailable") else None
+        report_state = report.get("status") if isinstance(report, dict) else None
+        readable = report_state in accepted
+        entries[name] = {
+            "mode": "live_advisory",
+            "status": report_state if readable else state,
+            "reason": None if readable else "insufficient_or_stale_telemetry",
+            "evaluated_at": stamp,
+            "result": deepcopy(report) if readable else None,
+        }
     screens = shadow.get("screens") if valid and state not in ("stale", "telemetry_unavailable") else None
     return entries, deepcopy(screens)
 
