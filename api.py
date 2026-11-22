@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from fuel_schema import timezone as thermoflow_timezone
 from thermoflow_shadow_runtime import PATH as SHADOW_PATH, ShadowRuntime
 from thermoflow_unified_runtime import PATH as INTELLIGENCE_PATH, REFRESH_SECONDS, UnifiedRuntime
+from thermoflow_live_ml import LiveMLRuntime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -70,6 +71,10 @@ _cache_lock = threading.Lock()
 _shadow_runtime = ShadowRuntime()
 _intelligence_bundle = os.getenv("THERMOFLOW_INTELLIGENCE_BUNDLE", "").strip()
 _intelligence_runtime = UnifiedRuntime(_intelligence_bundle)
+_live_ml_runtime = LiveMLRuntime(
+    burner_path=os.getenv("THERMOFLOW_BURNER_MODEL_PATH", ""),
+    fuel_path=os.getenv("THERMOFLOW_FUEL_MODEL_PATH", ""),
+)
 _statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()
 _history_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
@@ -1422,6 +1427,20 @@ def _warmup_fuel():
             return
 
 
+def _fuel_summary_for_intelligence(headers):
+    """Reuse the existing cached fuel summary; ML must never trigger fuel writes."""
+    engine = _load_fuel_engine()
+    if engine is None:
+        return None
+    try:
+        result = engine.handle("GET", "/api/fuel/summary", {}, headers, b"")
+        if result and result[0] == 200 and isinstance(result[1], dict):
+            return result[1]
+    except Exception:
+        return None
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1473,7 +1492,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == INTELLIGENCE_PATH:
             now = time.time()
-            self._send_json(200, _intelligence_runtime.read(now, _shadow_runtime.read(now)))
+            fuel_summary = _fuel_summary_for_intelligence(self.headers) if _live_ml_runtime.fuel_path else None
+            response = _intelligence_runtime.read(now, _shadow_runtime.read(now))
+            response["live_predictions"] = _live_ml_runtime.read(now, fuel_summary)
+            self._send_json(200, response)
             return
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
             self.send_error(404)
@@ -1571,12 +1593,18 @@ def _poll_forever() -> None:
         except Exception:
             # Optional screening must not stop the existing archival poller.
             _shadow_runtime.observe({})
+        try:
+            _live_ml_runtime.observe(payload)
+        except Exception:
+            _live_ml_runtime.observe({})
         time.sleep(30)
 
 
 def _refresh_intelligence_forever() -> None:
     while True:
-        _intelligence_runtime.refresh(now=time.time())
+        now = time.time()
+        _intelligence_runtime.refresh(now=now)
+        _live_ml_runtime.refresh(now=now)
         time.sleep(REFRESH_SECONDS)
 
 
@@ -1584,6 +1612,6 @@ if __name__ == "__main__":
     threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", 8000), Handler)
     threading.Thread(target=_warmup_fuel, name="fuel-warmup", daemon=True).start()
-    if _intelligence_bundle:
+    if _intelligence_bundle or _live_ml_runtime.configured:
         threading.Thread(target=_refresh_intelligence_forever, name="intelligence-bundle", daemon=True).start()
     server.serve_forever()
