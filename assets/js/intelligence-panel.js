@@ -3,8 +3,9 @@
   'use strict';
   const byId = id => document.getElementById(`intelligence${id}`);
   const live = byId('Live'), benchmarks = byId('Benchmarks'), status = byId('Status');
+  const digitalTwin = byId('DigitalTwin');
   const refresh = byId('Refresh'), results = byId('Results');
-  if (!live || !benchmarks || !status || !refresh || !results) return;
+  if (!live || !benchmarks || !status || !refresh || !results || !digitalTwin) return;
 
   const modules = {
     health_score: ['Health Score', 'Ocena spalin i powrotu względem zakresu odniesienia.'],
@@ -232,10 +233,57 @@
     }
     card.append(box);
   }
+  function renderDigitalTwin(report) {
+    digitalTwin.replaceChildren();
+    const card = element('article', undefined, 'intelligence-module');
+    const heading = element('div', undefined, 'intelligence-heading');
+    heading.append(element('h4', 'Digital Twin · trend obserwacyjny'));
+    const state = report?.status === 'observing' ? 'Trend dostępny' :
+      report?.status === 'stale' ? 'Telemetria nieaktualna' : 'Zbieranie danych';
+    heading.append(element('span', state, 'intelligence-state'));
+    card.append(heading);
+    if (!report || report.status !== 'observing' || !report.state) {
+      note(card, 'Potrzeba co najmniej 8 zsynchronizowanych próbek z ciągłego okna. Brak danych nie tworzy prognozy.');
+      digitalTwin.append(card);
+      return;
+    }
+    const coverage = report.coverage || {};
+    if (Number.isInteger(coverage.samples)) note(card, 'Próbki: ' + coverage.samples +
+      ' · zakres: ' + number.format((coverage.span_seconds || 0) / 60) + ' min · maks. luka: ' +
+      (coverage.max_gap_seconds ?? '—') + ' s.');
+    const labels = {boiler_c: 'Kocioł', return_c: 'Powrót', flue_c: 'Spaliny'};
+    const values = element('div', undefined, 'intelligence-twin-values');
+    for (const [key, label] of Object.entries(labels)) {
+      if (!Number.isFinite(report.state[key])) continue;
+      values.append(element('p', label + ': ' + number.format(report.state[key]) + ' °C'));
+    }
+    card.append(values);
+    const projections = report.projections || {};
+    const table = element('table', undefined, 'intelligence-table');
+    table.setAttribute('aria-label', 'Ekstrapolacja trendu temperatur');
+    const head = table.createTHead().insertRow();
+    for (const title of ['Sygnał', '5 min', '15 min', '30 min']) {
+      const th = element('th', title); th.scope = 'col'; head.append(th);
+    }
+    const body = table.createTBody();
+    for (const [key, label] of Object.entries(labels)) {
+      const row = body.insertRow();
+      const th = element('th', label); th.scope = 'row'; row.append(th);
+      for (const horizon of ['5', '15', '30']) {
+        const point = projections[key]?.[horizon];
+        row.append(element('td', point ? number.format(point.value_c) + ' °C' : '—'));
+      }
+    }
+    card.append(table);
+    note(card, 'To ekstrapolacja ostatniego trendu, nie symulacja fizyczna. Zakresy są heurystyczne, nie probabilistyczne. Bez sterowania kotłem.');
+    digitalTwin.append(card);
+  }
+
   function render(data, fallback, referenceNow = Date.now()) {
     clearTimeout(expiryTimer);
     live.replaceChildren();
     benchmarks.replaceChildren();
+    renderDigitalTwin(data?.digital_twin);
     let nextExpiry = Infinity;
     for (const [id, [title, description, unit, variants]] of Object.entries(modules)) {
       const offline = unit !== undefined;
