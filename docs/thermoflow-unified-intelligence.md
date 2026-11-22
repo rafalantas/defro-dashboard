@@ -10,7 +10,7 @@
 
 ## Widok w dashboardzie
 
-W zakładce **Diagnostyka → ThermoFlow Unified Intelligence** są dwie karty bieżącej oceny i trzy karty benchmarków. Historyczne metryki MAE i RMSE są porównywane z wariantami odniesienia w tej samej jednostce. Gdy raportu brakuje, karta pokazuje przyczynę zamiast wyniku. Health Score to udział ocenionych składowych w zakresie odniesienia, nie miara sprawności ani bezpieczeństwa kotła. Diagnostic AI pokazuje wyłącznie hipotezy i dowody dostępne w bieżącym raporcie.
+W zakładce **Diagnostyka → ThermoFlow Unified Intelligence** są cztery karty bieżącej oceny i trzy karty benchmarków. Historyczne metryki MAE i RMSE są porównywane z wariantami odniesienia w tej samej jednostce. Gdy raportu brakuje, karta pokazuje przyczynę zamiast wyniku. Health Score to udział ocenionych składowych w zakresie odniesienia, nie miara sprawności ani bezpieczeństwa kotła. Diagnostic AI pokazuje wyłącznie hipotezy i dowody dostępne w bieżącym raporcie.
 
 Panel odczytuje nowy endpoint przy otwarciu Diagnostyki i po kliknięciu **Odśwież wyniki**. Nie odpytuje backendu cyklicznie i ukrywa wyniki po upływie ich ważności. Dotychczasowa karta „Ocena obserwacyjna” i historia pracy kotła nadal działają niezależnie.
 
