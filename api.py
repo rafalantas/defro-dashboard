@@ -127,7 +127,7 @@ def _thingspeak_write(payload: dict) -> None:
         created_at = datetime.now(timezone.utc).isoformat()
     with THINGSPEAK_WRITE_LOCK:
         for index, (channel_id, write_key, fields) in enumerate(zip(channel_ids, write_keys, fields_by_channel)):
-            if now - THINGSPEAK_LAST_WRITES[index] < THINGSPEAK_WRITE_INTERVAL_SECONDS:
+            if THINGSPEAK_LAST_WRITES[index] and now - THINGSPEAK_LAST_WRITES[index] < THINGSPEAK_WRITE_INTERVAL_SECONDS:
                 continue
             form = {"api_key": write_key, "created_at": created_at}
             for field_number, (_series_id, _label, path) in enumerate(fields, start=1):
@@ -181,7 +181,7 @@ def _thingspeak_write_fire(payload: dict) -> None:
 
     now = time.monotonic()
     with THINGSPEAK_WRITE_LOCK:
-        if now - THINGSPEAK_FIRE_LAST_WRITE < THINGSPEAK_WRITE_INTERVAL_SECONDS:
+        if THINGSPEAK_FIRE_LAST_WRITE and now - THINGSPEAK_FIRE_LAST_WRITE < THINGSPEAK_WRITE_INTERVAL_SECONDS:
             return
         try:
             created_at = datetime.fromisoformat(payload["fetched_at"]).astimezone(timezone.utc).isoformat()
