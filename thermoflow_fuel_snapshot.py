@@ -8,6 +8,7 @@ from bisect import bisect_right
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from math import isfinite
+from math import isfinite
 from pathlib import Path
 from statistics import median
 from urllib.error import HTTPError
@@ -161,26 +162,38 @@ def build_snapshot(rows, *, start, as_of, epochs, verified_ids=(), assume_equal_
 
 
 def _metadata(path):
+    """Load provenance metadata without silently accepting ambiguous records."""
     if path is None:
         return (), None
     doc = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict) or doc.get("schema") != "thermoflow-fuel-import-metadata/1":
-        raise ValueError
+        raise ValueError("invalid fuel import metadata schema")
     verified = doc.get("verified_refill_ids", [])
-    if not isinstance(verified, list) or any(type(value) is not int or value <= 0 for value in verified):
-        raise ValueError
+    if (not isinstance(verified, list)
+            or any(type(value) is not int or value <= 0 for value in verified)
+            or len(set(verified)) != len(verified)):
+        raise ValueError("verified refill IDs must be unique positive integers")
     if "archived_baselines" not in doc:
         return verified, None
+    archive = doc["archived_baselines"]
+    if not isinstance(archive, list):
+        raise ValueError("archived baselines must be a list")
     baselines = {}
-    for item in doc["archived_baselines"]:
+    for item in archive:
+        if not isinstance(item, dict):
+            raise ValueError("invalid archived baseline record")
         ts = _stamp(item["start"])
+        issued = _stamp(item["baseline_issued_at"])
+        rate = item["baseline_kg_per_day"]
         if ts in baselines:
-            raise ValueError
-        # A late or invalid issued baseline is rejected by the benchmark.
-        baselines[ts] = {"baseline_issued_at": _stamp(item["baseline_issued_at"]).isoformat(),
-                         "baseline_kg_per_day": item["baseline_kg_per_day"]}
+            raise ValueError("duplicate archived baseline period")
+        if issued > ts:
+            raise ValueError("archived baseline was issued after its period started")
+        if type(rate) not in (int, float) or not isfinite(rate) or rate <= 0:
+            raise ValueError("archived baseline rate must be positive and finite")
+        baselines[ts] = {"baseline_issued_at": issued.isoformat(),
+                         "baseline_kg_per_day": float(rate)}
     return verified, baselines
-
 
 def main(argv=None, *, now=None):
     parser = argparse.ArgumentParser(description=__doc__)
