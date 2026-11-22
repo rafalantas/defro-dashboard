@@ -98,7 +98,7 @@ class LiveMLRuntime:
             if type(fire) not in (bool, int, float) or fire not in (0, 1):
                 raise ValueError("FIRE state unavailable")
             fire = bool(fire)
-        except (KeyError, TypeError, ValueError, OverflowError):
+        except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
             with self._lock:
                 self._last_timestamp = None
                 self._last_fire = None
