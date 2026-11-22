@@ -111,5 +111,6 @@ class ShadowRuntime:
             report = self._report
         timestamp = report["evaluated_at"]
         if timestamp is not None and (not isfinite(now) or not 0 <= now - timestamp <= MAX_AGE):
-            return _envelope("stale", timestamp=timestamp)
+            return _envelope("stale", timestamp=timestamp,
+                            digital_twin={"schema": "thermoflow-digital-twin/1", "status": "stale"})
         return report
