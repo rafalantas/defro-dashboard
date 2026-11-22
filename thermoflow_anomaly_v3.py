@@ -81,14 +81,14 @@ def analyze_multisignal(samples, *, as_of):
     coverage["max_gap_seconds"] = max(gaps) if gaps else None
     if len(rows) < 2 or any(gap > MAX_GAP_SECONDS for gap in gaps):
         return {**base, "data_state": "discontinuous_history"}
-    if any(row["pumps"][pump] is None for row in rows for pump in PUMPS):
-        return {**base, "data_state": "incomplete_pump_states"}
     base["data_state"] = "usable"
 
     events_by_pump = {pump: [] for pump in PUMPS}
     for previous, current in zip(rows, rows[1:]):
         changed = [pump for pump in PUMPS
-                   if previous["pumps"][pump] != current["pumps"][pump]]
+                   if previous["pumps"][pump] is not None
+                   and current["pumps"][pump] is not None
+                   and previous["pumps"][pump] != current["pumps"][pump]]
         if not changed:
             continue
         for pump in changed:
