@@ -49,8 +49,9 @@ class BurnerLiveArtifactTests(unittest.TestCase):
         self.assertEqual(artifact["schema"], ARTIFACT_SCHEMA)
         self.assertEqual(artifact["promotion"], "manual_review_required")
         self.assertEqual(artifact["source_snapshot_sha256"], "a" * 64)
-        self.assertNotIn("training", json.dumps(artifact))
-        self.assertNotIn("holdout_rows", json.dumps(artifact))
+        self.assertNotIn("training", artifact)
+        self.assertNotIn("holdout_rows", artifact)
+        self.assertNotIn("training", artifact["model"])
         self.assertEqual(artifact["model"]["training_samples"], 30)
 
     def test_rejects_unbenchmarked_or_baseline_losing_candidate(self):

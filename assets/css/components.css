@@ -72,3 +72,10 @@
 .intelligence-table tbody td{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:960px){.intelligence-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.intelligence-module,#intelligenceLive .intelligence-module{grid-column:auto}}
 @media(max-width:620px){.intelligence-content{padding:4px 12px 12px}.intelligence-grid{grid-template-columns:minmax(0,1fr)}}
+
+
+/* Live ML predictions — advisory only */
+.intelligence-live-prediction{margin-top:10px;padding:10px 11px;border:1px solid #31524d;border-radius:8px;background:#10231f;display:grid;gap:5px}
+.intelligence-live-prediction>strong{font-size:10px;color:#8de0c7;letter-spacing:.25px}
+.intelligence-live-value{margin:0;color:var(--text);font:600 22px var(--mono);font-variant-numeric:tabular-nums}
+.intelligence-live-prediction .intelligence-context{font-size:10px}
