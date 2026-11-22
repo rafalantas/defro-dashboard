@@ -92,4 +92,5 @@ Numery oznaczają planowaną kolejność. Wszelkie modele pozostają obserwacyjn
 | #98 Health Score | Pokazywać składowe, wiek danych oraz uzasadnienie wyniku; brak danych nie jest ani dobrą, ani złą oceną pracy. |
 | #99 Diagnostic AI | Generować wyłącznie hipotezy poparte obserwacjami. Nie przedstawiać korelacji jako przyczyny i nie wysyłać komend do urządzeń. |
 | #100 API i Dashboard | Udostępnić wersjonowany wynik tylko do odczytu, z jasnym statusem zbierania danych. Bez treningu na żądanie HTTP. |
-| #110 Causal Diagnostics + Anomaly 3.0 | Analiza zsynchronizowanych zmian pomp, powrotu i zaworu 4D; minimum 3 sparowane zdarzenia, jawne czynniki zakłócające i brak twierdzeń o przyczynowości. Wyniki tylko w RAM i read-only. |\n| #101 Shadow Evaluation | Porównać baseline i kandydatów w kolejnych oknach czasu; raportować pokrycie, błąd, fałszywe alarmy i koszt obliczeń. Żadnej automatycznej promocji. |
+| #110 Causal Diagnostics + Anomaly 3.0 | Analiza zsynchronizowanych zmian pomp, powrotu i zaworu 4D; minimum 3 sparowane zdarzenia, jawne czynniki zakłócające i brak twierdzeń o przyczynowości. Wyniki tylko w RAM i read-only. |
+| #101 Shadow Evaluation | Porównać baseline i kandydatów w kolejnych oknach czasu; raportować pokrycie, błąd, fałszywe alarmy i koszt obliczeń. Żadnej automatycznej promocji. |
