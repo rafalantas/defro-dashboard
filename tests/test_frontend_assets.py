@@ -129,3 +129,26 @@ def test_fuel_analytics_layout_keeps_mobile_panels_full_width():
     assert "@media(max-width:760px)" in css
     assert "grid-template-columns:minmax(0,1fr)" in css
     assert ".fuel-analysis-layout .fuel-detail-panel" in css
+
+
+def test_digital_twin_is_rendered_in_acceptance_card():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "assets/js/acceptance-panel.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/css/components.css").read_text(encoding="utf-8")
+    assert 'id="acceptanceTwin"' in html
+    assert "renderTwin(data.digital_twin)" in script
+    assert "Ekstrapolacja trendu pomiarów" in script
+    assert "acceptance-twin-grid" in script
+    assert ".acceptance-twin" in css
+    assert "heuristic_not_probability" not in script
+
+
+def test_unified_intelligence_renders_digital_twin_trends():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "assets/js/intelligence-panel.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/css/components.css").read_text(encoding="utf-8")
+    assert 'id="intelligenceDigitalTwin"' in html
+    assert "renderDigitalTwin(data?.digital_twin)" in script
+    assert "Ekstrapolacja ostatniego trendu" in script
+    assert "intelligence-twin-values" in script
+    assert ".intelligence-digital-twin" in css

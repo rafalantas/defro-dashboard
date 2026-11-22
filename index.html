@@ -195,6 +195,7 @@
     </div>
     <div class="intelligence-content" id="intelligenceResults">
       <h3>Stan bieżący · diagnostyka</h3>
+      <div class="intelligence-digital-twin" id="intelligenceDigitalTwin" aria-live="polite"></div>
       <div class="intelligence-grid" id="intelligenceLive"></div>
       <h3>Testy modeli · dane historyczne</h3>
       <p class="intelligence-note">To testy na zakończonych, zweryfikowanych okresach — nie bieżąca prognoza zużycia. Prognoza peletu i pogody jest dostępna wyłącznie w zakładce „Paliwo i prognoza”. MAE i RMSE: im niższe, tym lepiej.</p>
@@ -205,6 +206,7 @@
     <div class="cardhead"><div><h2 id="acceptanceTitle">Odbiór produkcyjny ThermoFlow</h2><div class="subhead">Bramki jakości danych, modeli i wdrożenia · read-only · wymagany ręczny sign-off</div></div></div>
     <div class="acceptance-toolbar"><p id="acceptanceStatus" role="status" aria-live="polite">Oczekiwanie na raport odbioru…</p><button type="button" class="button diagnostics-refresh" id="acceptanceRefresh">Odśwież odbiór</button></div>
     <div class="acceptance-summary" id="acceptanceSummary"><div class="overview-muted">Oczekiwanie na dane…</div></div>
+    <div class="acceptance-twin" id="acceptanceTwin" aria-live="polite"><h3>Digital Twin · trend obserwacyjny</h3><p>Oczekiwanie na zsynchronizowane pomiary.</p></div>
     <div class="acceptance-gates" id="acceptanceGates" aria-live="polite"></div>
     <p class="acceptance-footnote">Status „gotowe do ręcznego odbioru” nie oznacza automatycznej certyfikacji ani promocji modelu. Brak danych nie jest zaliczeniem. AI/ML nie steruje kotłem; ochrona temperatury powrotu pozostaje 55°C ±1°C.</p>
   </section>
