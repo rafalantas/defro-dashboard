@@ -60,15 +60,16 @@ def monitor_models(*, now, artifacts=None, ledgers=None, max_artifact_age_second
                 alerts.append("shadow_coverage_low")
             if ledger["kind"] == "regression":
                 def aggregate(side):
-                    rows = [window["paired_metrics"][side] for window in evaluation["windows"]
-                            if window["paired_metrics"][side] is not None]
-                    total = sum(row["samples"] for row in rows)
+                    rows = [(window["paired_metrics"][side], window["paired_labeled"])
+                            for window in evaluation["windows"]
+                            if window["paired_metrics"][side] is not None and window["paired_labeled"]]
+                    total = sum(count for _, count in rows)
                     if not total:
                         return None
                     return {
-                        "mae": sum(row["mae"] * row["samples"] for row in rows) / total,
-                        "rmse": (sum(row["rmse"] ** 2 * row["samples"] for row in rows) / total) ** 0.5,
-                        "bias": sum(row["bias"] * row["samples"] for row in rows) / total,
+                        "mae": sum(row["mae"] * count for row, count in rows) / total,
+                        "rmse": (sum(row["rmse"] ** 2 * count for row, count in rows) / total) ** 0.5,
+                        "bias": sum(row["bias"] * count for row, count in rows) / total,
                         "samples": total,
                     }
                 baseline, candidate = aggregate("baseline"), aggregate("candidate")
