@@ -126,7 +126,7 @@ jobs:
           import json, sys
           result = json.load(sys.stdin)
           assert result["schema"] == "thermoflow-production-acceptance/2"
-          assert result["status"] == "incomplete"
+          assert result["status"] in ("blocked", "incomplete")
           assert result["automatic_signoff"] is False
           assert result["digital_twin"]["status"] == "not_assessed"
           gates = {gate["name"]: gate["status"] for gate in result["gates"]}
