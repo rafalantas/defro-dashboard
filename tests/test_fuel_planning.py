@@ -44,7 +44,9 @@ class FuelPlanningTests(unittest.TestCase):
     def test_season_start_requires_two_weeks_of_continuous_observations(self):
         history = {}
         start = date(2026, 10, 1)
-        for offset in range(14):
+        for offset in range(7):
+            history[start + __import__("datetime").timedelta(days=offset)] = 16.0
+        for offset in range(7, 14):
             history[start + __import__("datetime").timedelta(days=offset)] = 14.0
         with patch.object(fuel, "_climate_monthly", return_value=self.climate), \
              patch.object(fuel, "_weather", return_value={"solar_mj": 5.0, "wind_max_kmh": 15.0}), \
