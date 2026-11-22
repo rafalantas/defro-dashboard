@@ -1,9 +1,10 @@
 # ThermoFlow Burner ML — model artifact gate
 
-This phase turns an already evaluated offline Burner ML benchmark into a small,
-versioned artifact that can later be consumed by a live **read-only shadow**
-runtime. It does not enable live predictions by itself and does not change the
-existing controller, fuel estimator, or return-temperature protection.
+This document describes the artifact gate for the read-only Burner ML runtime.
+The runtime integration is delivered separately: the unified intelligence API
+loads the artifact and exposes a live estimate only after a new FIRE-on cycle
+begins and the preceding complete FIRE-confirmed cycle is available. This is
+not an ignition forecast or remaining-time estimate.
 
 ## Build
 
@@ -42,9 +43,10 @@ only the two cycle-start features and returns an estimate in minutes.
 
 ## Safety boundary
 
-This is inference plumbing only. It does not infer ignition from unrelated
-signals, estimate pellet mass, write telemetry, persist files, alter setpoints,
-operate pumps or valves, or communicate with the boiler controller. The
-55°C ±1°C return-protection requirement remains unchanged. A later runtime
-integration must keep predictions advisory, expose stale/collecting states,
-and fail closed when no valid artifact is configured.
+The integrated runtime remains inference-only. It does not infer ignition from
+unrelated signals, estimate pellet mass, write telemetry, persist files, alter
+setpoints, operate pumps or valves, or communicate with the boiler controller.
+It exposes collecting/stale/unavailable states and fails closed when no valid
+artifact or fresh FIRE telemetry is configured. Predictions are advisory and
+require manual review; they never promote a model or replace existing
+controller/fuel logic. Return-temperature protection remains **55°C ±1°C**.
