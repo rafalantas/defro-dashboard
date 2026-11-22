@@ -5,6 +5,7 @@ from math import isfinite
 from threading import Lock
 
 from thermoflow_anomaly_v2 import screen_series
+from thermoflow_anomaly_v3 import analyze_multisignal
 from thermoflow_diagnostic_ai import diagnostic_hypotheses
 from thermoflow_health_score import build_health_score
 
@@ -32,6 +33,7 @@ class ShadowRuntime:
     def __init__(self):
         self._lock = Lock()
         self._rows = deque(maxlen=49)
+        self._anomaly_rows = deque(maxlen=241)
         self._regime = None
         self._timestamp = None
         self._report = _envelope("collecting")
@@ -55,17 +57,32 @@ class ShadowRuntime:
                 raise ValueError
         except (KeyError, ValueError, TypeError, OverflowError, OSError):
             self._rows.clear()
+            self._anomaly_rows.clear()
             self._regime = None
             self._publish(_envelope("telemetry_unavailable"))
             return
         if self._timestamp is not None and timestamp <= self._timestamp:
             return  # Cached (or out-of-order) reads are not new samples.
-        if self._regime != regime or (self._timestamp is not None
-                                      and timestamp - self._timestamp > MAX_GAP):
+        gap = timestamp - self._timestamp if self._timestamp is not None else None
+        if self._regime != regime or (gap is not None and gap > MAX_GAP):
             self._rows.clear()
+        if gap is not None and gap > 75:
+            self._anomaly_rows.clear()
         self._regime, self._timestamp = regime, timestamp
-        self._rows.append((timestamp, data.get("temperatures", {}).get("flue"),
-                           data.get("valve", {}).get("return")))
+        temperatures = data.get("temperatures") or {}
+        valve = data.get("valve") or {}
+        pumps = data.get("pumps") or {}
+        self._rows.append((timestamp, temperatures.get("flue"), valve.get("return")))
+        self._anomaly_rows.append({
+            "timestamp": timestamp,
+            "return_c": valve.get("return"),
+            "boiler_c": temperatures.get("co"),
+            "flue_c": temperatures.get("flue"),
+            "valve_opening_pct": valve.get("opening"),
+            "pumps": {name: _signal(pumps.get(name)) for name in
+                      ("floor", "dhw", "valve4d", "circulation")},
+        })
+        anomaly = analyze_multisignal(tuple(self._anomaly_rows), as_of=timestamp)
         screens = {
             name: screen_series(((row[0], row[i]) for row in self._rows),
                                 as_of=timestamp, max_gap=MAX_GAP, max_age=MAX_AGE,
@@ -81,7 +98,11 @@ class ShadowRuntime:
         else:
             state = "collecting"
         self._publish(_envelope(state, timestamp=timestamp, screens=screens,
-                                health=health, diagnostics=diagnostics))
+                                health=health, diagnostics=diagnostics,
+                                anomaly_v3=anomaly,
+                                causal_diagnostics=anomaly.get("causal_diagnostics", {
+                                    "status": "collecting", "findings": [],
+                                    "causality": "not_established"})))
 
     def read(self, now):
         with self._lock:
