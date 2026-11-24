@@ -7,7 +7,6 @@ import binascii
 import json
 from bisect import bisect_right
 import os
-import re
 import threading
 import time
 import unicodedata
@@ -635,14 +634,30 @@ def _history_analysis(raw: dict, minimum_opening: float | None = None) -> dict:
 
 
 def _history_query_datetime(value: str) -> datetime:
-    # W URL-u niezakodowany "+" w offsecie zamienia się w spację ("12:00:00 01:00").
-    value = re.sub(r"\s+(\d{2}:?\d{2})$", r"+\1", value.strip())
+    # Ogranicz wejście przed parsowaniem; parametr pochodzi bezpośrednio z URL.
+    if not isinstance(value, str):
+        raise ValueError("Datę podaj w formacie ISO, np. 2026-11-08T12:00:00+01:00")
+    value = value.strip()
+    if not value or len(value) > 64:
+        raise ValueError("Datę podaj w formacie ISO, np. 2026-11-08T12:00:00+01:00")
+
+    # Niezakodowany "+" w query stringu jest przez parse_qs zamieniany na spację.
+    # Odtwórz wyłącznie poprawny, krótki offset; bez wyrażeń regularnych.
+    prefix, separator, offset = value.rpartition(" ")
+    valid_offset = (
+        len(offset) == 5
+        and offset[2] == ":"
+        and offset[:2].isdigit()
+        and offset[3:].isdigit()
+    ) or (len(offset) == 4 and offset.isdigit())
+    if separator and valid_offset:
+        value = f"{prefix}+{offset}"
+
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise ValueError("Datę podaj w formacie ISO, np. 2026-11-08T12:00:00+01:00") from None
     return parsed.replace(tzinfo=thermoflow_timezone()) if parsed.tzinfo is None else parsed
-
 
 def _read_thermoflow_fire_history(start: datetime, end: datetime, local_tz) -> dict[str, list]:
     """Fetch the dedicated FIRE channel for ThermoFlow diagnostics.
