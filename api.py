@@ -1460,6 +1460,19 @@ def _fuel_summary_for_intelligence(headers):
     return None
 
 
+def _api_error_status(error: Exception) -> int:
+    """Map API failures to stable HTTP status codes without changing payload shape."""
+    if isinstance(error, ValueError):
+        return 400
+    if isinstance(error, HTTPError):
+        return error.code if 400 <= error.code < 500 else 502
+    if isinstance(error, TimeoutError):
+        return 504
+    if isinstance(error, (URLError, OSError)):
+        return 503
+    return 500
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1541,6 +1554,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in ("/api/status", "/api/health", "/api/modules", "/api/diagnostics", "/api/statistics", "/api/history"):
             self.send_error(404)
             return
+        response_status = 200
         if path == "/api/statistics":
             query = parse_qs(parsed.query)
             try:
@@ -1548,11 +1562,19 @@ class Handler(BaseHTTPRequestHandler):
                 year = int(query.get("year", [str(datetime.now().year)])[0])
                 month = int(query.get("month", [str(datetime.now().month)])[0])
                 payload = _read_statistics(period, year, month)
-            except (HTTPError, URLError, TimeoutError, OSError) as error:
-                status = error.code if isinstance(error, HTTPError) else None
-                message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
+            except (HTTPError, URLError, TimeoutError, OSError, ValueError) as error:
+                response_status = _api_error_status(error)
+                if isinstance(error, HTTPError):
+                    message = f"ThingSpeak odrzucił żądanie (HTTP {error.code})"
+                elif isinstance(error, ValueError):
+                    message = str(error)[:180]
+                elif isinstance(error, TimeoutError):
+                    message = "Przekroczono czas oczekiwania na ThingSpeak"
+                else:
+                    message = "Brak połączenia z ThingSpeak"
                 payload = {"configured": bool(_token()), "connected": False, "error": message}
             except Exception as error:
+                response_status = _api_error_status(error)
                 payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
         elif path == "/api/history":
             query = parse_qs(parsed.query)
@@ -1599,26 +1621,38 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("Parametr minimum_opening musi być liczbą od 0 do 100")
                 payload = _read_history(hours, requested_series, requested_start, requested_end, step,
                                         output_format, with_analysis, minimum_opening)
-            except (HTTPError, URLError, TimeoutError, OSError) as error:
-                status = error.code if isinstance(error, HTTPError) else None
-                message = f"ThingSpeak odrzucił żądanie (HTTP {status})" if status else "Brak połączenia z ThingSpeak"
+            except (HTTPError, URLError, TimeoutError, OSError, ValueError) as error:
+                response_status = _api_error_status(error)
+                if isinstance(error, HTTPError):
+                    message = f"ThingSpeak odrzucił żądanie (HTTP {error.code})"
+                elif isinstance(error, ValueError):
+                    message = str(error)[:180]
+                elif isinstance(error, TimeoutError):
+                    message = "Przekroczono czas oczekiwania na ThingSpeak"
+                else:
+                    message = "Brak połączenia z ThingSpeak"
                 payload = {"configured": bool(_token()), "connected": False, "error": message}
             except Exception as error:
+                response_status = _api_error_status(error)
                 payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
         elif path in ("/api/modules", "/api/diagnostics"):
             try:
                 payload = _read_modules() if path == "/api/modules" else _read_diagnostics()
             except HTTPError as error:
+                response_status = _api_error_status(error)
                 payload = {"configured": True, "connected": False, "error": f"eModul odrzucił żądanie (HTTP {error.code})"}
-            except (URLError, TimeoutError, OSError):
-                payload = {"configured": bool(_token()), "connected": False, "error": "Brak połączenia z eModul"}
+            except (URLError, TimeoutError, OSError) as error:
+                response_status = _api_error_status(error)
+                message = "Przekroczono czas oczekiwania na eModul" if isinstance(error, TimeoutError) else "Brak połączenia z eModul"
+                payload = {"configured": bool(_token()), "connected": False, "error": message}
             except Exception as error:
+                response_status = _api_error_status(error)
                 payload = {"configured": bool(_token()), "connected": False, "error": str(error)[:180]}
         else:
             payload = snapshot()
             if path == "/api/health":
                 payload = {key: payload.get(key) for key in ("configured", "connected", "source", "error", "fetched_at")}
-        self._send_json(200, payload)
+        self._send_json(response_status, payload)
 
     def log_message(self, _format, *_args):
         # Do not emit credentials or account-specific API response bodies.
