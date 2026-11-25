@@ -191,7 +191,7 @@ class FibaroHistoryCollector:
             ).fetchone()
             if existing is not None:
                 snapshot_id = int(existing["id"])
-                status = "unchanged"
+                status = "duplicate"
                 original_captured_at = int(existing["captured_at"])
             else:
                 cursor = db.execute(
