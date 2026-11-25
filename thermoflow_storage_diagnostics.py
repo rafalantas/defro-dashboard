@@ -63,7 +63,7 @@ def inspect_storage(database_path: str | Path) -> dict:
             for column in _PAYLOAD_COLUMNS[table]:
                 quoted_column = '"' + column.replace('"', '""') + '"'
                 payload_bytes += int(db.execute(
-                    f"SELECT COALESCE(SUM(length({quoted_column})),0) FROM {quoted_table}"
+                    f"SELECT COALESCE(SUM(length(CAST({quoted_column} AS BLOB))),0) FROM {quoted_table}"
                 ).fetchone()[0])
             tables.append({
                 "table": table,
