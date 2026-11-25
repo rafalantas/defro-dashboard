@@ -219,7 +219,11 @@ class FibaroHistoryCollector:
                         THEN excluded.updated_at
                         ELSE collector_state.updated_at
                     END,
-                    metadata_json = excluded.metadata_json""",
+                    metadata_json = CASE
+                        WHEN excluded.updated_at >= collector_state.updated_at
+                        THEN excluded.metadata_json
+                        ELSE collector_state.metadata_json
+                    END""",
                 ("fibaro_hc3_snapshot", str(stamp), stamp, metadata),
             )
             return {
