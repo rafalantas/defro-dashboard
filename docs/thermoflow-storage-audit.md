@@ -12,7 +12,7 @@ Run against an existing database:
 python thermoflow_storage_diagnostics.py /path/to/thermoflow.sqlite3
 ```
 
-The report includes:
+Payload sizes count UTF-8 bytes, not Unicode characters. The report includes:
 - database page size, page count, free-list pages, and an estimate of reclaimable
   space inside the database file;
 - sizes of the database, WAL, and SHM files;
