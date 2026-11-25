@@ -133,10 +133,10 @@ class HC3ProviderTests(unittest.TestCase):
             with self.subTest(start=start, end=end), self.assertRaises(HC3Error):
                 provider.get_events_window(start, end)
 
-    def test_non_get_path_is_rejected(self):
+    def test_path_outside_hc3_api_is_rejected(self):
         provider = FibaroHC3Provider(self.config())
         with self.assertRaises(HC3Error):
-            provider._get_json("/api/devices/1/action")
+            provider._get_json("/admin/devices")
 
 
 if __name__ == "__main__":
