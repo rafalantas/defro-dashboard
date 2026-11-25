@@ -9,6 +9,7 @@ COPY thermoflow_fibaro_telemetry.py /app/thermoflow_fibaro_telemetry.py
 COPY thermoflow_fibaro_time_profile.py /app/thermoflow_fibaro_time_profile.py
 COPY thermoflow_fibaro_event_history.py /app/thermoflow_fibaro_event_history.py
 COPY thermoflow_fibaro_history_collector.py /app/thermoflow_fibaro_history_collector.py
+COPY thermoflow_fibaro_data_quality.py /app/thermoflow_fibaro_data_quality.py
 COPY fuel.py thermoflow2_runtime.py /app/
 COPY fuel_engine.py /app/fuel_engine.py
 COPY fuel_telemetry_audit_runtime.py /app/fuel_telemetry_audit_runtime.py
