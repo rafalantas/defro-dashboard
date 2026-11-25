@@ -172,6 +172,25 @@ class FibaroApiHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["counts"], {"zones": 10, "heads": 15})
 
+    def test_telemetry_endpoint_is_authenticated_and_shadow_only(self):
+        provider = FakeProvider()
+        with patch.dict("os.environ", {
+            "FIBARO_HC3_API_TOKEN": "test-api-token",
+            "FIBARO_HC3_URL": "http://hc3.local",
+            "FIBARO_HC3_USERNAME": "reader",
+            "FIBARO_HC3_PASSWORD": "secret",
+        }), patch.object(api, "FibaroHC3Provider", return_value=provider):
+            status, payload = self.request(
+                "/api/fibaro/telemetry", token="test-api-token"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["schema"], "thermoflow-fibaro-telemetry/1")
+        self.assertEqual(payload["counts"]["heads"], 15)
+        self.assertEqual(payload["configuration"]["expected_parameter2"], 322)
+        self.assertFalse(payload["ai_shadow"]["training_ready"])
+        self.assertFalse(payload["fuel_forecast"]["applied"])
+        self.assertTrue(payload["safety"]["read_only"])
+
     def test_endpoint_fails_closed_when_api_token_is_missing(self):
         with patch.dict("os.environ", {}, clear=True):
             status, payload = self.request("/api/fibaro/health")
@@ -217,9 +236,10 @@ class FibaroApiHttpTests(unittest.TestCase):
 
     def test_mutating_methods_are_rejected(self):
         with patch.dict("os.environ", {"FIBARO_HC3_API_TOKEN": "test-api-token"}):
-            for method in ("POST", "PUT", "PATCH", "DELETE"):
-                status, _payload = self.request("/api/fibaro/snapshot", token="test-api-token", method=method)
-                self.assertEqual(status, 405)
+            for path in ("/api/fibaro/snapshot", "/api/fibaro/telemetry"):
+                for method in ("POST", "PUT", "PATCH", "DELETE"):
+                    status, _payload = self.request(path, token="test-api-token", method=method)
+                    self.assertEqual(status, 405)
 
 
 if __name__ == "__main__":

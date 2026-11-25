@@ -211,3 +211,35 @@ Dedykowany kanał `THINGSPEAK_FIRE_CHANNEL_ID` zapisuje wyłącznie:
 Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktualna zadana CO i histereza kotła są pobierane bezpośrednio z bieżącego snapshotu API eModul i nie są dublowane w ThingSpeak. Ponieważ zadana i histereza są stałymi nastawami instalacji, audyt stosuje ich bieżące wartości do historycznych próbek CO. Nie zapisujemy ich cyklicznie w ThingSpeak; odpowiedź audytu oznacza to jawnie jako założenie stałości nastaw.
 
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
+
+
+### Fibaro HC3 Telemetry Intelligence (shadow)
+
+Endpoint `GET /api/fibaro/telemetry` exposes a consolidated, read-only telemetry
+contract for the mapped HC3 climate zones and physical FGT001 radiator heads.
+It uses the same `FIBARO_HC3_API_TOKEN` Bearer authentication as the other
+`/api/fibaro/*` endpoints.
+
+The response includes:
+
+- snapshot freshness and the completeness of the zone-to-head mapping;
+- per-head `heatRequired`, `windowOpened`, battery percentage and HC3
+  `dead` communication state, preserving missing values as `unknown`;
+- P2 configuration compliance (expected P2 value: 322) and the Moderate
+  regulator bit-6 state;
+- per-zone current temperature, active heating setpoint, temperature gap and
+  tri-state heat demand;
+- bounded aggregate features under `ai_shadow.features`.
+
+The current installation baseline is 15 FGT001 heads. Mapping and P2 checks
+are reported as explicit diagnostics; they do not trigger device writes.
+Battery values at or below 20% are labelled low for maintenance visibility.
+The endpoint is an on-demand snapshot, not a historical series: it reports
+`ai_shadow.training_ready=false` and `history_available=false`. Missing or
+malformed values remain unknown rather than being converted to false.
+
+Fibaro features are shadow-only. They do not change `/api/fuel/*`, Fuel
+Forecast, model training, model promotion or any boiler settings. The HC3
+provider remains GET-only; there is no background polling, raw-history
+persistence or device command. Return-temperature protection remains
+55°C ±1°C.
