@@ -141,4 +141,8 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
         result["persistence"] = persist_fibaro_shadow_result(
             collector.store, result, recorded_at=recorded_at
         )
+        result["safety"]["local_store_writes"] = result["persistence"].get("status") == "persisted"
+        result["safety"]["predictions_persisted"] = result["persistence"].get("status") == "persisted"
+    else:
+        result["safety"]["local_store_writes"] = False
     return result
