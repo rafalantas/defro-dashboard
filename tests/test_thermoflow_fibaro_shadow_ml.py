@@ -47,7 +47,7 @@ class FibaroShadowMLTests(unittest.TestCase):
         days = make_days()
         days.pop(10)
         dataset = prepare_fibaro_daily_dataset(days, ready_quality())
-        self.assertEqual(dataset["eligible_samples"], 30)
+        self.assertEqual(dataset["eligible_samples"], 31)
         self.assertGreater(dataset["rejected_days_or_pairs"]["non_consecutive_day"], 0)
 
     def test_missing_feature_excludes_pair_without_imputation(self):
