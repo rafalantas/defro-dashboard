@@ -41,7 +41,7 @@ class ThermoFlowStorageDiagnosticsTests(unittest.TestCase):
         self.assertFalse(report["maintenance_performed"])
         self.assertGreater(report["allocated_bytes"], 0)
         self.assertEqual(tables["telemetry_samples"]["rows"], 1)
-        self.assertEqual(tables["telemetry_samples"]["payload_bytes"], len('{"temperature":21.5}'))
+        self.assertEqual(tables["telemetry_samples"]["payload_bytes"], len('{"temperature":21.5,"note":"żółć"}'.encode("utf-8")))
         self.assertGreaterEqual(report["total_rows"], 2)
 
     def test_diagnostic_does_not_change_database_bytes_or_rows(self):
