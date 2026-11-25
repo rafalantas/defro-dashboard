@@ -97,7 +97,7 @@ class FibaroZoneDiagnosticsTests(unittest.TestCase):
         result = build_fibaro_zone_diagnostics(snapshot)
         self.assertIsNone(result["zones"][0]["active_setpoint_c"])
         self.assertIsNone(result["zones"][0]["current_temperature_c"])
-        self.assertEqual(result["zones"][0]["current_temperature_heating_c"], 19.0)
+        self.assertIsNone(result["zones"][0]["current_temperature_heating_c"])
         self.assertIsNone(result["zones"][0]["active_setpoint_source"])
         self.assertEqual(result["zones"][0]["temperature_relation"], "unknown")
 
