@@ -23,6 +23,7 @@ from thermoflow_weather_forecast import project_weather_forecast
 from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
 from fibaro_hc3_api import build_hc3_snapshot
 from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
+from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1515,7 +1516,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics"):
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/history"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1531,6 +1532,22 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(supplied, f"Bearer {expected_token}"):
             self._send_json(401, {"error": "Brak autoryzacji API Fibaro HC3"})
             return True
+
+        history_start = history_end = None
+        if path == "/api/fibaro/history":
+            query = parse_qs(parsed.query)
+            try:
+                if "start" not in query or "end" not in query:
+                    raise ValueError("Podaj wymagane parametry start i end (Unix seconds)")
+                history_start = int(query["start"][0])
+                history_end = int(query["end"][0])
+                if history_start < 0 or history_end <= history_start:
+                    raise ValueError("Zakres historii wymaga poprawnych znaczników Unix start < end")
+                if history_end - history_start > MAX_HISTORY_SECONDS:
+                    raise ValueError("Historia Fibaro HC3 jest ograniczona do maksymalnie 7 dni")
+            except (TypeError, ValueError):
+                self._send_json(400, {"error": "Nieprawidłowy zakres historii; podaj start i end w Unix seconds, maksymalnie 7 dni"})
+                return True
 
         try:
             config = HC3Config.from_env()
@@ -1556,9 +1573,15 @@ class Handler(BaseHTTPRequestHandler):
                 })
             elif path == "/api/fibaro/snapshot":
                 self._send_json(200, build_hc3_snapshot(provider))
-            else:
+            elif path == "/api/fibaro/diagnostics":
                 snapshot = build_hc3_snapshot(provider)
                 self._send_json(200, build_fibaro_zone_diagnostics(snapshot))
+            else:
+                snapshot = build_hc3_snapshot(provider)
+                events = provider.get_events_range(history_start, history_end)
+                self._send_json(200, analyze_fibaro_event_history(
+                    snapshot, events, history_start, history_end
+                ))
         except HC3Error as error:
             self._send_json(error.status, {
                 "configured": True,
@@ -1566,6 +1589,8 @@ class Handler(BaseHTTPRequestHandler):
                 "source": "fibaro-hc3",
                 "error": error.message,
             })
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)[:180]})
         except Exception:
             self._send_json(502, {
                 "configured": True,
