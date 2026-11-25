@@ -62,7 +62,7 @@ class ThermoFlowStorageMaintenanceTests(unittest.TestCase):
 
     def test_default_is_read_only_dry_run(self):
         before = self.path.stat().st_size
-        report = cleanup(self.path, now=1000)
+        report = cleanup(self.path, now=200 * 86400 + 1000)
         self.assertEqual(report["mode"], "dry_run")
         self.assertFalse(report["writes_performed"])
         self.assertEqual(report["eligible_total"], 2)
@@ -71,15 +71,15 @@ class ThermoFlowStorageMaintenanceTests(unittest.TestCase):
 
     def test_apply_requires_backup_and_refuses_overwrite(self):
         with self.assertRaises(ValueError):
-            cleanup(self.path, now=1000, apply=True)
+            cleanup(self.path, now=200 * 86400 + 1000, apply=True)
         backup = self.root / "backup.sqlite3"
         backup.write_bytes(b"existing")
         with self.assertRaises(FileExistsError):
-            cleanup(self.path, now=1000, apply=True, backup_path=backup)
+            cleanup(self.path, now=200 * 86400 + 1000, apply=True, backup_path=backup)
 
     def test_apply_creates_verified_backup_and_only_deletes_eligible_rows(self):
         backup = self.root / "verified-backup.sqlite3"
-        result = cleanup(self.path, now=1000, apply=True, backup_path=backup)
+        result = cleanup(self.path, now=200 * 86400 + 1000, apply=True, backup_path=backup)
         self.assertEqual(result["mode"], "applied")
         self.assertTrue(backup.is_file())
         self.assertEqual(result["backup_integrity_check"], ["ok"])
@@ -94,7 +94,7 @@ class ThermoFlowStorageMaintenanceTests(unittest.TestCase):
 
     def test_invalid_retention_is_rejected(self):
         with self.assertRaises(ValueError):
-            plan_cleanup(self.path, now=1000, run_retention_days=1)
+            plan_cleanup(self.path, now=200 * 86400 + 1000, run_retention_days=1)
 
 
 if __name__ == "__main__":
