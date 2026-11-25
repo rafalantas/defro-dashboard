@@ -40,9 +40,12 @@ def _entry_id(feed):
 
 
 def _payload(feed):
+    # Identity and timestamp already have indexed relational columns.
+    compact = {key: value for key, value in feed.items()
+               if key not in {"entry_id", "created_at"}}
     try:
         value = json.dumps(
-            feed, ensure_ascii=False, sort_keys=True,
+            compact, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False,
         )
     except (TypeError, ValueError):
@@ -139,12 +142,12 @@ class ThingSpeakHistoryCollector:
                     source = f"thingspeak:{name}"
                     source_key = f"{channel_id}:{entry_id}"
                     existing = db.execute(
-                        "SELECT payload_sha256 FROM telemetry_samples "
+                        "SELECT payload_sha256,observed_at FROM telemetry_samples "
                         "WHERE source=? AND source_key=?",
                         (source, source_key),
                     ).fetchone()
                     if existing is not None:
-                        if existing["payload_sha256"] == digest:
+                        if existing["payload_sha256"] == digest and existing["observed_at"] == observed_at:
                             duplicates += 1
                         else:
                             conflicts += 1
@@ -161,11 +164,11 @@ class ThingSpeakHistoryCollector:
                     source = f"thingspeak:{name}"
                     event_key = f"{channel_id}:{entry_id}"
                     existing = db.execute(
-                        "SELECT payload_sha256 FROM refill_events WHERE event_key=?",
+                        "SELECT payload_sha256,occurred_at FROM refill_events WHERE event_key=?",
                         (event_key,),
                     ).fetchone()
                     if existing is not None:
-                        if existing["payload_sha256"] == digest:
+                        if existing["payload_sha256"] == digest and existing["occurred_at"] == observed_at:
                             duplicates += 1
                         else:
                             conflicts += 1
