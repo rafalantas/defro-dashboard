@@ -36,7 +36,6 @@ class FibaroZoneDiagnosticsTests(unittest.TestCase):
                     "properties": {
                         "devices": [104],
                         "currentTemperature": 18.0,
-                        "currentTemperatureHeating": 18.5,
                         # No active setpoint or head demand state.
                     },
                 },
@@ -90,8 +89,7 @@ class FibaroZoneDiagnosticsTests(unittest.TestCase):
         snapshot = {
             "zones": [{
                 "id": 1, "properties": {
-                    "devices": [], "currentTemperatureHeating": 19.0,
-                    "handSetPointHeating": 23.0,
+                    "devices": [], "handSetPointHeating": 23.0,
                 },
             }],
             "heads": [],
@@ -149,6 +147,23 @@ class FibaroZoneDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["zones"][0]["heat_demand"], "required")
         self.assertEqual(result["zones"][0]["heat_demand_consistency"], "mismatch")
         self.assertEqual(result["counts"]["heads_with_demand_source_mismatch"], 1)
+
+    def test_moderate_regulator_status_uses_parameter2_bit6(self):
+        snapshot = {
+            "zones": [{"id": 1, "name": "Salon", "properties": {"devices": [101]}}],
+            "heads": [{
+                "id": 101,
+                "properties": {
+                    "parameter2": 64,
+                    "parameter2_moderate_regulator": True,
+                },
+            }],
+        }
+        result = build_fibaro_zone_diagnostics(snapshot)
+        self.assertEqual(result["heads"][0]["parameter2"], 64)
+        self.assertTrue(result["heads"][0]["moderate_regulator"])
+        self.assertEqual(result["counts"]["heads_with_moderate_regulator_enabled"], 1)
+        self.assertEqual(result["counts"]["heads_with_moderate_regulator_disabled"], 0)
 
     def test_invalid_snapshot_fails_closed(self):
         with self.assertRaises(ValueError):
