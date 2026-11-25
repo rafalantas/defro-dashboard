@@ -45,6 +45,18 @@ class ThingSpeakCollectorTests(unittest.TestCase):
         with self.store.connection() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM telemetry_samples").fetchone()[0], 2)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM refill_events").fetchone()[0], 1)
+        with self.store.connection() as db:
+            row = db.execute(
+                "SELECT observed_at,payload_json FROM telemetry_samples WHERE source_key='111:101'"
+            ).fetchone()
+            refill = db.execute(
+                "SELECT occurred_at,payload_json FROM refill_events WHERE event_key='222:7'"
+            ).fetchone()
+        self.assertNotIn("entry_id", row["payload_json"])
+        self.assertNotIn("created_at", row["payload_json"])
+        self.assertIn('"field1":"68.5"', row["payload_json"])
+        self.assertNotIn("entry_id", refill["payload_json"])
+        self.assertNotIn("created_at", refill["payload_json"])
         status = self.collector.status()
         self.assertEqual(status["counts"], {"telemetry_samples": 2, "refill_events": 1})
         self.assertEqual(status["cursors"]["thingspeak_history:temperatures_power"], str(self.end))
@@ -70,6 +82,20 @@ class ThingSpeakCollectorTests(unittest.TestCase):
             self.collector.status()["cursors"]["thingspeak_history:temperatures_power"],
             str(self.end),
         )
+
+    def test_changed_timestamp_for_same_entry_is_conflict(self):
+        self.collector.save_batch(self.channels(), start=self.start, end=self.end, collected_at=self.end + 10)
+        changed = self.channels()
+        changed["temperatures_power"]["feeds"][0]["created_at"] = "2026-11-25T10:05:00Z"
+        result = self.collector.save_batch(changed, start=self.start, end=self.end, collected_at=self.end + 20)
+        self.assertEqual(result["conflicts"], 1)
+        self.assertEqual(result["status"], "partial")
+        with self.store.connection() as db:
+            row = db.execute(
+                "SELECT observed_at,payload_json FROM telemetry_samples WHERE source_key='111:101'"
+            ).fetchone()
+        self.assertEqual(row["observed_at"], self.start)
+        self.assertNotIn("created_at", row["payload_json"])
 
     def test_invalid_feed_makes_run_partial_without_advancing_cursor(self):
         channels = self.channels([{"entry_id": 1, "created_at": "bad", "field1": "1"}])
