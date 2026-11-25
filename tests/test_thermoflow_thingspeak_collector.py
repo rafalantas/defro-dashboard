@@ -17,7 +17,7 @@ class ThingSpeakCollectorTests(unittest.TestCase):
         )
         self.store.migrate()
         self.collector = ThingSpeakHistoryCollector(self.store)
-        self.start = 1795564800
+        self.start = 1795600800
         self.end = self.start + 3600
         self.feeds = [
             {"entry_id": 101, "created_at": "2026-11-25T10:00:00Z", "field1": "68.5"},
