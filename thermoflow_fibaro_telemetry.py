@@ -208,11 +208,13 @@ def build_fibaro_telemetry(
         ),
     }
 
-    diagnostic_zones = {
-        item.get("id"): item
-        for item in diagnostics["zones"]
-        if isinstance(item, dict) and _identifier(item.get("id")) is not None
-    }
+    diagnostic_zones = {}
+    for item in diagnostics["zones"]:
+        if not isinstance(item, dict):
+            continue
+        zone_id = _identifier(item.get("id"))
+        if zone_id is not None:
+            diagnostic_zones[zone_id] = item
     head_results = []
     for device_id, head in sorted(heads_by_id.items()):
         properties = head.get("properties")

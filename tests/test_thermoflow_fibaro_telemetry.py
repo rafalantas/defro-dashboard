@@ -46,15 +46,16 @@ class FibaroTelemetryTests(unittest.TestCase):
         }
 
     def build(self, **kwargs):
+        options = {"expected_head_count": 3}
+        options.update(kwargs)
         return build_fibaro_telemetry(
-            self.snapshot, self.diagnostics, now=self.now,
-            expected_head_count=3, **kwargs
+            self.snapshot, self.diagnostics, now=self.now, **options
         )
 
     def test_builds_complete_telemetry_and_shadow_features(self):
         result = self.build()
         self.assertEqual(result["schema"], "thermoflow-fibaro-telemetry/1")
-        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["status"], "degraded")
         self.assertEqual(result["freshness"]["status"], "fresh")
         self.assertEqual(result["mapping"]["status"], "complete")
         self.assertEqual(result["mapping"]["coverage_percent"], 100.0)
