@@ -58,9 +58,11 @@ def _head_consistency(properties):
 def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
     """Build conservative per-zone demand diagnostics from one HC3 snapshot.
 
-    Only the active zone setpoint (currentSetpointHeating) is used. The
-    handSetPointHeating property is intentionally excluded because it is a
-    manual setpoint, not necessarily the active scheduled setpoint.
+    Prefer currentSetpointHeating when HC3 provides it. On HC3 climate zones
+    where that field is absent, currentTemperatureHeating is the active
+    scheduled heating setpoint: the supplied audit matched it to the active
+    schedule slot in all ten zones. handSetPointHeating remains excluded
+    because it is a manual override value, not the active scheduled target.
     """
     if not isinstance(snapshot, dict):
         raise ValueError("Nieprawidłowy snapshot Fibaro HC3")
@@ -170,14 +172,28 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
             properties.get("currentTemperatureHeating")
         )
         active_setpoint = _number(properties.get("currentSetpointHeating"))
+        active_setpoint_source = "currentSetpointHeating"
+        if active_setpoint is None:
+            active_setpoint = current_temperature_heating
+            active_setpoint_source = (
+                "currentTemperatureHeating" if active_setpoint is not None else None
+            )
+        hysteresis = _number(properties.get("autoSetPointHysteresis"))
         temperature_gap = None
         temperature_relation = "unknown"
+        gap_vs_hysteresis = "unknown"
         if current_temperature is not None and active_setpoint is not None:
             temperature_gap = round(active_setpoint - current_temperature, 2)
             temperature_relation = (
                 "below_active_setpoint" if temperature_gap > 0.3
                 else "at_or_above_active_setpoint"
             )
+            if hysteresis is not None and hysteresis >= 0:
+                gap_vs_hysteresis = (
+                    "gap_exceeds_hysteresis"
+                    if temperature_gap > hysteresis
+                    else "within_or_below_hysteresis"
+                )
             temperature_pairs += 1
 
         zone_id = zone.get("id")
@@ -189,8 +205,11 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
             "current_temperature_c": current_temperature,
             "current_temperature_heating_c": current_temperature_heating,
             "active_setpoint_c": active_setpoint,
+            "active_setpoint_source": active_setpoint_source,
+            "hysteresis_c": hysteresis,
             "temperature_gap_c": temperature_gap,
             "temperature_relation": temperature_relation,
+            "gap_vs_hysteresis": gap_vs_hysteresis,
             "heat_demand": demand_status,
             "heat_required": heat_required,
             "window_open": window_open,
@@ -210,7 +229,10 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
             "current_temperature_c": current_temperature,
             "current_temperature_heating_c": current_temperature_heating,
             "active_setpoint_c": active_setpoint,
+            "active_setpoint_source": active_setpoint_source,
+            "hysteresis_c": hysteresis,
             "temperature_gap_c": temperature_gap,
+            "gap_vs_hysteresis": gap_vs_hysteresis,
             "heat_required": heat_required,
             "heat_demand_consistency": demand_consistency,
             "window_open": window_open,
@@ -257,10 +279,18 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
             ),
             "temperature_source": "climate zone currentTemperature only",
             "current_temperature_heating": (
-                "currentTemperatureHeating is reported separately; its physical "
-                "temperature semantics are not assumed."
+                "HC3 currentTemperatureHeating matched the active schedule "
+                "temperatureHeating in all ten zones in the supplied audit; "
+                "used as a fallback active heating setpoint only when "
+                "currentSetpointHeating is absent."
             ),
-            "setpoint_source": "climate zone currentSetpointHeating only",
+            "setpoint_source": (
+                "currentSetpointHeating, falling back to currentTemperatureHeating"
+            ),
+            "hysteresis": (
+                "autoSetPointHysteresis is reported as context only; the "
+                "temperature gap is not used to infer head demand."
+            ),
             "manual_setpoint_excluded": "handSetPointHeating",
             "temperature_gap_is_not_heat_demand": True,
             "causality": "not_established",

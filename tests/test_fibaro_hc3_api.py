@@ -54,6 +54,14 @@ class FakeProvider:
                 **item["properties"],
                 "currentTemperature": 20.5,
                 "currentTemperatureHeating": 21.5,
+                "currentSetpointTimeStartHour": 17,
+                "currentSetpointTimeEndHour": 22,
+                "autoSetPointHysteresis": 2.0,
+                "monday": {"morning": {"hour": 6, "minute": 0, "temperatureHeating": 19.0}},
+                "tuesday": {"morning": {"hour": 6, "minute": 0, "temperatureHeating": 19.0}},
+                "vacationSetPointHeating": 16.0,
+                "vacationStartTime": 1795564800,
+                "vacationEndTime": 1795651200,
                 "calculationStrategy": "avg",
                 "schedule": {"private": "not exposed"},
             },
@@ -105,7 +113,15 @@ class FibaroSnapshotTests(unittest.TestCase):
         self.assertEqual(len(payload["heads"]), 15)
         self.assertEqual(payload["zones"][0]["properties"]["currentTemperature"], 20.5)
         self.assertEqual(payload["zones"][0]["properties"]["currentTemperatureHeating"], 21.5)
-        self.assertNotIn("schedule", payload["zones"][0]["properties"])
+        zone_properties = payload["zones"][0]["properties"]
+        self.assertNotIn("schedule", zone_properties)
+        self.assertEqual(zone_properties["monday"]["morning"]["temperatureHeating"], 19.0)
+        self.assertEqual(zone_properties["tuesday"]["morning"]["temperatureHeating"], 19.0)
+        self.assertEqual(zone_properties["currentSetpointTimeStartHour"], 17)
+        self.assertEqual(zone_properties["currentSetpointTimeEndHour"], 22)
+        self.assertEqual(zone_properties["autoSetPointHysteresis"], 2.0)
+        self.assertEqual(zone_properties["vacationSetPointHeating"], 16.0)
+        self.assertEqual(zone_properties["vacationStartTime"], 1795564800)
         self.assertEqual({head["id"] for head in payload["heads"]}, set(provider.head_ids))
         self.assertNotIn("wifiPassword", payload["heads"][0]["properties"])
         kitchen_head = next(head for head in payload["heads"] if head["id"] == 2149)
