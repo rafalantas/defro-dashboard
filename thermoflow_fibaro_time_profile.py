@@ -114,6 +114,7 @@ def build_fibaro_time_profile(snapshot: dict, event_history: dict, *, timezone_n
     global_hourly = defaultdict(_new_bucket)
     global_daily = defaultdict(_new_bucket)
     totals = _new_bucket()
+    global_event_keys = set()
     transitions_seen = 0
     valid_timestamps = set()
 
@@ -140,10 +141,23 @@ def build_fibaro_time_profile(snapshot: dict, event_history: dict, *, timezone_n
             local_time = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(local_zone)
             hour_key = timestamp // 3600
             day_key = local_time.date().isoformat()
-            for bucket in (zone_totals, global_hourly[hour_key], global_daily[day_key]):
-                _add_transition(bucket, transition)
+            _add_transition(zone_totals, transition)
             _add_transition(zone_hourly[hour_key], transition)
             _add_transition(zone_daily[day_key], transition)
+            event_id = transition.get("event_id")
+            if isinstance(event_id, int) and not isinstance(event_id, bool):
+                event_key = ("id", event_id)
+            else:
+                event_key = (
+                    "fallback", timestamp, kind, transition.get("head_id"), zone_id,
+                    transition.get("old_value"), transition.get("new_value"),
+                    transition.get("old_value_c"), transition.get("new_value_c"),
+                )
+            if event_key not in global_event_keys:
+                global_event_keys.add(event_key)
+                _add_transition(global_hourly[hour_key], transition)
+                _add_transition(global_daily[day_key], transition)
+                _add_transition(totals, transition)
             transitions_seen += 1
             valid_timestamps.add(timestamp)
 
@@ -171,21 +185,6 @@ def build_fibaro_time_profile(snapshot: dict, event_history: dict, *, timezone_n
             "observed_days": len(daily),
         })
 
-    # Global totals are accumulated from the same verified transitions, once
-    # per transition (not once per zone). A mapped head may appear in multiple
-    # zones; event history deliberately fans that event out to each mapped zone.
-    for zone in zones:
-        if not isinstance(zone, dict) or not isinstance(zone.get("transitions"), list):
-            continue
-        for transition in zone["transitions"]:
-            if not isinstance(transition, dict):
-                continue
-            timestamp = _timestamp(transition.get("timestamp"))
-            if timestamp is None or not start <= timestamp <= end:
-                continue
-            if transition.get("kind") in ("heatRequired", "windowOpened", "temperature"):
-                _add_transition(totals, transition)
-
     hourly_global = []
     for hour_key, bucket in sorted(global_hourly.items()):
         utc_start = hour_key * 3600
@@ -201,6 +200,22 @@ def build_fibaro_time_profile(snapshot: dict, event_history: dict, *, timezone_n
         for day_key, bucket in sorted(global_daily.items())
     ]
 
+    snapshot_heads = snapshot.get("heads")
+    snapshot_state = {
+        "available": isinstance(snapshot_heads, list),
+        "heads_total": len(snapshot_heads) if isinstance(snapshot_heads, list) else 0,
+        "heat_required": {"true": 0, "false": 0, "unknown": 0},
+        "window_open": {"true": 0, "false": 0, "unknown": 0},
+    }
+    if isinstance(snapshot_heads, list):
+        for head in snapshot_heads:
+            properties = head.get("properties") if isinstance(head, dict) else None
+            properties = properties if isinstance(properties, dict) else {}
+            for source_name, target_name in (("heatRequired", "heat_required"), ("windowOpened", "window_open")):
+                value = properties.get(source_name)
+                state = "true" if value is True else "false" if value is False else "unknown"
+                snapshot_state[target_name][state] += 1
+
     coverage = event_history.get("coverage") if isinstance(event_history.get("coverage"), dict) else {}
     return {
         "schema": SCHEMA,
@@ -209,9 +224,11 @@ def build_fibaro_time_profile(snapshot: dict, event_history: dict, *, timezone_n
         "timezone": timezone_name,
         "window": dict(window),
         "totals": _finalize_bucket(totals),
+        "snapshot_state": snapshot_state,
         "counts": {
             "zones": len(zone_results),
             "transitions_aggregated": transitions_seen,
+            "distinct_events_aggregated": len(global_event_keys),
             "distinct_event_timestamps": len(valid_timestamps),
             "observed_hour_buckets": len(hourly_global),
             "observed_days": len(daily_global),
