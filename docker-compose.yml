@@ -21,6 +21,7 @@ services:
       FIBARO_HC3_CREDENTIALS_FILE: ${FIBARO_HC3_CREDENTIALS_FILE:-}
       FIBARO_HC3_TIMEOUT_SECONDS: ${FIBARO_HC3_TIMEOUT_SECONDS:-12}
       FIBARO_HC3_API_TOKEN: ${FIBARO_HC3_API_TOKEN:-}
+      FIBARO_HISTORY_DB_PATH: ${FIBARO_HISTORY_DB_PATH:-/var/lib/thermoflow/fibaro/history.sqlite3}
       TECH_MODULE_ID: ${TECH_MODULE_ID:-}
       THINGSPEAK_CHANNEL_IDS: ${THINGSPEAK_CHANNEL_IDS:-}
       THINGSPEAK_WRITE_KEYS: ${THINGSPEAK_WRITE_KEYS:-}
@@ -55,6 +56,7 @@ services:
       THERMOFLOW_FUEL_LEDGER_PATH: ${THERMOFLOW_FUEL_LEDGER_PATH:-}
     volumes:
       - ./data/thermoflow:/run/thermoflow:ro
+      - ./data/fibaro-history:/var/lib/thermoflow/fibaro
     expose:
       - "8000"
     restart: unless-stopped
