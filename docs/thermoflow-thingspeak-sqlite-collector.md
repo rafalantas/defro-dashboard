@@ -28,7 +28,7 @@ The caller explicitly supplies a mapping for each channel:
 
 Channel aliases become stable source names (`thingspeak:<alias>`); source
 keys include the channel ID and ThingSpeak entry ID. This keeps IDs from
-different channels distinct. The feed's remaining source fields are canonicalized and hashed. `entry_id` and `created_at` are stored once in the indexed identity/time columns rather than repeated inside the JSON payload. The collector compares both payload hash and timestamp when detecting replays, so a changed timestamp for an existing entry remains a conflict.
+different channels distinct. The feed's remaining source fields are canonicalized and hashed. `entry_id` and `created_at` are stored once in the indexed identity/time columns rather than repeated inside the JSON payload. The collector compares both payload hash and timestamp when detecting replays, so a changed timestamp for an existing entry remains a conflict. During rollout, it also recognizes previously stored full-feed JSON rows as duplicates when their normalized source fields and timestamp match; old rows are never rewritten.
 
 ## Integrity and replay
 
