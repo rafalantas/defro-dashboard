@@ -1,0 +1,144 @@
+"""Regression tests for the protected, read-only Fibaro HC3 API."""
+
+import http.client
+import json
+import threading
+import unittest
+from contextlib import closing
+from unittest.mock import patch
+from http.server import ThreadingHTTPServer
+
+import api
+from fibaro_hc3_api import build_hc3_snapshot
+
+
+class FakeProvider:
+    def __init__(self):
+        self.zone_ids = list(range(6, 16))
+        self.head_ids = list(range(2145, 2160))
+
+    def get_climate_zones(self):
+        return [
+            {
+                "id": zone_id,
+                "name": f"Zone {zone_id}",
+                "active": True,
+                "mode": "Schedule",
+                "properties": {
+                    "devices": self.head_ids[index:index + 2] if index < 5 else self.head_ids[index + 5:index + 6],
+                    "temperatureSensors": [247 + index],
+                },
+            }
+            for index, zone_id in enumerate(self.zone_ids)
+        ]
+
+    def get_climate_zone(self, zone_id):
+        item = next(zone for zone in self.get_climate_zones() if zone["id"] == zone_id)
+        return {
+            **item,
+            "properties": {
+                **item["properties"],
+                "currentTemperatureHeating": 21.5,
+                "calculationStrategy": "avg",
+                "schedule": {"private": "not exposed"},
+            },
+        }
+
+    def get_device(self, device_id):
+        return {
+            "id": device_id,
+            "name": f"Head {device_id}",
+            "type": "com.fibaro.FGT001",
+            "baseType": "com.fibaro.multilevelSwitch",
+            "roomID": 8,
+            "enabled": True,
+            "visible": True,
+            "properties": {
+                "heatRequired": True,
+                "heatingThermostatSetpoint": 21.0,
+                "thermostatMode": "Heat",
+                "windowOpened": False,
+                "batteryLevel": 87,
+                "wifiPassword": "must-not-leak",
+            },
+        }
+
+
+class FibaroSnapshotTests(unittest.TestCase):
+    def test_snapshot_returns_zone_and_head_snapshots_without_unapproved_fields(self):
+        provider = FakeProvider()
+        payload = build_hc3_snapshot(provider)
+        self.assertEqual(payload["schema"], "fibaro-hc3-snapshot/1")
+        self.assertEqual(payload["counts"], {"zones": 10, "heads": 15})
+        self.assertEqual(len(payload["zones"]), 10)
+        self.assertEqual(len(payload["heads"]), 15)
+        self.assertEqual(payload["zones"][0]["properties"]["currentTemperatureHeating"], 21.5)
+        self.assertNotIn("schedule", payload["zones"][0]["properties"])
+        self.assertTrue(payload["heads"][0]["properties"]["heatRequired"])
+        self.assertNotIn("wifiPassword", payload["heads"][0]["properties"])
+
+
+class FibaroApiHttpTests(unittest.TestCase):
+    def setUp(self):
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), api.Handler)
+        self.worker = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.worker.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.worker.join(timeout=2)
+        self.server.server_close()
+
+    def request(self, path, token=None, method="GET"):
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        with closing(http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)) as client:
+            client.request(method, path, headers=headers)
+            response = client.getresponse()
+            return response.status, json.loads(response.read() or b"{}")
+
+    def test_snapshot_requires_separate_api_token(self):
+        with patch.dict("os.environ", {"FIBARO_HC3_API_TOKEN": "test-api-token"}), \
+             patch.object(api, "FibaroHC3Provider", return_value=FakeProvider()):
+            status, payload = self.request("/api/fibaro/snapshot")
+            self.assertEqual(status, 401)
+            self.assertNotIn("heads", payload)
+
+    def test_snapshot_is_available_with_valid_token(self):
+        with patch.dict("os.environ", {
+            "FIBARO_HC3_API_TOKEN": "test-api-token",
+            "FIBARO_HC3_URL": "http://hc3.local",
+            "FIBARO_HC3_USERNAME": "reader",
+            "FIBARO_HC3_PASSWORD": "secret",
+        }), patch.object(api, "FibaroHC3Provider", return_value=FakeProvider()):
+            status, payload = self.request("/api/fibaro/snapshot", token="test-api-token")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["counts"], {"zones": 10, "heads": 15})
+
+    def test_endpoint_fails_closed_when_api_token_is_missing(self):
+        with patch.dict("os.environ", {}, clear=True):
+            status, payload = self.request("/api/fibaro/health")
+        self.assertEqual(status, 503)
+        self.assertFalse(payload["configured"])
+
+    def test_health_checks_hc3_connection(self):
+        provider = FakeProvider()
+        with patch.dict("os.environ", {
+            "FIBARO_HC3_API_TOKEN": "test-api-token",
+            "FIBARO_HC3_URL": "http://hc3.local",
+            "FIBARO_HC3_USERNAME": "reader",
+            "FIBARO_HC3_PASSWORD": "secret",
+        }), patch.object(api, "FibaroHC3Provider", return_value=provider):
+            status, payload = self.request("/api/fibaro/health", token="test-api-token")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["connected"])
+        self.assertEqual(payload["zone_count"], 10)
+
+    def test_mutating_methods_are_rejected(self):
+        with patch.dict("os.environ", {"FIBARO_HC3_API_TOKEN": "test-api-token"}):
+            for method in ("POST", "PUT", "PATCH", "DELETE"):
+                status, _payload = self.request("/api/fibaro/snapshot", token="test-api-token", method=method)
+                self.assertEqual(status, 405)
+
+
+if __name__ == "__main__":
+    unittest.main()
