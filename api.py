@@ -1532,7 +1532,18 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
         try:
-            provider = FibaroHC3Provider(HC3Config.from_env())
+            config = HC3Config.from_env()
+        except HC3Error as error:
+            self._send_json(error.status, {
+                "configured": False,
+                "connected": False,
+                "source": "fibaro-hc3",
+                "error": error.message,
+            })
+            return True
+
+        try:
+            provider = FibaroHC3Provider(config)
             if path == "/api/fibaro/health":
                 zones = provider.get_climate_zones()
                 self._send_json(200, {
