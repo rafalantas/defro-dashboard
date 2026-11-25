@@ -6,7 +6,7 @@ intervals as missing telemetry and never reconstructs state durations.
 from __future__ import annotations
 
 from math import isfinite
-from thermoflow_fibaro_event_history import analyze_fibaro_event_history
+from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 
 SCHEMA = "thermoflow-fibaro-data-quality/1"
 ALLOWED_TYPES = {"DevicePropertyUpdatedEvent", "ClimateZoneTemperatureChangedEvent"}
@@ -94,13 +94,22 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
         issues.append(_issue("insufficient_observed_days", "warning",
                              f"{observed_days} observed UTC days; {minimum_observed_days} required."))
 
+    recognized = transitions = suspected_spikes = 0
     try:
-        history = analyze_fibaro_event_history(snapshot, valid, start, end)
-        recognized = history["counts"]["events_recognized"]
-        transitions = history["counts"]["transitions"]
-        suspected_spikes = history["temperature_quality"]["suspected_transient_spikes"]
+        # The on-demand HC3 analyzer accepts at most seven days per call.
+        # Analyze adjacent, non-overlapping inclusive chunks for longer retained
+        # datasets; no event is dropped or counted twice at a chunk boundary.
+        cursor = start
+        while cursor < end:
+            chunk_end = min(cursor + MAX_HISTORY_SECONDS, end)
+            chunk = [event for event in valid
+                     if cursor <= event["timestamp"] <= chunk_end]
+            history = analyze_fibaro_event_history(snapshot, chunk, cursor, chunk_end)
+            recognized += history["counts"]["events_recognized"]
+            transitions += history["counts"]["transitions"]
+            suspected_spikes += history["temperature_quality"]["suspected_transient_spikes"]
+            cursor = chunk_end + 1
     except (KeyError, TypeError, ValueError):
-        history = None
         recognized = transitions = suspected_spikes = 0
         issues.append(_issue("history_analysis_failed", "blocking",
                              "Existing event-history analyzer rejected the supplied evidence."))
