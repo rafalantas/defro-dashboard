@@ -86,6 +86,9 @@ class FakeProvider:
             "properties": {
                 "heatRequired": device_id in {2149, 2162, 2166, 2170, 2498, 2542},
                 "parameters": json.dumps([{
+                    "id": 2,
+                    "value": 64 if device_id == 2149 else 0,
+                }, {
                     "id": 3,
                     "value": (
                         5 if device_id in {2162, 2170, 2542}
@@ -126,6 +129,8 @@ class FibaroSnapshotTests(unittest.TestCase):
         self.assertNotIn("wifiPassword", payload["heads"][0]["properties"])
         kitchen_head = next(head for head in payload["heads"] if head["id"] == 2149)
         self.assertTrue(kitchen_head["properties"]["heatRequired"])
+        self.assertEqual(kitchen_head["properties"]["parameter2"], 64)
+        self.assertTrue(kitchen_head["properties"]["parameter2_moderate_regulator"])
         self.assertEqual(kitchen_head["properties"]["parameter3"], 4)
         self.assertTrue(kitchen_head["properties"]["parameter3_heat_required"])
         self.assertEqual(kitchen_head["properties"]["heat_demand_consistency"], "consistent")
