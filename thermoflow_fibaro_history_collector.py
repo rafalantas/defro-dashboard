@@ -165,7 +165,7 @@ class FibaroHistoryCollector:
         return self.save_batch(events, start=start, end=end, collected_at=collected_at)
 
     def save_snapshot(self, snapshot, *, captured_at=None):
-        """Persist one immutable HC3 snapshot; identical timestamp/payload is idempotent."""
+        """Persist only changed snapshot content; record every successful observation separately."""
         if not isinstance(snapshot, dict):
             raise ValueError("snapshot must be a mapping")
         stamp = int(time.time()) if captured_at is None else captured_at
@@ -179,43 +179,74 @@ class FibaroHistoryCollector:
         except (TypeError, ValueError):
             raise ValueError("snapshot must contain JSON-safe finite values") from None
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        metadata = json.dumps(
+            {"payload_sha256": digest}, sort_keys=True, separators=(",", ":")
+        )
         with self.store.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             existing = db.execute(
-                "SELECT id FROM fibaro_snapshots WHERE captured_at=? AND payload_sha256=?",
-                (stamp, digest),
+                "SELECT id,captured_at FROM fibaro_snapshots "
+                "WHERE payload_sha256=? ORDER BY captured_at DESC,id DESC LIMIT 1",
+                (digest,),
             ).fetchone()
             if existing is not None:
-                return {
-                    "status": "duplicate",
-                    "id": int(existing["id"]),
-                    "captured_at": stamp,
-                    "payload_sha256": digest,
-                }
-            cursor = db.execute(
-                "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) "
-                "VALUES(?,?,?)",
-                (stamp, payload, digest),
+                snapshot_id = int(existing["id"])
+                status = "unchanged"
+                original_captured_at = int(existing["captured_at"])
+            else:
+                cursor = db.execute(
+                    "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) "
+                    "VALUES(?,?,?)",
+                    (stamp, payload, digest),
+                )
+                snapshot_id = int(cursor.lastrowid)
+                status = "inserted"
+                original_captured_at = stamp
+
+            db.execute(
+                """INSERT INTO collector_state(
+                    collector_name,cursor_value,updated_at,metadata_json
+                ) VALUES(?,?,?,?)
+                ON CONFLICT(collector_name) DO UPDATE SET
+                    cursor_value = CASE
+                        WHEN CAST(excluded.cursor_value AS INTEGER) >
+                             CAST(collector_state.cursor_value AS INTEGER)
+                        THEN excluded.cursor_value
+                        ELSE collector_state.cursor_value
+                    END,
+                    updated_at = CASE
+                        WHEN excluded.updated_at > collector_state.updated_at
+                        THEN excluded.updated_at
+                        ELSE collector_state.updated_at
+                    END,
+                    metadata_json = excluded.metadata_json""",
+                ("fibaro_hc3_snapshot", str(stamp), stamp, metadata),
             )
             return {
-                "status": "inserted",
-                "id": int(cursor.lastrowid),
-                "captured_at": stamp,
+                "status": status,
+                "id": snapshot_id,
+                "captured_at": original_captured_at,
+                "last_observed_at": stamp,
                 "payload_sha256": digest,
             }
 
     def read_latest_snapshot(self):
-        """Return the newest persisted snapshot without contacting the HC3 device."""
+        """Return the latest distinct snapshot and its last observation time."""
         with self.store.connection() as db:
             row = db.execute(
                 "SELECT id,captured_at,payload_json,payload_sha256 "
                 "FROM fibaro_snapshots ORDER BY captured_at DESC,id DESC LIMIT 1"
+            ).fetchone()
+            state = db.execute(
+                "SELECT updated_at FROM collector_state "
+                "WHERE collector_name='fibaro_hc3_snapshot'"
             ).fetchone()
         if row is None:
             return None
         return {
             "id": int(row["id"]),
             "captured_at": int(row["captured_at"]),
+            "last_observed_at": int(state["updated_at"]) if state else int(row["captured_at"]),
             "payload": json.loads(row["payload_json"]),
             "payload_sha256": row["payload_sha256"],
         }
