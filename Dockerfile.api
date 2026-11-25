@@ -1,5 +1,7 @@
 FROM python:3.12-alpine
 WORKDIR /app
+COPY thermoflow_store.py /app/thermoflow_store.py
+COPY db/migrations/ /app/db/migrations/
 COPY api.py /app/api.py
 COPY fibaro_hc3_provider.py /app/fibaro_hc3_provider.py
 COPY fibaro_hc3_api.py /app/fibaro_hc3_api.py
