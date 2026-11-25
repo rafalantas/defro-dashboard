@@ -51,6 +51,12 @@ class FibaroEventHistoryTests(unittest.TestCase):
         audit = result["event_audit"]
         self.assertEqual(result["counts"]["events_recognized"], 0)
         self.assertEqual(audit["mapped_head_property_counts"], {"batteryLevel": 1})
+        self.assertEqual(
+            audit["mapped_head_event_type_counts"],
+            {"DevicePropertyUpdatedEvent": 1, "SomeOtherEvent": 1},
+        )
+        self.assertEqual(audit["mapped_head_event_data_key_counts"]["SomeOtherEvent.id"], 1)
+        self.assertIn("Exact data.id match", audit["mapped_head_event_matching_rule"])
         self.assertEqual(audit["heat_required_history"]["status"], "no_events_observed")
         self.assertEqual(audit["heat_required_history"]["current_snapshot_state"]["true"], 2)
         self.assertEqual(audit["event_type_counts"]["SomeOtherEvent"], 1)

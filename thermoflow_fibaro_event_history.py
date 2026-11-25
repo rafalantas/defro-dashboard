@@ -123,6 +123,8 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
     valid_timestamps = set()
     event_type_counts = Counter()
     mapped_head_property_counts = Counter()
+    mapped_head_event_type_counts = Counter()
+    mapped_head_event_data_key_counts = Counter()
     tracked_property_events = Counter()
     tracked_property_valid_transitions = Counter()
 
@@ -138,6 +140,16 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
         if timestamp is None or not start <= timestamp <= end or not isinstance(data, dict):
             ignored += 1
             continue
+
+        # Audit opaque event types without interpreting their payloads: only an
+        # exact data.id match against the current snapshot's mapped head IDs is
+        # counted. Record key names, never payload values.
+        mapped_device_id = _identifier(data.get("id"))
+        if isinstance(event_type, str) and mapped_device_id in by_head:
+            mapped_head_event_type_counts[event_type] += 1
+            for key in data:
+                if isinstance(key, str):
+                    mapped_head_event_data_key_counts[f"{event_type}.{key}"] += 1
 
         zone_targets, transition = [], None
         if event_type == "DevicePropertyUpdatedEvent":
@@ -234,6 +246,12 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
             "event_type_counts": dict(sorted(event_type_counts.items())),
             "mapped_head_device_property_events": mapped_head_device_events,
             "mapped_head_property_counts": dict(sorted(mapped_head_property_counts.items())),
+            "mapped_head_event_type_counts": dict(sorted(mapped_head_event_type_counts.items())),
+            "mapped_head_event_data_key_counts": dict(sorted(mapped_head_event_data_key_counts.items())),
+            "mapped_head_event_matching_rule": (
+                "Exact data.id match against head IDs mapped from the current climate-zone snapshot; "
+                "opaque event payload values are not interpreted or returned."
+            ),
             "tracked_property_events": {name: tracked_property_events[name] for name in sorted(TRACKED_DEVICE_PROPERTIES)},
             "tracked_property_valid_transitions": {name: tracked_property_valid_transitions[name] for name in sorted(TRACKED_DEVICE_PROPERTIES)},
             "heat_required_history": {
