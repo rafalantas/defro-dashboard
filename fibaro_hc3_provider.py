@@ -80,7 +80,7 @@ class FibaroHC3Provider:
         self._authorization = f"Basic {token}"
 
     def _get_json(self, path: str, params=None):
-        if not path.startswith("/api/") or path.startswith("//"):
+        if not path.startswith("/api/") or "//" in path or ".." in path:
             raise HC3Error(400, "Niedozwolona ścieżka Fibaro HC3")
         url = self.config.base_url + path
         if params:
