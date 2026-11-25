@@ -71,6 +71,27 @@ class ThermoFlowSQLiteStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.backup_to(self.db_path)
 
+
+    def test_initial_schema_contains_all_shared_thermoflow_domains(self):
+        self.store = SQLiteStore(
+            self.db_path,
+            migrations_dir=Path(__file__).resolve().parents[1] / "db" / "migrations",
+        )
+        self.store.migrate()
+        expected = {
+            "telemetry_samples", "fibaro_events", "fibaro_snapshots",
+            "refill_events", "weather_forecasts", "feature_windows", "datasets",
+            "model_versions", "model_evaluations", "shadow_predictions",
+            "dashboard_cache", "collector_state", "collection_runs",
+        }
+        with self.store.connection() as db:
+            actual = {
+                row["name"] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+        self.assertTrue(expected.issubset(actual))
+
     def test_invalid_timeout_is_rejected(self):
         with self.assertRaises(ValueError):
             SQLiteStore(self.db_path, migrations_dir=self.migrations, timeout_seconds=0)
