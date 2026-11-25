@@ -64,6 +64,22 @@ class FibaroDataQualityTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "blocked")
 
+    def test_quality_analysis_supports_collected_windows_longer_than_seven_days(self):
+        events = [
+            {"id": day + 1, "timestamp": 86400 * day + 100,
+             "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatRequired",
+                      "oldValue": bool(day % 2), "newValue": not bool(day % 2)}}
+            for day in range(8)
+        ]
+        result = assess_fibaro_history_quality(
+            events, self.snapshot, start=1, end=9 * 86400,
+            minimum_events=8, minimum_observed_days=8
+        )
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["counts"]["recognized_events"], 8)
+        self.assertEqual(result["counts"]["transitions"], 8)
+
     def test_rejects_invalid_window(self):
         with self.assertRaises(ValueError):
             assess_fibaro_history_quality(self.events, self.snapshot,
