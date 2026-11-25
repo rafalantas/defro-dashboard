@@ -59,6 +59,7 @@ class FibaroHistoryCollectorTests(unittest.TestCase):
         self.assertEqual(result["invalid"], 2)
         self.assertEqual(result["status"], "partial")
         self.assertEqual(self.store.status()["last_run"]["status"], "partial")
+        self.assertIsNone(self.store.status()["last_successful_end"])
 
     def test_cursor_never_moves_backwards(self):
         self.store.save_batch(self.events, start=900, end=1100, collected_at=1200)

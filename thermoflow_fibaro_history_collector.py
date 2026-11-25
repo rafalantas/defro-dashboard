@@ -11,6 +11,7 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 MAX_WINDOW_SECONDS = 7 * 24 * 60 * 60
@@ -53,8 +54,20 @@ class FibaroHistoryStore:
         connection.execute("PRAGMA foreign_keys=ON")
         return connection
 
+    @contextmanager
+    def _connection(self):
+        db = self._connect()
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def _initialize(self):
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             db.execute("""CREATE TABLE IF NOT EXISTS events (
@@ -109,7 +122,7 @@ class FibaroHistoryStore:
             event_type = event.get("type") if isinstance(event.get("type"), str) else None
             prepared.append((event_id, timestamp, event_type, payload, digest, now))
 
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             for row in prepared:
                 cursor = db.execute(
@@ -125,10 +138,11 @@ class FibaroHistoryStore:
                 "INSERT INTO collection_runs(start_ts,end_ts,fetched,inserted,duplicates,invalid,completed_at,status) VALUES(?,?,?,?,?,?,?,?)",
                 (start, end, len(events), inserted, duplicates, invalid, now, status),
             )
-            db.execute(
-                "INSERT INTO metadata(key,value) VALUES('last_successful_end',?) ON CONFLICT(key) DO UPDATE SET value=MAX(CAST(value AS INTEGER),CAST(excluded.value AS INTEGER))",
-                (str(end),),
-            )
+            if status == "complete":
+                db.execute(
+                    "INSERT INTO metadata(key,value) VALUES('last_successful_end',?) ON CONFLICT(key) DO UPDATE SET value=MAX(CAST(value AS INTEGER),CAST(excluded.value AS INTEGER))",
+                    (str(end),),
+                )
         return {"fetched": len(events), "inserted": inserted, "duplicates": duplicates,
                 "invalid": invalid, "status": status, "cursor_end": end}
 
@@ -152,7 +166,7 @@ class FibaroHistoryStore:
             clauses.append("timestamp <= ?")
             values.append(end)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        with self._connect() as db:
+        with self._connection() as db:
             rows = db.execute(
                 "SELECT payload_json FROM events" + where + " ORDER BY timestamp,event_id LIMIT ?",
                 (*values, limit),
@@ -160,7 +174,7 @@ class FibaroHistoryStore:
         return [json.loads(row["payload_json"]) for row in rows]
 
     def status(self):
-        with self._connect() as db:
+        with self._connection() as db:
             count = db.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
             latest = db.execute("SELECT MAX(timestamp) AS n FROM events").fetchone()["n"]
             cursor = db.execute("SELECT value FROM metadata WHERE key='last_successful_end'").fetchone()
@@ -176,7 +190,7 @@ class FibaroHistoryStore:
         if not _valid_timestamp(clock):
             raise ValueError("invalid now")
         cutoff = clock - self.retention_days * 86400
-        with self._connect() as db:
+        with self._connection() as db:
             cursor = db.execute("DELETE FROM events WHERE timestamp < ?", (cutoff,))
             deleted = cursor.rowcount
         return {"deleted": deleted, "cutoff": cutoff, "retention_days": self.retention_days}
