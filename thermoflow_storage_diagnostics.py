@@ -9,7 +9,6 @@ import argparse
 import json
 import sqlite3
 from pathlib import Path
-from urllib.parse import quote
 
 SCHEMA = "thermoflow-storage-audit/1"
 
