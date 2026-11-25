@@ -26,7 +26,7 @@ class FibaroSnapshotDedupTests(unittest.TestCase):
         first = self.collector.save_snapshot(snapshot, captured_at=1000)
         second = self.collector.save_snapshot(snapshot, captured_at=1100)
         self.assertEqual(first["status"], "inserted")
-        self.assertEqual(second["status"], "unchanged")
+        self.assertEqual(second["status"], "duplicate")
         self.assertEqual(first["id"], second["id"])
         self.assertEqual(second["captured_at"], 1000)
         self.assertEqual(second["last_observed_at"], 1100)
