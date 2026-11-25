@@ -1,4 +1,4 @@
-"""Regression tests for the Fibaro hourly/daily shadow profile."""
+""""Regression tests for the Fibaro hourly/daily shadow profile."""
 import unittest
 
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history
@@ -50,7 +50,9 @@ class FibaroTimeProfileTests(unittest.TestCase):
         self.assertEqual(result["totals"]["temperature_suspected_spikes"], 2)
         self.assertEqual(result["totals"]["temperature_mean_delta_c"], 0.5)
         self.assertEqual(result["counts"]["transitions_aggregated"], 7)
-        self.assertEqual(len(result["daily"]), 1)
+        # The final event is exactly midnight in Europe/Warsaw, so the data
+        # correctly spans two local calendar dates.
+        self.assertEqual([item["date"] for item in result["daily"]], ["2026-11-25", "2026-11-26"])
         self.assertGreaterEqual(len(result["hourly"]), 2)
         self.assertFalse(result["ai_shadow"]["training_ready"])
         self.assertTrue(result["safety"]["read_only"])
@@ -62,7 +64,11 @@ class FibaroTimeProfileTests(unittest.TestCase):
         )
         result = build_fibaro_time_profile(self.snapshot, history)
         self.assertEqual(result["counts"]["observed_hour_buckets"], 2)
-        self.assertEqual(result["counts"]["observed_days"], 1)
+        self.assertEqual(result["counts"]["observed_days"], 2)
+        self.assertEqual(
+            [item["date"] for item in result["daily"]],
+            ["2026-11-25", "2026-11-26"],
+        )
         self.assertFalse(result["coverage"]["empty_buckets_synthesized"])
 
     def test_does_not_infer_state_durations_or_missing_intervals(self):
