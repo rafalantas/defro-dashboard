@@ -164,6 +164,62 @@ class FibaroHistoryCollector:
         events = provider.get_events_range(start, end)
         return self.save_batch(events, start=start, end=end, collected_at=collected_at)
 
+    def save_snapshot(self, snapshot, *, captured_at=None):
+        """Persist one immutable HC3 snapshot; identical timestamp/payload is idempotent."""
+        if not isinstance(snapshot, dict):
+            raise ValueError("snapshot must be a mapping")
+        stamp = int(time.time()) if captured_at is None else captured_at
+        if not _valid_timestamp(stamp):
+            raise ValueError("captured_at must be a positive UTC timestamp")
+        try:
+            payload = json.dumps(
+                snapshot, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            )
+        except (TypeError, ValueError):
+            raise ValueError("snapshot must contain JSON-safe finite values") from None
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        with self.store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                "SELECT id FROM fibaro_snapshots WHERE captured_at=? AND payload_sha256=?",
+                (stamp, digest),
+            ).fetchone()
+            if existing is not None:
+                return {
+                    "status": "duplicate",
+                    "id": int(existing["id"]),
+                    "captured_at": stamp,
+                    "payload_sha256": digest,
+                }
+            cursor = db.execute(
+                "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) "
+                "VALUES(?,?,?)",
+                (stamp, payload, digest),
+            )
+            return {
+                "status": "inserted",
+                "id": int(cursor.lastrowid),
+                "captured_at": stamp,
+                "payload_sha256": digest,
+            }
+
+    def read_latest_snapshot(self):
+        """Return the newest persisted snapshot without contacting the HC3 device."""
+        with self.store.connection() as db:
+            row = db.execute(
+                "SELECT id,captured_at,payload_json,payload_sha256 "
+                "FROM fibaro_snapshots ORDER BY captured_at DESC,id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": int(row["id"]),
+            "captured_at": int(row["captured_at"]),
+            "payload": json.loads(row["payload_json"]),
+            "payload_sha256": row["payload_sha256"],
+        }
+
     def read_events(self, *, start=None, end=None, limit=10000):
         if type(limit) is not int or not 1 <= limit <= 100000:
             raise ValueError("limit must be between 1 and 100000")
