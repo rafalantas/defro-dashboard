@@ -1,4 +1,6 @@
 """Regression tests for explicit ThingSpeak-to-SQLite ingestion."""
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -96,6 +98,43 @@ class ThingSpeakCollectorTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(row["observed_at"], self.start)
         self.assertNotIn("created_at", row["payload_json"])
+
+    def test_legacy_full_feed_rows_remain_idempotent_after_compaction(self):
+        channels = self.channels()
+        telemetry_feed = channels["temperatures_power"]["feeds"][0]
+        refill_feed = channels["refills"]["feeds"][0]
+        telemetry_json = json.dumps(
+            telemetry_feed, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        )
+        refill_json = json.dumps(
+            refill_feed, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        )
+        telemetry_hash = hashlib.sha256(telemetry_json.encode("utf-8")).hexdigest()
+        refill_hash = hashlib.sha256(refill_json.encode("utf-8")).hexdigest()
+        from thermoflow_thingspeak_collector import _timestamp
+        with self.store.connection() as db:
+            db.execute(
+                "INSERT INTO telemetry_samples(source,source_key,observed_at,recorded_at,"
+                "payload_json,payload_sha256) VALUES(?,?,?,?,?,?)",
+                ("thingspeak:temperatures_power", "111:101",
+                 _timestamp(telemetry_feed["created_at"]), self.end + 1,
+                 telemetry_json, telemetry_hash),
+            )
+            db.execute(
+                "INSERT INTO refill_events(event_key,occurred_at,source,payload_json,payload_sha256) "
+                "VALUES(?,?,?,?,?)",
+                ("222:7", _timestamp(refill_feed["created_at"]),
+                 "thingspeak:refills", refill_json, refill_hash),
+            )
+        result = self.collector.save_batch(
+            channels, start=self.start, end=self.end, collected_at=self.end + 10
+        )
+        self.assertEqual(result["duplicates"], 2)
+        self.assertEqual(result["conflicts"], 0)
+        self.assertEqual(result["inserted"], 1)
+        self.assertEqual(result["status"], "complete")
 
     def test_invalid_feed_makes_run_partial_without_advancing_cursor(self):
         channels = self.channels([{"entry_id": 1, "created_at": "bad", "field1": "1"}])
