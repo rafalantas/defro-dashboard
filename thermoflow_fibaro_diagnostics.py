@@ -86,6 +86,14 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
         if not isinstance(properties, dict):
             properties = {}
         heat_required = _boolean(properties.get("heatRequired"))
+        parameter2 = properties.get("parameter2")
+        if isinstance(parameter2, bool):
+            parameter2 = None
+        try:
+            parameter2 = int(parameter2) if parameter2 is not None else None
+        except (TypeError, ValueError, OverflowError):
+            parameter2 = None
+        moderate_regulator = _boolean(properties.get("parameter2_moderate_regulator"))
         parameter3 = properties.get("parameter3")
         if isinstance(parameter3, bool):
             parameter3 = None
@@ -100,6 +108,8 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
             "id": identifier,
             "name": head.get("name"),
             "heat_required": heat_required,
+            "parameter2": parameter2,
+            "moderate_regulator": moderate_regulator,
             "parameter3": parameter3,
             "parameter3_heat_required": parameter3_heat_required,
             "demand_consistency": _head_consistency(properties),
@@ -259,6 +269,9 @@ def build_fibaro_zone_diagnostics(snapshot: dict) -> dict:
             "heads_with_demand_source_mismatch": sum(item["demand_consistency"] == "mismatch" for item in head_results),
             "heads_with_consistent_demand_sources": sum(item["demand_consistency"] == "consistent" for item in head_results),
             "heads_with_unknown_demand_consistency": sum(item["demand_consistency"] == "unknown" for item in head_results),
+            "heads_with_moderate_regulator_enabled": sum(item["moderate_regulator"] is True for item in head_results),
+            "heads_with_moderate_regulator_disabled": sum(item["moderate_regulator"] is False for item in head_results),
+            "heads_with_unknown_moderate_regulator": sum(item["moderate_regulator"] is None for item in head_results),
         },
         "heads": head_results,
         "zones": zone_results,
