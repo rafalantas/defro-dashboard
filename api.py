@@ -23,6 +23,7 @@ from thermoflow_weather_forecast import project_weather_forecast
 from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
 from fibaro_hc3_api import build_hc3_snapshot
 from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
+from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -1516,7 +1517,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/history"):
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1576,6 +1577,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/fibaro/diagnostics":
                 snapshot = build_hc3_snapshot(provider)
                 self._send_json(200, build_fibaro_zone_diagnostics(snapshot))
+            elif path == "/api/fibaro/telemetry":
+                snapshot = build_hc3_snapshot(provider)
+                diagnostics = build_fibaro_zone_diagnostics(snapshot)
+                self._send_json(200, build_fibaro_telemetry(snapshot, diagnostics))
             else:
                 snapshot = build_hc3_snapshot(provider)
                 events = provider.get_events_range(history_start, history_end)
