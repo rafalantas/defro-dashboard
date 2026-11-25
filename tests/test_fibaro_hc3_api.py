@@ -44,6 +44,13 @@ class FakeProvider:
             },
         }
 
+    def get_events_range(self, start, end):
+        self.history_range = (start, end)
+        return [{
+            "id": 1, "timestamp": start + 1, "type": "DevicePropertyUpdatedEvent",
+            "data": {"id": 2145, "property": "heatRequired", "oldValue": False, "newValue": True},
+        }]
+
     def get_device(self, device_id):
         return {
             "id": device_id,
@@ -132,6 +139,30 @@ class FibaroApiHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["connected"])
         self.assertEqual(payload["zone_count"], 10)
+
+
+    def test_event_history_endpoint_requires_bounded_range_and_returns_transitions(self):
+        provider = FakeProvider()
+        with patch.dict("os.environ", {
+            "FIBARO_HC3_API_TOKEN": "test-api-token",
+            "FIBARO_HC3_URL": "http://hc3.local",
+            "FIBARO_HC3_USERNAME": "reader",
+            "FIBARO_HC3_PASSWORD": "secret",
+        }), patch.object(api, "FibaroHC3Provider", return_value=provider):
+            missing_status, _ = self.request("/api/fibaro/history", token="test-api-token")
+            status, payload = self.request(
+                "/api/fibaro/history?start=100&end=200", token="test-api-token"
+            )
+            too_wide_status, _ = self.request(
+                f"/api/fibaro/history?start=100&end={100 + 7 * 86400 + 1}",
+                token="test-api-token",
+            )
+        self.assertEqual(missing_status, 400)
+        self.assertEqual(status, 200)
+        self.assertEqual(provider.history_range, (100, 200))
+        self.assertEqual(payload["schema"], "thermoflow-fibaro-event-history/1")
+        self.assertGreater(payload["counts"]["transitions"], 0)
+        self.assertEqual(too_wide_status, 400)
 
     def test_mutating_methods_are_rejected(self):
         with patch.dict("os.environ", {"FIBARO_HC3_API_TOKEN": "test-api-token"}):
