@@ -1,4 +1,5 @@
 FROM python:3.12-alpine
+RUN apk add --no-cache tzdata
 WORKDIR /app
 COPY api.py /app/api.py
 COPY fibaro_hc3_provider.py /app/fibaro_hc3_provider.py
