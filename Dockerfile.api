@@ -1,6 +1,7 @@
 FROM python:3.12-alpine
 WORKDIR /app
 COPY api.py /app/api.py
+COPY fibaro_hc3_provider.py /app/fibaro_hc3_provider.py
 COPY fuel.py thermoflow2_runtime.py /app/
 COPY fuel_engine.py /app/fuel_engine.py
 COPY fuel_telemetry_audit_runtime.py /app/fuel_telemetry_audit_runtime.py
