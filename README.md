@@ -243,3 +243,26 @@ Forecast, model training, model promotion or any boiler settings. The HC3
 provider remains GET-only; there is no background polling, raw-history
 persistence or device command. Return-temperature protection remains
 55°C ±1°C.
+
+
+### Fibaro HC3 — godzinowy i dobowy profil zachowania (shadow)
+
+Endpoint `GET /api/fibaro/profile?start=<unix>&end=<unix>` agreguje
+zweryfikowane przejścia z historii HC3 do obserwowanych kubełków godzinowych
+i dobowych w strefie `Europe/Warsaw`. Używa tego samego tokenu Bearer
+`FIBARO_HC3_API_TOKEN` i tego samego ograniczenia zakresu co
+`/api/fibaro/history` (maksymalnie 7 dni).
+
+Profil raportuje liczbę rozpoczęć/zakończeń zapotrzebowania na ciepło,
+otwarć/zamknięć okien oraz zmiany temperatur w strefach. Duże skoki
+temperatury oznaczone przez istniejącą heurystykę historii pozostają widoczne
+jako podejrzane próbki, ale są wyłączane ze średnich czystych zmian temperatury.
+Puste godziny i dni nie są dopisywane, a brak danych pozostaje brakiem danych.
+
+To nadal analiza zdarzeń, nie rekonstrukcja czasu grzania: HC3 nie gwarantuje
+stanu początkowego w pobranym oknie, dlatego endpoint nie wylicza czasu
+aktywnego grzania, czasu otwarcia okna ani ciągłości stanów. Nie zapisuje
+historii, nie uruchamia pollingu i nie wysyła komend. `ai_shadow.training_ready`
+pozostaje `false` do czasu wdrożenia osobnego, trwałego i kontrolowanego
+jakościowo kolektora historii oraz walidacji chronologicznej. Prognoza paliwa
+i sterowanie pozostają bez zmian; ochrona powrotu pozostaje 55°C ±1°C.

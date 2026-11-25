@@ -234,9 +234,29 @@ class FibaroApiHttpTests(unittest.TestCase):
         self.assertGreater(payload["counts"]["transitions"], 0)
         self.assertEqual(too_wide_status, 400)
 
+    def test_time_profile_endpoint_aggregates_history_without_inference(self):
+        provider = FakeProvider()
+        with patch.dict("os.environ", {
+            "FIBARO_HC3_API_TOKEN": "test-api-token",
+            "FIBARO_HC3_URL": "http://hc3.local",
+            "FIBARO_HC3_USERNAME": "reader",
+            "FIBARO_HC3_PASSWORD": "secret",
+        }), patch.object(api, "FibaroHC3Provider", return_value=provider):
+            status, payload = self.request(
+                "/api/fibaro/profile?start=100&end=200", token="test-api-token"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(provider.history_range, (100, 200))
+        self.assertEqual(payload["schema"], "thermoflow-fibaro-time-profile/1")
+        self.assertEqual(payload["window"]["duration_seconds"], 100)
+        self.assertGreater(payload["totals"]["heat_demand_started"], 0)
+        self.assertFalse(payload["coverage"]["state_durations_available"])
+        self.assertFalse(payload["ai_shadow"]["training_ready"])
+        self.assertTrue(payload["safety"]["read_only"])
+
     def test_mutating_methods_are_rejected(self):
         with patch.dict("os.environ", {"FIBARO_HC3_API_TOKEN": "test-api-token"}):
-            for path in ("/api/fibaro/snapshot", "/api/fibaro/telemetry"):
+            for path in ("/api/fibaro/snapshot", "/api/fibaro/telemetry", "/api/fibaro/profile"):
                 for method in ("POST", "PUT", "PATCH", "DELETE"):
                     status, _payload = self.request(path, token="test-api-token", method=method)
                     self.assertEqual(status, 405)

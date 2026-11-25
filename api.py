@@ -25,6 +25,7 @@ from fibaro_hc3_api import build_hc3_snapshot
 from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
 from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
+from thermoflow_fibaro_time_profile import build_fibaro_time_profile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1517,7 +1518,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history"):
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/profile"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1535,7 +1536,7 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
         history_start = history_end = None
-        if path == "/api/fibaro/history":
+        if path in ("/api/fibaro/history", "/api/fibaro/profile"):
             query = parse_qs(parsed.query)
             try:
                 if "start" not in query or "end" not in query:
@@ -1581,12 +1582,19 @@ class Handler(BaseHTTPRequestHandler):
                 snapshot = build_hc3_snapshot(provider)
                 diagnostics = build_fibaro_zone_diagnostics(snapshot)
                 self._send_json(200, build_fibaro_telemetry(snapshot, diagnostics))
-            else:
+            elif path == "/api/fibaro/history":
                 snapshot = build_hc3_snapshot(provider)
                 events = provider.get_events_range(history_start, history_end)
                 self._send_json(200, analyze_fibaro_event_history(
                     snapshot, events, history_start, history_end
                 ))
+            else:
+                snapshot = build_hc3_snapshot(provider)
+                events = provider.get_events_range(history_start, history_end)
+                history = analyze_fibaro_event_history(
+                    snapshot, events, history_start, history_end
+                )
+                self._send_json(200, build_fibaro_time_profile(snapshot, history))
         except HC3Error as error:
             self._send_json(error.status, {
                 "configured": True,
