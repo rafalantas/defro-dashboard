@@ -26,7 +26,7 @@ class ThermoFlowStorageDiagnosticsTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO telemetry_samples(source,source_key,observed_at,recorded_at,"
                 "payload_json,payload_sha256) VALUES(?,?,?,?,?,?)",
-                ("thingspeak:test", "1:1", 100, 101, '{"temperature":21.5}', "a" * 64),
+                ("thingspeak:test", "1:1", 100, 101, '{"temperature":21.5,"note":"żółć"}', "a" * 64),
             )
             db.execute(
                 "INSERT INTO fibaro_events(event_id,observed_at,event_type,payload_json,"
