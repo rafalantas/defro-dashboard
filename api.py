@@ -22,6 +22,7 @@ from thermoflow_acceptance_evidence import build_acceptance_evidence
 from thermoflow_weather_forecast import project_weather_forecast
 from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
 from fibaro_hc3_api import build_hc3_snapshot
+from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1514,7 +1515,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot"):
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1553,8 +1554,11 @@ class Handler(BaseHTTPRequestHandler):
                     "zone_count": len(zones),
                     "fetched_at": datetime.now(timezone.utc).isoformat(),
                 })
-            else:
+            elif path == "/api/fibaro/snapshot":
                 self._send_json(200, build_hc3_snapshot(provider))
+            else:
+                snapshot = build_hc3_snapshot(provider)
+                self._send_json(200, build_fibaro_zone_diagnostics(snapshot))
         except HC3Error as error:
             self._send_json(error.status, {
                 "configured": True,
