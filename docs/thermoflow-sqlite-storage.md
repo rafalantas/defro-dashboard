@@ -56,5 +56,5 @@ and tested.
 Run:
 
 ```sh
-python -m unittest tests.test_thermoflow_store -v
+python -m unittest discover -s tests -p test_thermoflow_store.py -v
 ```
