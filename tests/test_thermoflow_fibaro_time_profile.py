@@ -72,6 +72,24 @@ class FibaroTimeProfileTests(unittest.TestCase):
         self.assertIn("not reconstructed", result["coverage"]["reason"])
         self.assertEqual(result["safety"]["return_protection"], "55°C ±1°C")
 
+    def test_global_totals_deduplicate_head_events_fanned_out_to_multiple_zones(self):
+        snapshot = {
+            "zones": [
+                {"id": 7, "name": "Salon", "properties": {"devices": [2162]}},
+                {"id": 8, "name": "Pokój", "properties": {"devices": [2162]}},
+            ],
+            "heads": [{"id": 2162, "properties": {"heatRequired": True}}],
+        }
+        history = analyze_fibaro_event_history(
+            snapshot, [self.events[0]], self.start, self.end
+        )
+        result = build_fibaro_time_profile(snapshot, history)
+        self.assertEqual(result["counts"]["transitions_aggregated"], 2)
+        self.assertEqual(result["counts"]["distinct_events_aggregated"], 1)
+        self.assertEqual(result["totals"]["heat_demand_started"], 1)
+        self.assertEqual(sum(z["totals"]["heat_demand_started"] for z in result["zones"]), 2)
+        self.assertEqual(result["snapshot_state"]["heat_required"]["true"], 1)
+
     def test_rejects_invalid_history_and_timezone(self):
         with self.assertRaises(ValueError):
             build_fibaro_time_profile(self.snapshot, {})
