@@ -14,8 +14,22 @@ from fibaro_hc3_api import build_hc3_snapshot
 
 class FakeProvider:
     def __init__(self):
-        self.zone_ids = list(range(6, 16))
-        self.head_ids = list(range(2145, 2160))
+        self.zone_heads = {
+            6: [2530, 2534],
+            7: [2162, 2170],
+            8: [2494],
+            9: [2518],
+            10: [2145, 2149],
+            12: [2154],
+            13: [2297, 2542, 2607],
+            14: [2502],
+            15: [2166],
+            16: [2498],
+        }
+        self.zone_ids = sorted(self.zone_heads)
+        self.head_ids = sorted({
+            device_id for values in self.zone_heads.values() for device_id in values
+        })
 
     def get_climate_zones(self):
         return [
@@ -25,7 +39,7 @@ class FakeProvider:
                 "active": True,
                 "mode": "Schedule",
                 "properties": {
-                    "devices": self.head_ids[index * 2:index * 2 + 2] if index < 5 else self.head_ids[index + 5:index + 6],
+                    "devices": self.zone_heads[zone_id],
                     "temperatureSensors": [247 + index],
                 },
             }
@@ -38,6 +52,7 @@ class FakeProvider:
             **item,
             "properties": {
                 **item["properties"],
+                "currentTemperature": 20.5,
                 "currentTemperatureHeating": 21.5,
                 "calculationStrategy": "avg",
                 "schedule": {"private": "not exposed"},
@@ -61,7 +76,16 @@ class FakeProvider:
             "enabled": True,
             "visible": True,
             "properties": {
-                "heatRequired": True,
+                "heatRequired": device_id in {2149, 2162, 2166, 2170, 2498, 2542},
+                "parameters": json.dumps([{
+                    "id": 3,
+                    "value": (
+                        5 if device_id in {2162, 2170, 2542}
+                        else 4 if device_id in {2149, 2166, 2498}
+                        else 1 if device_id in {2297, 2530, 2534, 2607}
+                        else 0
+                    ),
+                }]),
                 "heatingThermostatSetpoint": 21.0,
                 "thermostatMode": "Heat",
                 "windowOpened": False,
@@ -79,10 +103,16 @@ class FibaroSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["counts"], {"zones": 10, "heads": 15})
         self.assertEqual(len(payload["zones"]), 10)
         self.assertEqual(len(payload["heads"]), 15)
+        self.assertEqual(payload["zones"][0]["properties"]["currentTemperature"], 20.5)
         self.assertEqual(payload["zones"][0]["properties"]["currentTemperatureHeating"], 21.5)
         self.assertNotIn("schedule", payload["zones"][0]["properties"])
-        self.assertTrue(payload["heads"][0]["properties"]["heatRequired"])
+        self.assertEqual({head["id"] for head in payload["heads"]}, set(provider.head_ids))
         self.assertNotIn("wifiPassword", payload["heads"][0]["properties"])
+        kitchen_head = next(head for head in payload["heads"] if head["id"] == 2149)
+        self.assertTrue(kitchen_head["properties"]["heatRequired"])
+        self.assertEqual(kitchen_head["properties"]["parameter3"], 4)
+        self.assertTrue(kitchen_head["properties"]["parameter3_heat_required"])
+        self.assertEqual(kitchen_head["properties"]["heat_demand_consistency"], "consistent")
 
 
 class FibaroApiHttpTests(unittest.TestCase):
