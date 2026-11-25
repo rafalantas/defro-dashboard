@@ -25,7 +25,7 @@ class ThermoFlowStorageMaintenanceTests(unittest.TestCase):
             )
             db.execute(
                 "INSERT INTO dashboard_cache(cache_key,payload_json,generated_at,expires_at) "
-                "VALUES('live','{}',100,500)"
+                "VALUES('live','{}',100,17282000)"
             )
             db.execute(
                 "INSERT INTO collection_runs(collector_name,started_at,completed_at,fetched,"
@@ -35,7 +35,7 @@ class ThermoFlowStorageMaintenanceTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO collection_runs(collector_name,started_at,completed_at,fetched,"
                 "inserted,duplicates,invalid,status,details_json) "
-                "VALUES('recent',400,401,0,0,0,0,'complete','{}')"
+                "VALUES('recent',12961000,12961001,0,0,0,0,'complete','{}')"
             )
             db.execute(
                 "INSERT INTO telemetry_samples(source,source_key,observed_at,recorded_at,"
