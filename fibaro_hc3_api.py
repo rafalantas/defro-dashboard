@@ -13,16 +13,32 @@ ZONE_PROPERTY_FIELDS = (
     "handTimestamp",
     "handMode",
     "vacationTemperature",
+    "vacationSetPointHeating",
+    "vacationSetPointCooling",
     "vacationMode",
+    "vacationStartTime",
+    "vacationEndTime",
     "currentTemperature",
     "currentTemperatureHeating",
     "currentTemperatureCooling",
     "currentSetpointHeating",
     "currentSetpointCooling",
+    "currentSetpointTimeStartHour",
+    "currentSetpointTimeStartMinute",
+    "currentSetpointTimeEndHour",
+    "currentSetpointTimeEndMinute",
     "calculationStrategy",
     "autoSetPointHysteresis",
     "devices",
     "temperatureSensors",
+    # HC3 exposes one schedule object per weekday; preserve it without rewriting it.
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
 )
 
 HEAD_PROPERTY_FIELDS = (
@@ -158,12 +174,18 @@ def build_hc3_snapshot(provider) -> dict:
 
         raw_properties = device.get("properties")
         selected_properties = _selected(raw_properties, HEAD_PROPERTY_FIELDS)
+        parameter2 = _parameter_value(raw_properties, 2)
+        parameter2_moderate_regulator = (
+            bool(parameter2 & 64) if parameter2 is not None else None
+        )
         parameter3 = _parameter_value(raw_properties, 3)
         parameter3_heat_required = (
             bool(parameter3 & 4) if parameter3 is not None else None
         )
         heat_required = _boolean_value(selected_properties.get("heatRequired"))
 
+        selected_properties["parameter2"] = parameter2
+        selected_properties["parameter2_moderate_regulator"] = parameter2_moderate_regulator
         selected_properties["parameter3"] = parameter3
         selected_properties["parameter3_heat_required"] = parameter3_heat_required
         if heat_required is None or parameter3_heat_required is None:
