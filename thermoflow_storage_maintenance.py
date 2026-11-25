@@ -111,10 +111,10 @@ def cleanup(database_path, *, now=None, run_retention_days=DEFAULT_RUN_RETENTION
             runs_deleted = db.execute(
                 "DELETE FROM collection_runs WHERE started_at < ?", (cutoff,)
             ).rowcount
-        db.commit()
         check = [row[0] for row in db.execute("PRAGMA integrity_check")]
         if check != ["ok"]:
             raise sqlite3.DatabaseError(f"post-cleanup integrity check failed: {check}")
+        db.commit()
     except Exception:
         db.rollback()
         raise
