@@ -25,7 +25,7 @@ class FakeProvider:
                 "active": True,
                 "mode": "Schedule",
                 "properties": {
-                    "devices": self.head_ids[index:index + 2] if index < 5 else self.head_ids[index + 5:index + 6],
+                    "devices": self.head_ids[index * 2:index * 2 + 2] if index < 5 else self.head_ids[index + 5:index + 6],
                     "temperatureSensors": [247 + index],
                 },
             }
