@@ -151,6 +151,7 @@ def main(argv=None):
     """Run the persisted-evidence pipeline explicitly from the API container."""
     import argparse
     import json
+    from pathlib import Path
 
     from thermoflow_fibaro_history_collector import FibaroHistoryCollector
     from thermoflow_store import SQLiteStore
@@ -167,6 +168,8 @@ def main(argv=None):
     parser.add_argument("--recorded-at", type=int,
                         help="Optional deterministic UTC timestamp for artifact records")
     args = parser.parse_args(argv)
+    if not Path(args.database).expanduser().is_file():
+        parser.error("database file does not exist; run the explicit migration/setup step first")
 
     store = SQLiteStore(args.database)
     collector = FibaroHistoryCollector(store)
