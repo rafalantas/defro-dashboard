@@ -13,10 +13,11 @@ MODEL_SCHEMA = "1.0.0"
 
 
 def _day_timestamp(value):
-    if type(value) is not int:
+    if (isinstance(value, bool) or type(value) not in (int, float)
+            or not isfinite(value) or not float(value).is_integer()):
         raise ValueError("dataset day timestamp must be an integer YYYYMMDD")
     try:
-        parsed = datetime.strptime(str(value), "%Y%m%d").replace(tzinfo=timezone.utc)
+        parsed = datetime.strptime(str(int(value)), "%Y%m%d").replace(tzinfo=timezone.utc)
     except ValueError:
         raise ValueError("invalid dataset day timestamp") from None
     return int(parsed.timestamp())
