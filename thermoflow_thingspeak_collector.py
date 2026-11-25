@@ -40,6 +40,8 @@ def _entry_id(feed):
 
 
 def _payload(feed):
+    if not isinstance(feed, dict):
+        return None
     # Identity and timestamp already have indexed relational columns.
     compact = {key: value for key, value in feed.items()
                if key not in {"entry_id", "created_at"}}
