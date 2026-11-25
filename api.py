@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import hmac
 import re
 from bisect import bisect_right
 import os
@@ -19,6 +20,8 @@ from thermoflow_live_ml import LiveMLRuntime
 from thermoflow_production_acceptance import PATH as ACCEPTANCE_PATH, build_acceptance_report
 from thermoflow_acceptance_evidence import build_acceptance_evidence
 from thermoflow_weather_forecast import project_weather_forecast
+from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
+from fibaro_hc3_api import build_hc3_snapshot
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1506,15 +1509,82 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(*result)
         return True
 
+    def _handle_fibaro(self, method: str) -> bool:
+        parsed = urlsplit(self.path)
+        path = parsed.path
+        if not path.startswith("/api/fibaro/"):
+            return False
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot"):
+            self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
+            return True
+        if method != "GET":
+            self._send_json(405, {"error": "Fibaro HC3 API udostępnia wyłącznie GET"})
+            return True
+
+        expected_token = os.getenv("FIBARO_HC3_API_TOKEN", "").strip()
+        if not expected_token:
+            self._send_json(503, {"configured": False, "connected": False,
+                                  "error": "Brak tokenu dostępu do API Fibaro HC3"})
+            return True
+        supplied = self.headers.get("Authorization", "")
+        if not hmac.compare_digest(supplied, f"Bearer {expected_token}"):
+            self._send_json(401, {"error": "Brak autoryzacji API Fibaro HC3"})
+            return True
+
+        try:
+            provider = FibaroHC3Provider(HC3Config.from_env())
+            if path == "/api/fibaro/health":
+                zones = provider.get_climate_zones()
+                self._send_json(200, {
+                    "configured": True,
+                    "connected": True,
+                    "source": "fibaro-hc3",
+                    "zone_count": len(zones),
+                    "fetched_at": datetime.now(timezone.utc).isoformat(),
+                })
+            else:
+                self._send_json(200, build_hc3_snapshot(provider))
+        except HC3Error as error:
+            self._send_json(error.status, {
+                "configured": True,
+                "connected": False,
+                "source": "fibaro-hc3",
+                "error": error.message,
+            })
+        except Exception:
+            self._send_json(502, {
+                "configured": True,
+                "connected": False,
+                "source": "fibaro-hc3",
+                "error": "Nie udało się pobrać danych z Fibaro HC3",
+            })
+        return True
+
     def do_POST(self):
+        if self._handle_fibaro("POST"):
+            return
         if not self._handle_fuel("POST"):
             self.send_error(404)
 
+    def do_PUT(self):
+        if self._handle_fibaro("PUT"):
+            return
+        self.send_error(404)
+
+    def do_PATCH(self):
+        if self._handle_fibaro("PATCH"):
+            return
+        self.send_error(404)
+
     def do_DELETE(self):
+        if self._handle_fibaro("DELETE"):
+            return
         if not self._handle_fuel("DELETE"):
             self.send_error(404)
 
     def do_GET(self):
+        if self._handle_fibaro("GET"):
+            return
         if self._handle_fuel("GET"):
             return
         parsed = urlsplit(self.path)
