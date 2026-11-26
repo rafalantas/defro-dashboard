@@ -100,6 +100,25 @@ class SharedFibaroCollectorTests(unittest.TestCase):
                 FibaroHistoryCollector(empty)
 
 
+    def test_snapshot_fetch_timestamp_does_not_create_false_state_transitions(self):
+        first = self.collector.save_snapshot(
+            {"fetched_at": "2026-11-26T08:00:00+00:00",
+             "zones": [{"id": 7, "name": "Salon"}], "heads": []},
+            captured_at=1000,
+        )
+        repeated = self.collector.save_snapshot(
+            {"fetched_at": "2026-11-26T08:05:00+00:00",
+             "zones": [{"id": 7, "name": "Salon"}], "heads": []},
+            captured_at=1300,
+        )
+        history = self.collector.read_snapshots(start=900, end=1400)
+        latest = self.collector.read_latest_snapshot()
+        self.assertEqual(first["status"], "inserted")
+        self.assertEqual(repeated["status"], "duplicate")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(latest["captured_at"], 1000)
+        self.assertEqual(latest["last_observed_at"], 1300)
+
     def test_snapshot_reversion_is_recorded_as_a_new_historical_transition(self):
         snapshot_a = {"zones": [{"id": 7, "name": "Salon", "properties": {"devices": [2162]}}]}
         snapshot_b = {"zones": [{"id": 13, "name": "Sypialnia", "properties": {"devices": [2162]}}]}

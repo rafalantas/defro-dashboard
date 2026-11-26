@@ -178,7 +178,16 @@ class FibaroHistoryCollector:
             )
         except (TypeError, ValueError):
             raise ValueError("snapshot must contain JSON-safe finite values") from None
-        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        # HC3 changes fetched_at on every response; it is observation
+        # metadata, not a zone/head state transition. Keep it in the stored
+        # payload but exclude it from the snapshot content identity.
+        fingerprint = dict(snapshot)
+        fingerprint.pop("fetched_at", None)
+        fingerprint_payload = json.dumps(
+            fingerprint, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        )
+        digest = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
         metadata = json.dumps(
             {"payload_sha256": digest}, sort_keys=True, separators=(",", ":")
         )
