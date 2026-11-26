@@ -132,5 +132,13 @@ def build_summary(deps: dict) -> dict:
         "hopper": hopper,
         "fetched_at": now.isoformat(),
     }
+    persist_forecasts = deps.get("persist_weather_forecasts")
+    if callable(persist_forecasts) and forecast_rows:
+        try:
+            persist_forecasts(forecast_rows, int(now.timestamp()))
+        except Exception:
+            # Optional SQLite archival must never affect the live fuel summary.
+            pass
+
     deps["summary_cache"].update(at=deps["monotonic"](), data=result)
     return result
