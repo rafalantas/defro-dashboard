@@ -376,7 +376,7 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
         "raw_events_deleted": deleted,
         "fibaro_events_remaining": 0,
         "fibaro_snapshots_preserved": True,
-        "non_fibaro_tables_changed": False,
+        "unrelated_source_rows_preserved": True,
         "sqlite_integrity": "ok",
         "dataset_version": dataset_version,
     })
