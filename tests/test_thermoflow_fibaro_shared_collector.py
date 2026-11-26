@@ -100,5 +100,20 @@ class SharedFibaroCollectorTests(unittest.TestCase):
                 FibaroHistoryCollector(empty)
 
 
+    def test_snapshot_reversion_is_recorded_as_a_new_historical_transition(self):
+        snapshot_a = {"zones": [{"id": 7, "name": "Salon", "properties": {"devices": [2162]}}]}
+        snapshot_b = {"zones": [{"id": 13, "name": "Sypialnia", "properties": {"devices": [2162]}}]}
+        first = self.collector.save_snapshot(snapshot_a, captured_at=1000)
+        middle = self.collector.save_snapshot(snapshot_b, captured_at=1100)
+        reverted = self.collector.save_snapshot(snapshot_a, captured_at=1200)
+        history = self.collector.read_snapshots(start=900, end=1300)
+        self.assertEqual([row["captured_at"] for row in history], [1000, 1100, 1200])
+        self.assertEqual([row["payload"]["zones"][0]["id"] for row in history], [7, 13, 7])
+        self.assertEqual(first["status"], "inserted")
+        self.assertEqual(middle["status"], "transition")
+        self.assertEqual(reverted["status"], "transition")
+        self.assertEqual(self.collector.read_latest_snapshot()["captured_at"], 1200)
+
+
 if __name__ == "__main__":
     unittest.main()
