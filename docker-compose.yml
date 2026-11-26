@@ -97,8 +97,8 @@ services:
       - -m
       - thermoflow_fibaro_scheduler
       - /var/lib/thermoflow/thermoflow.sqlite3
-      - --initial-start
-      - "${FIBARO_HC3_INITIAL_START:-}"
+      - --history-days
+      - "14"
       - --interval-seconds
       - "300"
     restart: unless-stopped
