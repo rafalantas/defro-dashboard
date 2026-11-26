@@ -42,16 +42,20 @@ def run_scheduler(cycle, *, interval_seconds=300, max_cycles=None, wait=time.sle
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("database", help="Existing, migrated ThermoFlow SQLite database")
-    parser.add_argument("--initial-start", type=int, required=True,
-                        help="UTC Unix timestamp for the first collection window")
+    parser.add_argument("--initial-start", type=int,
+                        help="Optional fixed UTC Unix timestamp for the first collection window")
+    parser.add_argument("--history-days", type=int, default=14,
+                        help="One-time history range when no initial start is stored (default: 14 days)")
     parser.add_argument("--interval-seconds", type=int, default=300)
     parser.add_argument("--overlap-seconds", type=int, default=120)
     parser.add_argument("--once", action="store_true", help="Run exactly one collection cycle")
     args = parser.parse_args(argv)
     if not Path(args.database).expanduser().is_file():
         parser.error("database file does not exist; run the explicit SQLite migration step first")
-    if args.initial_start <= 0:
+    if args.initial_start is not None and args.initial_start <= 0:
         parser.error("--initial-start must be a positive Unix timestamp")
+    if not 1 <= args.history_days <= 14:
+        parser.error("--history-days must be between 1 and 14")
     if not 0 <= args.overlap_seconds <= 3600:
         parser.error("--overlap-seconds must be between 0 and 3600")
     if not 60 <= args.interval_seconds <= 3600:
@@ -62,6 +66,10 @@ def main(argv=None):
         collector = FibaroHistoryCollector(SQLiteStore(args.database))
         def cycle():
             now = int(time.time())
+            requested_start = args.initial_start or (now - args.history_days * 86400)
+            stable_initial_start = collector.set_backfill_initial_start(
+                requested_start, recorded_at=now
+            )
             backfill_state = collector.status(BACKFILL_COLLECTOR_NAME)
             active_collector = (
                 COLLECTOR_NAME if backfill_state.get("backfill_complete")
@@ -71,16 +79,16 @@ def main(argv=None):
                 if not backfill_state.get("backfill_complete"):
                     return collect_fibaro_backfill(
                         provider, collector, now=now,
-                        initial_start=args.initial_start,
+                        initial_start=stable_initial_start,
                     )
                 return collect_fibaro_incremental(
                     provider, collector, now=now,
-                    initial_start=args.initial_start,
+                    initial_start=stable_initial_start,
                     overlap_seconds=args.overlap_seconds,
                 )
             except Exception as error:
                 cursor = collector.status(active_collector).get("last_successful_end")
-                start = max(1, int(cursor or args.initial_start) - args.overlap_seconds)
+                start = max(1, int(cursor or stable_initial_start) - args.overlap_seconds)
                 collector.record_failure(
                     collector_name=active_collector,
                     error_type=type(error).__name__,
