@@ -146,3 +146,44 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
     else:
         result["safety"]["local_store_writes"] = False
     return result
+
+def main(argv=None):
+    """Run the persisted-evidence pipeline explicitly from the API container."""
+    import argparse
+    import json
+    from pathlib import Path
+
+    from thermoflow_fibaro_history_collector import FibaroHistoryCollector
+    from thermoflow_store import SQLiteStore
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("database", help="Path to the existing shared ThermoFlow SQLite database")
+    parser.add_argument("--start", type=int, required=True, help="Inclusive UTC Unix timestamp")
+    parser.add_argument("--end", type=int, required=True, help="Inclusive UTC Unix timestamp")
+    parser.add_argument("--timezone", default="Europe/Warsaw")
+    parser.add_argument("--minimum-events", type=int, default=50)
+    parser.add_argument("--minimum-observed-days", type=int, default=7)
+    parser.add_argument("--persist", action="store_true",
+                        help="Persist derived artifacts only after a complete evaluated shadow run")
+    parser.add_argument("--recorded-at", type=int,
+                        help="Optional deterministic UTC timestamp for artifact records")
+    args = parser.parse_args(argv)
+    if not Path(args.database).expanduser().is_file():
+        parser.error("database file does not exist; run the explicit migration/setup step first")
+
+    store = SQLiteStore(args.database)
+    collector = FibaroHistoryCollector(store)
+    result = run_fibaro_shadow_pipeline(
+        collector, start=args.start, end=args.end,
+        timezone_name=args.timezone,
+        minimum_events=args.minimum_events,
+        minimum_observed_days=args.minimum_observed_days,
+        persist=args.persist,
+        recorded_at=args.recorded_at,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    return 0 if result.get("status") in {"evaluated", "collecting"} else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
