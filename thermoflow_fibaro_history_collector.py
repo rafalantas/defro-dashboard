@@ -224,7 +224,7 @@ class FibaroHistoryCollector:
                     (stamp, payload, digest),
                 )
                 snapshot_id = int(cursor.lastrowid)
-                status = "inserted" if latest_digest is None else "transition"
+                status = "inserted"
                 original_captured_at = stamp
 
             db.execute(
