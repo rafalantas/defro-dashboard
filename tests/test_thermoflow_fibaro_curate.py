@@ -103,7 +103,7 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
         self.assertEqual(result["skipped_by_reason"]["unchanged_value"], 1)
         self.assertEqual(result["skipped_by_reason"]["duplicate_transition"], 1)
         self.assertEqual(result["skipped_by_reason"]["invalid_boolean_transition"], 1)
-        self.assertEqual(result["historical_head_zone_mapping"], "unverified")
+        self.assertEqual(result["historical_head_zone_mapping"], "event_time_snapshot_only")
         self.assertTrue(result["raw_source_events_preserved"])
 
         with self.store.connection() as db:
@@ -123,14 +123,17 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
         head_transitions = [item for item in transitions if item["entity"] == "head"]
         zone_transitions = [item for item in transitions if item["entity"] == "zone"]
 
-        self.assertEqual(len(head_transitions), 3)
-        self.assertTrue(all(item["zone_id"] is None for item in head_transitions))
-        self.assertTrue(all(item["historical_zone_mapping"] == "unverified" for item in head_transitions))
-        self.assertTrue(all(item["identity_basis"] == "current_snapshot_identity_only" for item in head_transitions))
+        # The only snapshot in this fixture is at t=1000. Events at t=900..907
+        # must not borrow its future mapping retroactively.
+        self.assertEqual(len(head_transitions), 0)
         self.assertEqual(len(zone_transitions), 1)
         self.assertEqual(zone_transitions[0]["zone_id"], 7)
         self.assertEqual(zone_transitions[0]["identity_basis"], "zone_id_from_event_payload")
         self.assertEqual(report["snapshots_used"], 1)
+        self.assertEqual(report["head_zone_mapping"]["verified"], 0)
+        self.assertEqual(report["head_zone_mapping"]["unmapped"], 3)
+        self.assertFalse(report["head_zone_mapping"]["future_snapshot_fallback"])
+        self.assertEqual(report["skipped_by_reason"]["event_without_prior_snapshot"], 3)
 
     def test_dataset_hash_is_deterministic(self):
         with self.store.connection() as db:
@@ -169,11 +172,11 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
             ]
             self.assertEqual(
                 {item["signal"] for item in transitions},
-                {"setpoint", "zone_temperature", "heat_required", "window_open"},
+                {"zone_temperature"},
             )
             self.assertEqual(
                 {json.loads(row["values_json"])["schema"] for row in rows},
-                {"thermoflow-fibaro-heating-feature/2"},
+                {"thermoflow-fibaro-heating-feature/3"},
             )
             dataset = db.execute(
                 "SELECT status,manifest_json FROM datasets WHERE name=?",
@@ -183,7 +186,7 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
             self.assertEqual(dataset["status"], "candidate")
             manifest = json.loads(dataset["manifest_json"])
             self.assertTrue(manifest["source_event_payloads_retained"])
-            self.assertEqual(manifest["historical_head_zone_mapping"], "unverified")
+            self.assertEqual(manifest["historical_head_zone_mapping"], "event_time_snapshot_only")
 
     def test_missing_snapshot_fails_without_writing_or_deleting(self):
         with self.store.connection() as db:
