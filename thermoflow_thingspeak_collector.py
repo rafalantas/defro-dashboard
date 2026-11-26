@@ -14,6 +14,7 @@ from thermoflow_store import SQLiteStore
 
 MAX_WINDOW_SECONDS = 7 * 24 * 60 * 60
 MAX_FEEDS_PER_CHANNEL = 8000
+MAX_BATCH_FEEDS_PER_CHANNEL = 50000
 COLLECTOR_NAME = "thingspeak_history"
 
 
@@ -136,8 +137,8 @@ class ThingSpeakHistoryCollector:
         fetched = inserted = duplicates = invalid = conflicts = 0
         for name, config in channels.items():
             feeds = config.get("feeds")
-            if not isinstance(feeds, list) or len(feeds) > MAX_FEEDS_PER_CHANNEL:
-                raise ValueError("feeds must be a list of at most 8000 records")
+            if not isinstance(feeds, list) or len(feeds) > MAX_BATCH_FEEDS_PER_CHANNEL:
+                raise ValueError("feeds must be a list of at most 50000 records")
             channel_id = str(config["channel_id"])
             kind = config["kind"]
             fetched += len(feeds)

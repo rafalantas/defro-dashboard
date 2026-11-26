@@ -78,6 +78,39 @@ class FuelEventStoreTests(unittest.TestCase):
         self.assertEqual(void_payload["voids_entry_id"], 10)
         self.assertIsNone(void_payload["kg"])
 
+
+    def test_historical_older_refills_are_inserted_after_newer_events_were_archived(self):
+        newer = [{
+            "entry_id": 900,
+            "created_at": "2026-11-26T18:00:00Z",
+            "field1": "30",
+            "field2": "newer",
+            "field3": "",
+        }]
+        older = [{
+            "entry_id": 100,
+            "created_at": "2026-11-20T18:00:00Z",
+            "field1": "15",
+            "field2": "older historical event",
+            "field3": "",
+        }]
+        kwargs = {
+            "database_path": self.database,
+            "tz": ZoneInfo("Europe/Warsaw"),
+            "parse_timestamp": parse_timestamp,
+        }
+        self.assertEqual(persist_refill_feeds(newer, **kwargs)["inserted"], 1)
+        backfill = persist_refill_feeds(older, **kwargs)
+        self.assertEqual(backfill["inserted"], 1)
+        with self.store.connection() as db:
+            rows = db.execute(
+                "SELECT event_key FROM refill_events ORDER BY occurred_at"
+            ).fetchall()
+        self.assertEqual(
+            [row["event_key"] for row in rows],
+            ["thingspeak:fuel:100", "thingspeak:fuel:900"],
+        )
+
     def test_weather_forecast_deduplicates_unchanged_daily_payload(self):
         rows = [{
             "day": "2026-11-27",

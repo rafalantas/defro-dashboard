@@ -120,16 +120,11 @@ def persist_refill_feeds(feeds, *, database_path=DEFAULT_DB_PATH, tz,
     inserted = unchanged = 0
     with store.connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute(
-            "SELECT MAX(CAST(substr(event_key,17) AS INTEGER)) "
-            "FROM refill_events WHERE source=? AND event_key LIKE 'thingspeak:fuel:%'",
-            (REFILL_SOURCE,),
-        ).fetchone()
-        max_entry_id = int(row[0] or 0)
+        # Do not use MAX(entry_id) as a lower-bound filter: a recent API read
+        # may already have archived newer entries before a historical backfill
+        # reaches older windows. The primary key makes each source event
+        # idempotent regardless of ingestion order.
         for event_key, occurred_at, source, payload_json, digest, entry_id in prepared:
-            if entry_id <= max_entry_id:
-                unchanged += 1
-                continue
             cursor = db.execute(
                 "INSERT OR IGNORE INTO refill_events("
                 "event_key,occurred_at,source,payload_json,payload_sha256"
@@ -145,7 +140,7 @@ def persist_refill_feeds(feeds, *, database_path=DEFAULT_DB_PATH, tz,
         "inserted": inserted,
         "unchanged": unchanged,
         "skipped": skipped,
-        "max_source_entry_id": max((item[-1] for item in prepared), default=max_entry_id),
+        "max_source_entry_id": max((item[-1] for item in prepared), default=0),
     }
 
 

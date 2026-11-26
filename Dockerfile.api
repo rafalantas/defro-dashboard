@@ -18,6 +18,7 @@ COPY thermoflow_fuel_event_store.py /app/thermoflow_fuel_event_store.py
 COPY thermoflow_fibaro_artifact_store.py /app/thermoflow_fibaro_artifact_store.py
 COPY thermoflow_fibaro_time_profile.py thermoflow_fibaro_data_quality.py thermoflow_fibaro_shadow_ml.py thermoflow_fibaro_shadow_evaluation.py /app/
 COPY thermoflow_thingspeak_collector.py /app/thermoflow_thingspeak_collector.py
+COPY thermoflow_thingspeak_scheduler.py /app/thermoflow_thingspeak_scheduler.py
 COPY db/migrations/ /app/db/migrations/
 COPY api.py /app/api.py
 COPY fibaro_hc3_provider.py /app/fibaro_hc3_provider.py

@@ -32,10 +32,30 @@ class SQLiteDataAuditTests(unittest.TestCase):
                 "VALUES(?,?,?,?,?,?)",
                 ("emodul", "test:1", NOW - 60, NOW - 50, payload, digest),
             )
+        thingspeak_payload = '{"field1":"65.5","field4":"3.0"}'
+        thingspeak_digest = hashlib.sha256(thingspeak_payload.encode()).hexdigest()
+        with self.store.connection() as db:
+            db.execute(
+                "INSERT INTO telemetry_samples(source,source_key,observed_at,recorded_at,payload_json,payload_sha256) "
+                "VALUES(?,?,?,?,?,?)",
+                ("thingspeak:temperatures_power", "3566081:42", NOW - 30, NOW - 20,
+                 thingspeak_payload, thingspeak_digest),
+            )
+            refill_payload = '{"kg":30}'
+            refill_digest = hashlib.sha256(refill_payload.encode()).hexdigest()
+            db.execute(
+                "INSERT INTO refill_events(event_key,occurred_at,source,payload_json,payload_sha256) "
+                "VALUES(?,?,?,?,?)",
+                ("thingspeak:fuel:7", NOW - 40, "thingspeak_fuel", refill_payload, refill_digest),
+            )
         result = read_sqlite_data_audit(self.path, now=NOW, days=30)
         self.assertEqual(result["status"], "collecting")
         self.assertEqual(result["sources"]["emodul_telemetry"], 1)
-        self.assertEqual(result["inventory"]["telemetry_samples"]["window_count"], 1)
+        self.assertEqual(result["sources"]["thingspeak_telemetry"], 1)
+        self.assertEqual(result["sources"]["thingspeak_refill_events"], 1)
+        self.assertEqual(result["telemetry_by_source"][1]["observed_utc_days"], 1)
+        self.assertEqual(result["refill_events_by_source"][0]["name"], "thingspeak_fuel")
+        self.assertEqual(result["inventory"]["telemetry_samples"]["window_count"], 2)
         self.assertEqual(result["training_readiness"]["status"], "collecting")
         self.assertFalse(result["training_readiness"]["training_eligibility"])
         self.assertTrue(result["safety"]["read_only"])

@@ -105,6 +105,39 @@ services:
       - "300"
     restart: unless-stopped
 
+
+  thingspeak-collector:
+    image: ghcr.io/rafalantas/defro-dashboard-api:latest
+    pull_policy: always
+    container_name: thermoflow-thingspeak-collector
+    depends_on:
+      - api
+    environment:
+      THINGSPEAK_CHANNEL_IDS: ${THINGSPEAK_CHANNEL_IDS:-}
+      THINGSPEAK_READ_KEYS: ${THINGSPEAK_READ_KEYS:-}
+      THINGSPEAK_FIRE_CHANNEL_ID: ${THINGSPEAK_FIRE_CHANNEL_ID:-}
+      THINGSPEAK_FIRE_READ_KEY: ${THINGSPEAK_FIRE_READ_KEY:-}
+      THINGSPEAK_FUEL_CHANNEL_ID: ${THINGSPEAK_FUEL_CHANNEL_ID:-}
+      THINGSPEAK_FUEL_READ_KEY: ${THINGSPEAK_FUEL_READ_KEY:-}
+      THERMOFLOW_DB_PATH: /var/lib/thermoflow/thermoflow.sqlite3
+      THERMOFLOW_THINGSPEAK_HISTORY_DAYS: ${THERMOFLOW_THINGSPEAK_HISTORY_DAYS:-14}
+      THERMOFLOW_THINGSPEAK_INITIAL_START: ${THERMOFLOW_THINGSPEAK_INITIAL_START:-}
+      THERMOFLOW_THINGSPEAK_INTERVAL_SECONDS: ${THERMOFLOW_THINGSPEAK_INTERVAL_SECONDS:-300}
+      THERMOFLOW_THINGSPEAK_REQUEST_INTERVAL_SECONDS: ${THERMOFLOW_THINGSPEAK_REQUEST_INTERVAL_SECONDS:-15}
+    volumes:
+      - type: bind
+        source: /mnt/thermoflow/db
+        target: /var/lib/thermoflow
+        bind:
+          create_host_path: false
+    command:
+      - python
+      - -u
+      - -m
+      - thermoflow_thingspeak_scheduler
+      - /var/lib/thermoflow/thermoflow.sqlite3
+    restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: defro-dashboard-cloudflared
