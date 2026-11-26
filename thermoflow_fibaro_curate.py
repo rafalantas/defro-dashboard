@@ -266,6 +266,11 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
         if raw_count == 0:
             return {"status": "already_empty", "raw_events": 0, "curated_features": 0}
         features, report = build_curated_rows(db)
+    if apply and not features:
+        raise RuntimeError(
+            "Nie znaleziono żadnych zweryfikowanych cech grzewczych; "
+            "surowe zdarzenia pozostają bez zmian."
+        )
 
     result = {"status": "dry_run" if not apply else "pending", **report}
     if not apply:
