@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
-from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
+from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider, DEFAULT_HISTORY_WINDOW_SECONDS
 
 
 class FakeResponse:
@@ -95,6 +95,21 @@ class HC3ProviderTests(unittest.TestCase):
         self.assertEqual(calls, [(0, 900), (0, 450), (450, 900)])
         self.assertEqual([item["id"] for item in result], [1, 451])
         self.assertTrue(all(0 <= item["timestamp"] <= 900 for item in result))
+
+    def test_default_history_window_is_six_hours_to_reduce_backfill_requests(self):
+        calls = []
+        def opener(request, timeout):
+            query = parse_qs(urlsplit(request.full_url).query)
+            calls.append((int(query["from"][0]), int(query["to"][0])))
+            return FakeResponse([])
+        FibaroHC3Provider(self.config(), opener=opener).get_events_range(
+            1000, 1000 + DEFAULT_HISTORY_WINDOW_SECONDS + 10
+        )
+        self.assertEqual(DEFAULT_HISTORY_WINDOW_SECONDS, 6 * 60 * 60)
+        self.assertEqual(calls, [
+            (1000, 1000 + 6 * 60 * 60),
+            (1000 + 6 * 60 * 60, 1000 + 6 * 60 * 60 + 10),
+        ])
 
     def test_range_deduplicates_overlapping_window_boundaries(self):
         def opener(request, timeout):
