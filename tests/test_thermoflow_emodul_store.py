@@ -34,6 +34,7 @@ class EmodulSnapshotStoreTests(unittest.TestCase):
                 "outputs": {"feeder": True, "heater": False, "unknown_output": True},
                 "setpoints": {"co": 70.0},
                 "hysteresis": {"boiler": 6.0},
+                "disinfection": {"active": True, "percent": 65},
                 "other_tiles": [{"label": "UI-only", "value": 999}],
                 "status_tiles": [{"header": "UI-only"}],
                 "zones": [{"name": "UI-only"}],
@@ -75,12 +76,14 @@ class EmodulSnapshotStoreTests(unittest.TestCase):
         self.assertNotIn("other_tiles", sample["data"])
         self.assertNotIn("status_tiles", sample["data"])
         self.assertNotIn("controller", sample)
+        self.assertNotIn("disinfection", sample["data"])
 
     def test_allowlist_omits_unknown_and_non_finite_values(self):
         selected = select_ml_fields({
             "temperatures": {"co": 65.0, "return": 54.5, "unknown_sensor": 12, "bad": float("nan")},
             "pumps": {"floor": True, "unexpected": "x"},
             "outputs": {"feeder": True, "unknown_output": True},
+            "disinfection": {"active": True, "percent": 65},
             "zones": [{"name": "not-ml-input"}],
         })
         self.assertEqual(selected, {
