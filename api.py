@@ -1853,7 +1853,7 @@ def _refresh_intelligence_forever() -> None:
 if __name__ == "__main__":
     threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
     try:
-        start_background_scheduler()
+        _analytics_scheduler_thread = start_background_scheduler()
     except Exception as error:
         print(json.dumps({
             "component": "thermoflow-analytics",
