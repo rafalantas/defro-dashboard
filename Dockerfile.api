@@ -1,11 +1,13 @@
 FROM python:3.12-alpine
 WORKDIR /app
 COPY thermoflow_store.py /app/thermoflow_store.py
+COPY thermoflow_db_admin.py /app/thermoflow_db_admin.py
 COPY thermoflow_storage_diagnostics.py /app/thermoflow_storage_diagnostics.py
 COPY thermoflow_storage_maintenance.py /app/thermoflow_storage_maintenance.py
 COPY thermoflow_fibaro_history_collector.py /app/thermoflow_fibaro_history_collector.py
 COPY thermoflow_fibaro_collection.py /app/thermoflow_fibaro_collection.py
 COPY thermoflow_fibaro_readiness.py /app/thermoflow_fibaro_readiness.py
+COPY thermoflow_fibaro_scheduler.py /app/thermoflow_fibaro_scheduler.py
 COPY thermoflow_fibaro_shadow_pipeline.py /app/thermoflow_fibaro_shadow_pipeline.py
 COPY thermoflow_fibaro_artifact_store.py /app/thermoflow_fibaro_artifact_store.py
 COPY thermoflow_fibaro_time_profile.py thermoflow_fibaro_data_quality.py thermoflow_fibaro_shadow_ml.py thermoflow_fibaro_shadow_evaluation.py /app/

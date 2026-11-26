@@ -62,28 +62,71 @@ def collect_fibaro_once(provider, collector, *, start, end, collected_at=None):
     }
 
 
+def collect_fibaro_incremental(provider, collector, *, now, initial_start=None,
+                                overlap_seconds=120, collected_at=None):
+    """Resume from the last successful cursor, re-fetching a bounded overlap."""
+    if type(now) is not int or now <= 0:
+        raise ValueError("now must be a positive Unix timestamp")
+    if type(overlap_seconds) is not int or not 0 <= overlap_seconds <= 3600:
+        raise ValueError("overlap_seconds must be between 0 and 3600")
+    cursor = collector.status().get("last_successful_end")
+    if cursor is None:
+        if type(initial_start) is not int or initial_start <= 0:
+            raise ValueError("initial_start is required before the first successful collection")
+        start = initial_start
+    else:
+        start = max(1, int(cursor) - overlap_seconds)
+    if now <= start:
+        return {"schema": "thermoflow-fibaro-collection/1", "status": "idle",
+                "reason": "no_new_time_range", "cursor_before": cursor,
+                "safety": {"read_only_upstream": True, "device_commands_sent": False}}
+    end = min(now, start + MAX_COLLECTION_SECONDS)
+    result = collect_fibaro_once(provider, collector, start=start, end=end,
+                                 collected_at=collected_at)
+    result["mode"] = "incremental"
+    result["cursor_before"] = cursor
+    result["cursor_after"] = collector.status().get("last_successful_end")
+    result["catch_up_pending"] = end < now
+    return result
+
+
 def main(argv=None):
     """Run one explicit collection cycle from an already initialized database."""
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("database", help="Path to the existing shared ThermoFlow SQLite database")
-    parser.add_argument("--start", type=int, required=True, help="Inclusive UTC Unix timestamp")
-    parser.add_argument("--end", type=int, required=True, help="Inclusive UTC Unix timestamp")
+    parser.add_argument("--start", type=int, help="Inclusive UTC Unix timestamp for manual mode")
+    parser.add_argument("--end", type=int, help="Inclusive UTC Unix timestamp for manual mode")
     parser.add_argument("--collected-at", type=int, help="Optional deterministic collection timestamp")
+    parser.add_argument("--incremental", action="store_true", help="Resume from the last successful SQLite cursor")
+    parser.add_argument("--initial-start", type=int, help="Required initial history start before the first successful run")
+    parser.add_argument("--overlap-seconds", type=int, default=120)
     args = parser.parse_args(argv)
     if not Path(args.database).expanduser().is_file():
         parser.error("database file does not exist; run the explicit migration/setup step first")
     try:
         provider = FibaroHC3Provider(HC3Config.from_env())
         collector = FibaroHistoryCollector(SQLiteStore(args.database))
-        result = collect_fibaro_once(
-            provider, collector, start=args.start, end=args.end,
-            collected_at=args.collected_at,
-        )
+        if args.incremental:
+            if args.start is not None or args.end is not None:
+                parser.error("--start/--end cannot be combined with --incremental")
+            result = collect_fibaro_incremental(
+                provider, collector, now=int(time.time()),
+                initial_start=args.initial_start,
+                overlap_seconds=args.overlap_seconds,
+                collected_at=args.collected_at,
+            )
+        else:
+            if args.start is None or args.end is None:
+                parser.error("manual mode requires both --start and --end")
+            result = collect_fibaro_once(
+                provider, collector, start=args.start, end=args.end,
+                collected_at=args.collected_at,
+            )
     except (ValueError, RuntimeError) as error:
         parser.error(str(error))
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-    return 0 if result["status"] == "complete" else 2
+    return 0 if result["status"] in {"complete", "idle"} else 2
 
 
 if __name__ == "__main__":

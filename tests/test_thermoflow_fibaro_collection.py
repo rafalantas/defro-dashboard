@@ -2,7 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from thermoflow_fibaro_collection import collect_fibaro_once
+from thermoflow_fibaro_collection import collect_fibaro_once, collect_fibaro_incremental
 from thermoflow_fibaro_history_collector import FibaroHistoryCollector
 from thermoflow_store import SQLiteStore
 
@@ -17,9 +17,10 @@ class FakeProvider:
                 "properties": {"heatRequired": True}}
     def get_events_range(self, start, end):
         self.requested = (start, end)
-        return [{"id": 11, "timestamp": 1000, "type": "DevicePropertyUpdatedEvent",
+        event = {"id": 11, "timestamp": 1000, "type": "DevicePropertyUpdatedEvent",
                  "data": {"id": 2162, "property": "heatRequired",
-                          "oldValue": False, "newValue": True}}]
+                          "oldValue": False, "newValue": True}}
+        return [event] if start <= 1000 <= end else []
 
 
 class FibaroCollectionRunnerTests(unittest.TestCase):
@@ -57,6 +58,31 @@ class FibaroCollectionRunnerTests(unittest.TestCase):
         self.assertEqual(first["events"]["inserted"], 1)
         self.assertEqual(second["events"]["inserted"], 0)
         self.assertEqual(second["events"]["duplicates"], 1)
+    def test_incremental_requires_initial_start_and_advances_cursor(self):
+        with self.assertRaisesRegex(ValueError, "initial_start"):
+            collect_fibaro_incremental(self.provider, self.collector, now=1100)
+        first = collect_fibaro_incremental(
+            self.provider, self.collector, now=1100, initial_start=900,
+            overlap_seconds=30, collected_at=1200,
+        )
+        self.assertEqual(first["window"]["start"], 900)
+        self.assertEqual(first["cursor_after"], 1100)
+        second = collect_fibaro_incremental(
+            self.provider, self.collector, now=1200, initial_start=900,
+            overlap_seconds=30, collected_at=1300,
+        )
+        self.assertEqual(second["window"]["start"], 1070)
+        self.assertEqual(second["window"]["end"], 1200)
+        self.assertEqual(second["cursor_after"], 1200)
+
+    def test_incremental_catches_up_in_bounded_chunks(self):
+        result = collect_fibaro_incremental(
+            self.provider, self.collector, now=900 + 9 * 86400,
+            initial_start=900, collected_at=1200,
+        )
+        self.assertEqual(result["window"]["duration_seconds"], 7 * 86400)
+        self.assertTrue(result["catch_up_pending"])
+
     def test_rejects_unbounded_or_invalid_windows(self):
         for start, end in ((0, 10), (10, 10), (20, 10), (1, 1 + 8 * 86400)):
             with self.subTest(start=start, end=end), self.assertRaises(ValueError):
