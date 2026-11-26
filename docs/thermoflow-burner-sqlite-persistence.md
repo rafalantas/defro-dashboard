@@ -44,6 +44,23 @@ as compact feature windows; the holdout is paired with its model estimate and
 FIRE-confirmed actual duration. The artifact is stored as versioned JSON
 metadata with a SHA-256 checksum.
 
+## One-command offline registration
+
+After producing `observed-cycles.json`, the benchmark, artifact build and
+strict SQLite import can be run as one explicit command:
+
+```sh
+docker cp "$HOME/observed-cycles.json" defro-dashboard-api:/tmp/observed-cycles.json
+docker exec defro-dashboard-api python -m thermoflow_burner_registration \
+  /var/lib/thermoflow/thermoflow.sqlite3 \
+  /tmp/observed-cycles.json
+```
+
+The command does not run from the scheduler. It skips without writes when the
+benchmark is not evaluated, and the existing importer still verifies source
+checksums, chronological partitions, model contract and the untouched-holdout
+baseline gate. Promotion remains a manual review decision.
+
 ## Runtime boundary
 
 This step adds persistence and checksum-verified loading primitives. It does
