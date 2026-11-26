@@ -81,6 +81,7 @@ services:
       FIBARO_HC3_PASSWORD: ${FIBARO_HC3_PASSWORD:-}
       FIBARO_HC3_CREDENTIALS_FILE: ${FIBARO_HC3_CREDENTIALS_FILE:-}
       FIBARO_HC3_TIMEOUT_SECONDS: ${FIBARO_HC3_TIMEOUT_SECONDS:-12}
+      FIBARO_HC3_INITIAL_START: ${FIBARO_HC3_INITIAL_START:-}
       THERMOFLOW_DB_PATH: /var/lib/thermoflow/thermoflow.sqlite3
     volumes:
       # Same SSD-backed database directory as the API.
