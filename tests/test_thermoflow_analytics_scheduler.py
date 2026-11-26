@@ -11,6 +11,7 @@ from thermoflow_analytics_scheduler import (
     DATASET_NAME,
     run_once,
     run_scheduler,
+    start_background_scheduler,
 )
 
 
@@ -148,6 +149,56 @@ class AnalyticsSchedulerTests(unittest.TestCase):
         self.assertEqual([item["status"] for item in results], ["error", "completed"])
         self.assertEqual(results[0]["error_type"], "RuntimeError")
         self.assertNotIn("private detail", json.dumps(results))
+
+    def test_background_scheduler_starts_daemon_after_initial_delay(self):
+        created = {}
+        waits = []
+
+        class FakeThread:
+            def __init__(self, *, target, name, daemon):
+                created.update(target=target, name=name, daemon=daemon)
+                self.started = False
+
+            def start(self):
+                self.started = True
+
+            def run(self):
+                created["target"]()
+
+        with patch("thermoflow_analytics_scheduler.run_scheduler") as scheduler:
+            thread = start_background_scheduler(
+                "/tmp/shared.sqlite3",
+                enabled=True,
+                interval_seconds=21600,
+                initial_delay_seconds=120,
+                thread_factory=FakeThread,
+                wait=waits.append,
+            )
+            self.assertIs(thread.started, True)
+            self.assertEqual(created["name"], "thermoflow-analytics")
+            self.assertIs(created["daemon"], True)
+            thread.run()
+
+        self.assertEqual(waits, [120])
+        scheduler.assert_called_once()
+        self.assertEqual(scheduler.call_args.kwargs["interval_seconds"], 21600)
+
+    def test_background_scheduler_can_be_disabled(self):
+        factory = unittest.mock.Mock()
+        result = start_background_scheduler(
+            enabled=False,
+            thread_factory=factory,
+        )
+        self.assertIsNone(result)
+        factory.assert_not_called()
+
+    def test_background_scheduler_rejects_invalid_configuration(self):
+        with self.assertRaises(ValueError):
+            start_background_scheduler(enabled=True, interval_seconds=300)
+        with self.assertRaises(ValueError):
+            start_background_scheduler(
+                enabled=True, interval_seconds=21600, initial_delay_seconds=3601
+            )
 
     def test_scheduler_rejects_too_frequent_cycles(self):
         with self.assertRaises(ValueError):
