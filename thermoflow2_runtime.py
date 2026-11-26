@@ -145,6 +145,40 @@ def _parse_ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def _persist_refill_source_feeds(feeds):
+    """Archive raw ThingSpeak refill/void events without affecting API reads."""
+    try:
+        import os
+        from thermoflow_fuel_event_store import persist_refill_feeds
+        return persist_refill_feeds(
+            feeds,
+            database_path=os.getenv(
+                "THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"
+            ),
+            tz=TZ,
+            parse_timestamp=_parse_ts,
+        )
+    except Exception:
+        return None
+
+
+def _persist_weather_forecast_rows(rows, fetched_at):
+    """Archive changed Open-Meteo forecast rows as an optional side path."""
+    try:
+        import os
+        from thermoflow_fuel_event_store import persist_weather_forecasts
+        return persist_weather_forecasts(
+            rows,
+            fetched_at=int(fetched_at),
+            database_path=os.getenv(
+                "THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"
+            ),
+            timezone_name=str(TZ),
+        )
+    except Exception:
+        return None
+
+
 def _day_bounds(day: date):
     start = datetime.combine(day, datetime.min.time(), tzinfo=TZ)
     return start, start + timedelta(days=1)
@@ -730,6 +764,7 @@ def _refills_raw() -> list[dict]:
         endpoint=TS_API, request_json=_request_json, cache=_refills_cache,
         ttl_seconds=SUMMARY_CACHE_SECONDS, monotonic=time.monotonic,
         normalize=normalize_refill_feeds, tz=TZ, parse_timestamp=_parse_ts,
+        on_raw_feeds=_persist_refill_source_feeds,
     )
 
 
@@ -977,6 +1012,7 @@ def _summary_build_impl() -> dict:
         "weather": _weather,
         "rate_for": _rate_for,
         "summary_cache": _summary_cache,
+        "persist_weather_forecasts": _persist_weather_forecast_rows,
         "monotonic": time.monotonic,
     })
 
