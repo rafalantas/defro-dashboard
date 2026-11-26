@@ -45,6 +45,24 @@ class RefillProviderTests(unittest.TestCase):
             tz=timezone.utc, parse_timestamp=lambda value: value,
         ), [])
 
+    def test_raw_feed_archiver_receives_refill_and_void_entries(self):
+        cache = {"at": 0.0, "data": None}
+        feeds = [
+            {"entry_id": 1, "created_at": "2026-11-26T18:00:00Z", "field1": "30"},
+            {"entry_id": 2, "created_at": "2026-11-26T18:10:00Z", "field3": "1"},
+        ]
+        archive = Mock()
+        result = fetch_refills(
+            channel_id="fuel", read_key="read-key", endpoint="https://example.invalid",
+            request_json=Mock(return_value={"feeds": feeds}), cache=cache,
+            ttl_seconds=60, monotonic=lambda: 10.0,
+            normalize=lambda records, tz, parse: [{"id": 1, "kg": 30.0}],
+            tz=timezone.utc, parse_timestamp=lambda value: value,
+            on_raw_feeds=archive,
+        )
+        self.assertEqual(result, [{"id": 1, "kg": 30.0}])
+        archive.assert_called_once_with(feeds)
+
     def test_write_uses_utc_timestamp_and_invalidates_caches(self):
         request = Mock(return_value={"entry_id": 123})
         invalidate = Mock()

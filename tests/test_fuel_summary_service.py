@@ -130,6 +130,22 @@ class SummaryServiceTests(unittest.TestCase):
         self.assertEqual(result["forecast"][0]["solar_mj"], 2.0)
         self.assertEqual(result["forecast"][1]["wind_max_kmh"], 8.0)
 
+    def test_summary_persists_forecast_rows_without_changing_payload(self):
+        from datetime import date
+        persist = []
+        deps, cache, _ = self.dependencies(
+            forecast=lambda: [(date(2026, 11, 21), 4.5)],
+            persist_weather_forecasts=lambda rows, fetched_at: (
+                persist.append((rows, fetched_at)) or {"inserted": 1}
+            ),
+        )
+        result = build_summary(deps)
+        self.assertEqual(len(persist), 1)
+        self.assertEqual(persist[0][0], result["forecast"])
+        self.assertEqual(persist[0][1], int(datetime(2026, 11, 20, 12, tzinfo=ZoneInfo("Europe/Warsaw")).timestamp()))
+        self.assertEqual(cache["data"], result)
+        self.assertEqual(result["forecast"][0]["day"], "2026-11-21")
+
     def test_daily_counter_failure_does_not_block_refill_period_ai(self):
         def fail():
             raise FuelError(503, "daily counter telemetry unavailable")
