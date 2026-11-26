@@ -205,14 +205,19 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
             transition = {"kind": property_name, "head_id": device_id,
                           "old_value": old_value, "new_value": new_value}
         elif event_type == "ClimateZoneTemperatureChangedEvent":
+            # The event carries the climate-zone ID itself. It is safe to retain
+            # that explicit identity even when no snapshot existed at event
+            # time; it is NOT evidence for mapping a head/device to that zone.
             zone_id = _identifier(data.get("id") or data.get("zoneId"))
-            if zone_id not in event_by_zone:
+            if zone_id is None:
                 ignored += 1
                 continue
             old_value, new_value = _number(data.get("oldValue")), _number(data.get("newValue"))
             if old_value is None or new_value is None:
                 ignored += 1
                 continue
+            zone_metadata.setdefault(zone_id, {"name": None})
+            zone_transitions.setdefault(zone_id, [])
             zone_targets = [zone_id]
             transition = {"kind": "temperature", "old_value_c": old_value,
                           "new_value_c": new_value,
