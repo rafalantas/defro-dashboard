@@ -272,6 +272,39 @@ class FibaroHistoryCollector:
             "payload_sha256": row["payload_sha256"],
         }
 
+    def read_snapshots(self, *, start=None, end=None, limit=10000):
+        """Read ordered snapshot evidence, including the last pre-window snapshot."""
+        if type(limit) is not int or not 1 <= limit <= 100000:
+            raise ValueError("limit must be between 1 and 100000")
+        if start is not None and not _valid_timestamp(start):
+            raise ValueError("invalid start")
+        if end is not None and not _valid_timestamp(end):
+            raise ValueError("invalid end")
+        if start is not None and end is not None and start > end:
+            raise ValueError("start must not be after end")
+        with self.store.connection() as db:
+            prior = None
+            if start is not None:
+                prior = db.execute(
+                    "SELECT id,captured_at,payload_json,payload_sha256 FROM fibaro_snapshots "
+                    "WHERE captured_at < ? ORDER BY captured_at DESC,id DESC LIMIT 1",
+                    (start,),
+                ).fetchone()
+            rows = db.execute(
+                "SELECT id,captured_at,payload_json,payload_sha256 FROM fibaro_snapshots "
+                "WHERE captured_at >= ? AND captured_at <= COALESCE(?,253402300799) "
+                "ORDER BY captured_at,id LIMIT ?",
+                (start if start is not None else 1, end, limit),
+            ).fetchall()
+            if prior is not None:
+                rows = [prior, *rows]
+        return [{
+            "id": int(row["id"]),
+            "captured_at": int(row["captured_at"]),
+            "payload": json.loads(row["payload_json"]),
+            "payload_sha256": row["payload_sha256"],
+        } for row in rows[:limit]]
+
     def read_events(self, *, start=None, end=None, limit=10000):
         if type(limit) is not int or not 1 <= limit <= 100000:
             raise ValueError("limit must be between 1 and 100000")
