@@ -21,6 +21,29 @@ def _valid_timestamp(value):
     return type(value) is int and 0 < value <= 253402300799
 
 
+def _is_relevant_heating_event(event):
+    """Keep only verified heating signals; discard unrelated HC3 device chatter."""
+    if not isinstance(event, dict):
+        return False
+    data = event.get("data")
+    if not isinstance(data, dict):
+        return False
+    event_type = event.get("type")
+    if event_type == "ClimateZoneTemperatureChangedEvent":
+        return _event_positive_id(data.get("id", data.get("zoneId")))
+    if event_type != "DevicePropertyUpdatedEvent":
+        return False
+    if data.get("property") not in {
+        "heatingThermostatSetpoint", "heatRequired", "windowOpened"
+    }:
+        return False
+    return _event_positive_id(data.get("id"))
+
+
+def _event_positive_id(value):
+    return type(value) is int and value > 0
+
+
 def _event_identity(event):
     if not isinstance(event, dict):
         return None
@@ -76,12 +99,15 @@ class FibaroHistoryCollector:
         if not _valid_timestamp(now):
             raise ValueError("collected_at must be a positive UTC timestamp")
 
-        inserted = duplicates = invalid = conflicts = 0
+        inserted = duplicates = invalid = conflicts = ignored = 0
         prepared = []
         for event in events:
             identity = _event_identity(event)
             if identity is None or not start <= identity[1] <= end:
                 invalid += 1
+                continue
+            if not _is_relevant_heating_event(event):
+                ignored += 1
                 continue
             event_id, timestamp = identity
             try:
@@ -164,6 +190,7 @@ class FibaroHistoryCollector:
             "duplicates": duplicates,
             "invalid": invalid,
             "conflicts": conflicts,
+            "ignored_irrelevant": ignored,
             "status": status,
             "cursor_end": end,
         }
@@ -417,6 +444,7 @@ class FibaroHistoryCollector:
             ).fetchone()
         return {
             "stored_events": int(row["n"]),
+            "stored_events_in_window": int(row["n"]),
             "first_event_timestamp": int(row["first_at"]) if row["first_at"] is not None else None,
             "last_event_timestamp": int(row["last_at"]) if row["last_at"] is not None else None,
         }
