@@ -6,6 +6,26 @@ The thermoflow_fibaro_collection module provides one-shot ingestion and a resuma
 
 The database must already exist and have the shared migrations applied. HC3 credentials are read from the existing FIBARO_HC3_* environment variables or FIBARO_HC3_CREDENTIALS_FILE; secrets are never printed.
 
+For a credentials JSON file, place it on the Compose host at
+`./data/thermoflow/fibaro-credentials.json` and set
+`FIBARO_HC3_CREDENTIALS_FILE=/run/thermoflow/fibaro-credentials.json`
+in the Portainer stack environment. The collector mounts that directory read-only.
+The JSON shape is `{"url":"https://<hc3-host>","username":"<reader>","password":"<secret>"}`.
+Do not commit the credentials file to Git.
+
+Set `FIBARO_HC3_INITIAL_START` to the UTC Unix timestamp of the earliest
+history date you want to import. For example, to start at midnight on
+26 October 2026 in Europe/Warsaw, calculate it on the Pi with:
+
+```sh
+TZ=Europe/Warsaw date -d '2026-10-26 00:00:00' +%s
+```
+
+The HC3 API can only return history that is still retained by the controller.
+A successfully queried interval with zero returned events is recorded as an
+empty result; the collector does not fabricate events or claim that such an
+interval had regular samples.
+
 ```sh
 python -m thermoflow_fibaro_collection /var/lib/thermoflow/thermoflow.sqlite3 --start 1795600000 --end 1795686400
 ```
