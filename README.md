@@ -231,8 +231,10 @@ The response includes:
   tri-state heat demand;
 - bounded aggregate features under `ai_shadow.features`.
 
-The current installation baseline is 15 FGT001 heads. Mapping and P2 checks
-are reported as explicit diagnostics; they do not trigger device writes.
+The compatible FGT001 head inventory is discovered dynamically from the
+current HC3 climate-zone device assignments. Runtime code contains no fixed
+head IDs or fixed expected head count. Mapping and P2 checks are reported as
+explicit diagnostics; they do not trigger device writes.
 Battery values at or below 20% are labelled low for maintenance visibility.
 The endpoint is an on-demand snapshot, not a historical series: it reports
 `ai_shadow.training_ready=false` and `history_available=false`. Missing or

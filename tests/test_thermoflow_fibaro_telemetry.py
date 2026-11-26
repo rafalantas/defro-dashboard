@@ -45,11 +45,11 @@ class FibaroTelemetryTests(unittest.TestCase):
             ],
         }
 
-    def build(self, **kwargs):
+    def build(self, snapshot=None, **kwargs):
         options = {"expected_head_count": 3}
         options.update(kwargs)
         return build_fibaro_telemetry(
-            self.snapshot, self.diagnostics, now=self.now, **options
+            snapshot or self.snapshot, self.diagnostics, now=self.now, **options
         )
 
     def test_builds_complete_telemetry_and_shadow_features(self):
@@ -72,6 +72,42 @@ class FibaroTelemetryTests(unittest.TestCase):
         self.assertFalse(result["fuel_forecast"]["applied"])
         self.assertTrue(result["safety"]["read_only"])
         self.assertFalse(result["safety"]["hc3_writes"])
+
+    def test_replaced_head_id_is_discovered_from_live_inventory(self):
+        # A replacement head has a new HC3 ID. No source-code ID list or
+        # installation-specific expected count is needed to map it.
+        snapshot = {
+            **self.snapshot,
+            "zones": [
+                self.snapshot["zones"][0],
+                {"id": 11, "name": "Salon", "properties": {"devices": [404]}},
+            ],
+            "heads": [
+                head for head in self.snapshot["heads"] if head["id"] != 103
+            ] + [
+                {"id": 404, "name": "Nowa głowica", "properties": {
+                    "heatRequired": False, "windowOpened": False,
+                    "batteryLevel": 90, "dead": False, "parameter2": 322,
+                }},
+            ],
+        }
+        result = self.build(snapshot=snapshot, expected_head_count=None)
+
+        self.assertEqual(result["mapping"]["status"], "complete")
+        self.assertEqual(result["mapping"]["expected_fgt001_heads"], 3)
+        self.assertEqual(result["mapping"]["expected_head_count_source"], "live_inventory")
+        self.assertEqual(result["mapping"]["mapped_device_ids"], [101, 102, 404])
+        self.assertEqual(result["mapping"]["coverage_percent"], 100.0)
+        self.assertIn(404, [head["id"] for head in result["heads"]])
+        self.assertNotIn(103, [head["id"] for head in result["heads"]])
+
+    def test_empty_live_inventory_is_not_reported_as_complete(self):
+        snapshot = {**self.snapshot, "zones": [], "heads": []}
+        result = self.build(snapshot=snapshot, expected_head_count=None)
+        self.assertEqual(result["mapping"]["status"], "incomplete")
+        self.assertEqual(result["mapping"]["expected_fgt001_heads"], 0)
+        self.assertEqual(result["mapping"]["expected_head_count_source"], "live_inventory")
+        self.assertEqual(result["mapping"]["coverage_percent"], 0.0)
 
     def test_missing_booleans_and_parameter_remain_unknown(self):
         snapshot = {
