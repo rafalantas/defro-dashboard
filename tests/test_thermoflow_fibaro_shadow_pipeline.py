@@ -4,6 +4,7 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from thermoflow_fibaro_shadow_pipeline import run_fibaro_shadow_pipeline
+from thermoflow_fibaro_shadow_evaluation import evaluate_fibaro_shadow
 
 
 class FakeCollector:
@@ -102,6 +103,74 @@ class FibaroShadowPipelineTests(unittest.TestCase):
         dates = [row["date"] for row in result["daily_features"]]
         self.assertLess(len(dates), 32)
         self.assertEqual(len(dates), len(set(dates)))
+
+    def test_negative_linear_predictions_are_floored_and_reported(self):
+        model = {
+            "model_schema_version": "1.0.0",
+            "mode": "read_only_shadow",
+            "feature_keys": ["x"],
+            "target_key": "y",
+            "feature_means": [0.0],
+            "feature_scales": [1.0],
+            "intercept": -2.0,
+            "coefficients": [0.0],
+        }
+        training = [
+            {"timestamp": 20260101 + index, "features": {"x": 0.0}, "target": 1.0}
+            for index in range(20)
+        ]
+        # Use valid chronological YYYYMMDD values spanning actual calendar days.
+        first = datetime(2026, 1, 1, tzinfo=timezone.utc).date()
+        training = [
+            {"timestamp": int((first + timedelta(days=index)).strftime("%Y%m%d")),
+             "features": {"x": 0.0}, "target": 1.0}
+            for index in range(20)
+        ]
+        holdout = [
+            {"timestamp": int((first + timedelta(days=20 + index)).strftime("%Y%m%d")),
+             "features": {"x": 0.0}, "target": 0.0}
+            for index in range(5)
+        ]
+        result = evaluate_fibaro_shadow({
+            "status": "evaluated",
+            "dataset": {"training": training, "holdout": holdout},
+            "model": model,
+            "evaluation": {"holdout_is_unseen": True},
+        })
+        self.assertEqual(result["status"], "evaluated")
+        self.assertEqual(result["summary"]["negative_predictions_clipped"], 5)
+        self.assertEqual(result["summary"]["candidate_mae"], 0.0)
+        self.assertEqual(result["prediction_audit"][0]["raw_prediction"], -2.0)
+        self.assertEqual(result["prediction_audit"][0]["scored_prediction"], 0.0)
+
+    def test_invalid_prediction_returns_unavailable_instead_of_crashing(self):
+        model = {
+            "model_schema_version": "1.0.0",
+            "mode": "read_only_shadow",
+            "feature_keys": ["x"],
+            "target_key": "y",
+            "feature_means": [0.0],
+            "feature_scales": [0.0],
+            "intercept": 0.0,
+            "coefficients": [0.0],
+        }
+        first = datetime(2026, 1, 1, tzinfo=timezone.utc).date()
+        training = [
+            {"timestamp": int((first + timedelta(days=i)).strftime("%Y%m%d")),
+             "features": {"x": 0.0}, "target": 1.0}
+            for i in range(20)
+        ]
+        holdout = [
+            {"timestamp": int((first + timedelta(days=20+i)).strftime("%Y%m%d")),
+             "features": {"x": 0.0}, "target": 1.0}
+            for i in range(5)
+        ]
+        result = evaluate_fibaro_shadow({
+            "status": "evaluated", "dataset": {"training": training, "holdout": holdout},
+            "model": model, "evaluation": {"holdout_is_unseen": True},
+        })
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["reason"], "invalid_holdout_prediction")
 
     def test_rejects_overlong_window(self):
         with self.assertRaises(ValueError):
