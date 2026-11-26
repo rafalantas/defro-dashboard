@@ -81,3 +81,6 @@ COPY thermoflow_burner_artifact_store.py /app/thermoflow_burner_artifact_store.p
 COPY thermoflow_weather_forecast.py /app/thermoflow_weather_forecast.py
 
 COPY thermoflow_production_acceptance.py thermoflow_acceptance_evidence.py thermoflow_data_quality_gates.py thermoflow_model_monitoring.py thermoflow_shadow_evaluation.py thermoflow_digital_twin.py /app/
+
+# Curated Fibaro/eModul analytical pipeline
+COPY thermoflow_analytics_store.py thermoflow_time_alignment.py thermoflow_heating_aggregates.py thermoflow_heating_diagnostics.py /app/

@@ -42,16 +42,25 @@ def _bucket(stamp, zone, period):
     local = datetime.fromtimestamp(stamp, timezone.utc).astimezone(zone)
     if period == "hour":
         # Include offset in the key so the repeated autumn DST hour stays distinct.
+        start_local = local.replace(minute=0, second=0, microsecond=0)
         key = local.strftime("%Y-%m-%dT%H:00:00%z")
         label = local.strftime("%Y-%m-%d %H:00 %z")
+        start = int(start_local.timestamp())
+        end = start + 3600
     else:
+        from datetime import time, timedelta
+        start_local = datetime.combine(local.date(), time.min, tzinfo=zone)
+        end_local = datetime.combine(local.date() + timedelta(days=1), time.min, tzinfo=zone)
         key = local.date().isoformat()
         label = key
-    return key, label
+        start = int(start_local.timestamp())
+        end = int(end_local.timestamp())
+    return key, label, start, end
 
 
-def _new_bucket(key, label):
-    return {"bucket": key, "label": label, "observations": 0,
+def _new_bucket(key, label, window_start, window_end):
+    return {"bucket": key, "label": label, "window_start": window_start,
+            "window_end": window_end, "observations": 0,
             "matched_fibaro_transitions": 0, "signal_counts": {},
             "metrics": {}, "_timestamps": set(), "_samples": set()}
 
@@ -99,8 +108,10 @@ def aggregate_heating_observations(aligned, *, timezone_name="Europe/Warsaw"):
             rejected += 1
             continue
         for period in ("hour", "day"):
-            key, label = _bucket(stamp, zone, period)
-            bucket = buckets[period].setdefault(key, _new_bucket(key, label))
+            key, label, window_start, window_end = _bucket(stamp, zone, period)
+            bucket = buckets[period].setdefault(
+                key, _new_bucket(key, label, window_start, window_end)
+            )
             bucket["observations"] += 1
             signal = row.get("signal")
             if isinstance(signal, str):

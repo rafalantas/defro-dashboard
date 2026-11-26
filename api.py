@@ -27,6 +27,7 @@ from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
 from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_store_history, read_fibaro_store_shadow
+from thermoflow_heating_diagnostics import read_heating_analytics
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1521,7 +1522,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow"):
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow", "/api/fibaro/store/analytics"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1550,8 +1551,15 @@ class Handler(BaseHTTPRequestHandler):
                     start, end = int(query["start"][0]), int(query["end"][0])
                     if path == "/api/fibaro/store/history":
                         result = read_fibaro_store_history(database_path, start=start, end=end)
-                    else:
+                    elif path == "/api/fibaro/store/shadow":
                         result = read_fibaro_store_shadow(database_path, start=start, end=end)
+                    else:
+                        tolerance = int(query.get("tolerance_seconds", ["90"])[0])
+                        timezone_name = query.get("timezone", ["Europe/Warsaw"])[0]
+                        result = read_heating_analytics(
+                            database_path, start=start, end=end,
+                            tolerance_seconds=tolerance, timezone_name=timezone_name,
+                        )
                 self._send_json(200, result)
             except FileNotFoundError:
                 self._send_json(503, {"configured": False, "source": "shared-sqlite",
