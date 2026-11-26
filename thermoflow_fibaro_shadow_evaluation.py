@@ -67,7 +67,7 @@ def evaluate_fibaro_shadow(model_result):
             raise ValueError("Fibaro event-count labels must be finite and nonnegative")
         try:
             raw_candidate = predict(model, row["features"])["prediction"]
-        except (KeyError, TypeError, ValueError, OverflowError):
+        except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return {
                 "schema": SCHEMA, "status": "unavailable",
                 "reason": "invalid_holdout_prediction",
