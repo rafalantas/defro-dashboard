@@ -14,6 +14,7 @@ from thermoflow_store import SQLiteStore
 MAX_WINDOW_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_RETENTION_DAYS = 90
 COLLECTOR_NAME = "fibaro_hc3_history"
+BACKFILL_COLLECTOR_NAME = "fibaro_hc3_backfill"
 
 
 def _valid_timestamp(value):
@@ -65,8 +66,10 @@ class FibaroHistoryCollector:
         ):
             raise ValueError("collection window must be ordered and no longer than 7 days")
 
-    def save_batch(self, events, *, start, end, collected_at=None):
+    def save_batch(self, events, *, start, end, collected_at=None, collector_name=COLLECTOR_NAME):
         self._validate_window(start, end)
+        if not isinstance(collector_name, str) or not collector_name.strip():
+            raise ValueError("collector_name must be a non-empty string")
         if not isinstance(events, list):
             raise ValueError("events must be a list")
         now = int(time.time()) if collected_at is None else collected_at
@@ -127,7 +130,7 @@ class FibaroHistoryCollector:
                     status, details_json
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    COLLECTOR_NAME, now, now, start, end, len(events),
+                    collector_name, now, now, start, end, len(events),
                     inserted, duplicates, invalid, status,
                     json.dumps({"conflicts": conflicts}, separators=(",", ":")),
                 ),
@@ -145,7 +148,14 @@ class FibaroHistoryCollector:
                             ELSE collector_state.cursor_value
                         END,
                         updated_at = excluded.updated_at""",
-                    (COLLECTOR_NAME, str(end), now, "{}"),
+                    (collector_name, str(end), now, json.dumps({
+                        "last_successful_at": now,
+                        "last_window_start": start,
+                        "last_window_end": end,
+                        "last_inserted": inserted,
+                        "last_duplicates": duplicates,
+                        "consecutive_failures": 0,
+                    }, separators=(",", ":"))),
                 )
 
         return {
@@ -361,29 +371,143 @@ class FibaroHistoryCollector:
             ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
 
-    def status(self):
+    def status(self, collector_name=COLLECTOR_NAME):
+        if not isinstance(collector_name, str) or not collector_name.strip():
+            raise ValueError("collector_name must be a non-empty string")
         with self.store.connection() as db:
             count = db.execute("SELECT COUNT(*) AS n FROM fibaro_events").fetchone()["n"]
             latest = db.execute("SELECT MAX(observed_at) AS n FROM fibaro_events").fetchone()["n"]
             cursor = db.execute(
-                "SELECT cursor_value FROM collector_state WHERE collector_name=?",
-                (COLLECTOR_NAME,),
+                "SELECT cursor_value,updated_at,metadata_json FROM collector_state WHERE collector_name=?",
+                (collector_name,),
             ).fetchone()
             run = db.execute(
                 "SELECT * FROM collection_runs WHERE collector_name=? "
                 "ORDER BY id DESC LIMIT 1",
-                (COLLECTOR_NAME,),
+                (collector_name,),
             ).fetchone()
+        try:
+            metadata = json.loads(cursor["metadata_json"] or "{}") if cursor else {}
+        except (TypeError, ValueError):
+            metadata = {}
         return {
-            "schema": "thermoflow-fibaro-history/2",
+            "schema": "thermoflow-fibaro-history/3",
+            "collector_name": collector_name,
             "events": count,
             "latest_event_timestamp": latest,
-            "last_successful_end": int(cursor["cursor_value"]) if cursor else None,
+            "last_successful_end": int(cursor["cursor_value"]) if cursor and cursor["cursor_value"] else None,
+            "last_updated_at": int(cursor["updated_at"]) if cursor else None,
+            "metadata": metadata,
+            "backfill_complete": bool(metadata.get("backfill_complete")) if collector_name == BACKFILL_COLLECTOR_NAME else None,
             "last_run": dict(run) if run else None,
             "persistent": self.store.path != ":memory:",
             "shared_store": True,
             "read_only_source": True,
         }
+
+
+    def event_coverage(self, *, start, end):
+        """Return exact stored event coverage without loading raw payloads into memory."""
+        self._validate_window(start, end)
+        with self.store.connection() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS n,MIN(observed_at) AS first_at,MAX(observed_at) AS last_at "
+                "FROM fibaro_events WHERE observed_at >= ? AND observed_at <= ?",
+                (start, end),
+            ).fetchone()
+        return {
+            "stored_events": int(row["n"]),
+            "first_event_timestamp": int(row["first_at"]) if row["first_at"] is not None else None,
+            "last_event_timestamp": int(row["last_at"]) if row["last_at"] is not None else None,
+        }
+
+    def record_failure(self, *, collector_name=COLLECTOR_NAME, error_type="CollectionError",
+                       attempted_at=None, window_start=None, window_end=None):
+        """Persist a sanitized failed attempt without advancing its successful cursor."""
+        stamp = int(time.time()) if attempted_at is None else attempted_at
+        if not _valid_timestamp(stamp):
+            raise ValueError("attempted_at must be a positive UTC timestamp")
+        if not isinstance(collector_name, str) or not collector_name.strip():
+            raise ValueError("collector_name must be a non-empty string")
+        safe_type = str(error_type)[:80]
+        if not safe_type.replace("_", "").isalnum():
+            safe_type = "CollectionError"
+        with self.store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT metadata_json FROM collector_state WHERE collector_name=?",
+                (collector_name,),
+            ).fetchone()
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}") if row else {}
+            except (TypeError, ValueError):
+                metadata = {}
+            failures = int(metadata.get("consecutive_failures", 0) or 0) + 1
+            metadata.update({
+                "last_attempt_at": stamp,
+                "last_error_type": safe_type,
+                "consecutive_failures": failures,
+            })
+            db.execute(
+                """INSERT INTO collection_runs(
+                    collector_name,started_at,completed_at,window_start,window_end,
+                    fetched,inserted,duplicates,invalid,status,details_json
+                ) VALUES(?,?,?,?,?,0,0,0,0,'error',?)""",
+                (collector_name, stamp, stamp, window_start, window_end,
+                 json.dumps({"error_type": safe_type}, separators=(",", ":"))),
+            )
+            db.execute(
+                """INSERT INTO collector_state(collector_name,cursor_value,updated_at,metadata_json)
+                   VALUES(?,NULL,?,?)
+                   ON CONFLICT(collector_name) DO UPDATE SET
+                     updated_at=excluded.updated_at,
+                     metadata_json=excluded.metadata_json""",
+                (collector_name, stamp, json.dumps(metadata, separators=(",", ":"))),
+            )
+        return {"status": "error_recorded", "error_type": safe_type,
+                "consecutive_failures": failures, "cursor_advanced": False}
+
+    def mark_cursor(self, cursor_value, *, collector_name=COLLECTOR_NAME,
+                    recorded_at=None, metadata=None):
+        """Advance a cursor only after a caller has verified a complete source range."""
+        if not _valid_timestamp(cursor_value):
+            raise ValueError("cursor_value must be a positive UTC timestamp")
+        stamp = int(time.time()) if recorded_at is None else recorded_at
+        if not _valid_timestamp(stamp):
+            raise ValueError("recorded_at must be a positive UTC timestamp")
+        if not isinstance(collector_name, str) or not collector_name.strip():
+            raise ValueError("collector_name must be a non-empty string")
+        details = dict(metadata or {})
+        details.setdefault("last_successful_at", stamp)
+        details.setdefault("consecutive_failures", 0)
+        with self.store.connection() as db:
+            db.execute(
+                """INSERT INTO collector_state(collector_name,cursor_value,updated_at,metadata_json)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT(collector_name) DO UPDATE SET
+                     cursor_value=CASE
+                       WHEN CAST(excluded.cursor_value AS INTEGER) > CAST(collector_state.cursor_value AS INTEGER)
+                       THEN excluded.cursor_value ELSE collector_state.cursor_value END,
+                     updated_at=excluded.updated_at,
+                     metadata_json=excluded.metadata_json""",
+                (collector_name, str(cursor_value), stamp,
+                 json.dumps(details, sort_keys=True, separators=(",", ":"))),
+            )
+        return {"collector_name": collector_name, "cursor_value": cursor_value}
+
+    def mark_backfill_complete(self, cursor_value, *, recorded_at=None, initial_start=None):
+        """Persist the one-time backfill completion marker in the existing state table."""
+        completed_at = int(time.time()) if recorded_at is None else recorded_at
+        metadata = {
+            "backfill_complete": True,
+            "backfill_start": initial_start,
+            "backfill_completed_at": completed_at,
+            "consecutive_failures": 0,
+        }
+        return self.mark_cursor(
+            cursor_value, collector_name=BACKFILL_COLLECTOR_NAME,
+            recorded_at=recorded_at, metadata=metadata,
+        )
 
     def prune(self, *, now=None):
         clock = int(time.time()) if now is None else now
