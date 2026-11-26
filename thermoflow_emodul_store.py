@@ -36,7 +36,6 @@ FIELD_ALLOWLIST = {
     "fire_brightness": None,
     "fan": {"running", "percent", "rpm"},
     "outputs": {"feeder", "heater"},
-    "disinfection": {"active", "percent"},
     "mode": None,
     "controller_status": None,
     "setpoints": {"co", "dhw", "room"},
