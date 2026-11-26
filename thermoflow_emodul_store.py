@@ -58,7 +58,11 @@ def _timestamp(value):
 
 
 def _valid_value(value):
-    if value is None or isinstance(value, (str, bool, int)):
+    # Missing measurements are not observations: omit them instead of
+    # serializing dozens of null fields into every poll sample.
+    if value is None:
+        return False
+    if isinstance(value, (str, bool, int)):
         return True
     if isinstance(value, float):
         return math.isfinite(value)
