@@ -149,5 +149,44 @@ class FibaroEventHistoryTests(unittest.TestCase):
         self.assertEqual(result["event_audit"]["historical_mapping"]["events_without_prior_snapshot"], 1)
 
 
+    def test_accepts_explicit_zone_temperature_id_without_prior_snapshot(self):
+        history = [{"captured_at": 105, "payload": self.snapshot}]
+        events = [
+            {"id": 1, "timestamp": 100, "type": "ClimateZoneTemperatureChangedEvent",
+             "data": {"id": 44, "oldValue": 19.5, "newValue": 20.0, "unit": "C"}},
+            {"id": 2, "timestamp": 101, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatRequired", "oldValue": False, "newValue": True}},
+        ]
+        result = analyze_fibaro_event_history(
+            self.snapshot, events, 90, 120, snapshot_history=history
+        )
+        zones = {zone["id"]: zone for zone in result["zones"]}
+        self.assertEqual(result["counts"]["events_recognized"], 1)
+        self.assertEqual(zones[44]["name"], None)
+        self.assertEqual(zones[44]["temperature_transitions"], 1)
+        self.assertEqual(zones[44]["transitions"][0]["new_value_c"], 20.0)
+        self.assertNotIn(7, [zone_id for zone_id, zone in zones.items()
+                             if zone["heat_required_transitions"]])
+        self.assertEqual(
+            result["event_audit"]["historical_mapping"]["events_without_prior_snapshot"], 2
+        )
+
+    def test_explicit_zone_id_alias_is_supported_and_invalid_zone_ids_are_ignored(self):
+        events = [
+            {"id": 1, "timestamp": 100, "type": "ClimateZoneTemperatureChangedEvent",
+             "data": {"zoneId": "44", "oldValue": 19.5, "newValue": 20.0}},
+            {"id": 2, "timestamp": 101, "type": "ClimateZoneTemperatureChangedEvent",
+             "data": {"id": 0, "oldValue": 19.5, "newValue": 20.0}},
+            {"id": 3, "timestamp": 102, "type": "ClimateZoneTemperatureChangedEvent",
+             "data": {"id": 45, "oldValue": "nan", "newValue": 20.0}},
+        ]
+        result = analyze_fibaro_event_history(self.snapshot, events, 90, 120)
+        zones = {zone["id"]: zone for zone in result["zones"]}
+        self.assertEqual(result["counts"]["events_recognized"], 1)
+        self.assertEqual(zones[44]["name"], None)
+        self.assertEqual(result["counts"]["events_ignored"], 2)
+
+
+
 if __name__ == "__main__":
     unittest.main()
