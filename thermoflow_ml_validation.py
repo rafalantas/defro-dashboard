@@ -12,7 +12,7 @@ from thermoflow_ml_dataset import prepare_chronological_dataset
 from thermoflow_ml_training import train_and_evaluate
 
 DEFAULT_MIN_TRAINING_SAMPLES = 40
-DEFAULT_FOLDS = 3
+DEFAULT_FOLDS = 5
 DEFAULT_HOLDOUT_PER_FOLD = 5
 DEFAULT_MIN_SPAN_DAYS = 60
 DEFAULT_MIN_MONTHS = 3
@@ -87,7 +87,9 @@ def validate_rolling_origin(
     baseline_abs_error = baseline_squared_error = 0.0
     evaluated = 0
     for index in range(folds):
-        train_count = minimum_training_samples + index * holdout_per_fold
+        available_after_initial = len(rows) - minimum_training_samples - holdout_per_fold
+        offset = (available_after_initial * index) // (folds - 1)
+        train_count = minimum_training_samples + offset
         validation_end = train_count + holdout_per_fold
         training = rows[:train_count]
         holdout = rows[train_count:validation_end]
