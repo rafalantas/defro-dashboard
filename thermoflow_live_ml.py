@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import math
 import os
 import stat
@@ -145,7 +146,7 @@ class LiveMLRuntime:
                      encoded, None, "pending"),
                 )
                 return cursor.rowcount == 1
-        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, OverflowError):
             # Persistence is observational; a DB problem must not affect polling.
             return False
 
@@ -171,7 +172,7 @@ class LiveMLRuntime:
                     (int(ended_at), encoded, "burner_cycle_duration", model_version, entity_key),
                 )
                 return cursor.rowcount == 1
-        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, OverflowError):
             return False
 
     def observe(self, payload):
