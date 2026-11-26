@@ -65,9 +65,26 @@ def evaluate_fibaro_shadow(model_result):
         actual = row.get("target")
         if type(actual) not in (int, float) or not isfinite(actual) or actual < 0:
             raise ValueError("Fibaro event-count labels must be finite and nonnegative")
-        candidate = predict(model, row["features"])["prediction"]
-        if not isfinite(candidate) or candidate < 0:
-            raise ValueError("candidate prediction must be finite and nonnegative")
+        try:
+            raw_candidate = predict(model, row["features"])["prediction"]
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return {
+                "schema": SCHEMA, "status": "unavailable",
+                "reason": "invalid_holdout_prediction",
+                "readiness": {"status": "not_ready"},
+                "promotion": "disabled", "mode": "offline_shadow_only",
+            }
+        if not isfinite(raw_candidate):
+            return {
+                "schema": SCHEMA, "status": "unavailable",
+                "reason": "non_finite_holdout_prediction",
+                "readiness": {"status": "not_ready"},
+                "promotion": "disabled", "mode": "offline_shadow_only",
+            }
+        # The target is a nonnegative event count. A linear model can extrapolate
+        # below zero; use the physically valid floor for scoring and retain the
+        # raw value in the audit ledger so the correction remains visible.
+        candidate = max(0.0, raw_candidate)
         cases.append({
             "id": f"fibaro-day-{row['timestamp']}",
             "decision_at": decision,
@@ -75,8 +92,8 @@ def evaluate_fibaro_shadow(model_result):
             "label": {"value": float(actual), "verified": True, "available_at": outcome_end},
             "baseline": {"value": baseline_value, "issued_at": decision,
                          "data_cutoff": decision, "duration_ms": 0},
-            "candidate": {"value": candidate, "issued_at": decision,
-                          "data_cutoff": decision, "duration_ms": 0},
+            "candidate": {"value": candidate, "raw_value": raw_candidate,
+                          "issued_at": decision, "data_cutoff": decision, "duration_ms": 0},
         })
 
     start = cases[0]["decision_at"]
@@ -117,6 +134,10 @@ def evaluate_fibaro_shadow(model_result):
             "baseline_mae": round(baseline_mae, 6),
             "beats_baseline": beats_baseline,
             "paired_label_coverage": 1.0 if full_pairing else 0.0,
+            "negative_predictions_clipped": sum(
+                1 for case in cases if case["candidate"]["raw_value"] < 0
+            ),
+            "prediction_floor": 0.0,
         },
         "readiness": {
             "status": "ready_for_human_review" if ready else "not_ready",
