@@ -98,8 +98,10 @@ class FibaroArtifactStoreTests(unittest.TestCase):
         saved = persist_fibaro_shadow_result(self.store, result(), recorded_at=1800000000)
         loaded = load_fibaro_model_artifact(self.store, model_version=saved["model_version"])
         self.assertEqual(loaded["model"], result()["model"]["model"])
-        self.assertEqual(loaded["artifact_sha256"], saved["model_version"].split("+", 1)[1] and
-                         loaded["artifact_sha256"])
+        self.assertEqual(
+            saved["model_version"],
+            f'1.0.0+{loaded["artifact_sha256"][:16]}',
+        )
         with self.store.connection() as db:
             row = db.execute(
                 "SELECT metadata_json FROM model_versions WHERE model_name=?",
