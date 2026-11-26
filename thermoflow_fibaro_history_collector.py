@@ -525,6 +525,39 @@ class FibaroHistoryCollector:
             )
         return {"collector_name": collector_name, "cursor_value": cursor_value}
 
+    def set_backfill_initial_start(self, initial_start, *, recorded_at=None):
+        """Persist the first chosen backfill boundary so restarts cannot move it."""
+        if not _valid_timestamp(initial_start):
+            raise ValueError("initial_start must be a positive UTC timestamp")
+        stamp = int(time.time()) if recorded_at is None else recorded_at
+        if not _valid_timestamp(stamp):
+            raise ValueError("recorded_at must be a positive UTC timestamp")
+        with self.store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT metadata_json FROM collector_state WHERE collector_name=?",
+                (BACKFILL_COLLECTOR_NAME,),
+            ).fetchone()
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}") if row else {}
+            except (TypeError, ValueError):
+                metadata = {}
+            existing = metadata.get("initial_start")
+            if type(existing) is int and existing > 0:
+                return existing
+            metadata["initial_start"] = initial_start
+            db.execute(
+                """INSERT INTO collector_state(
+                    collector_name,cursor_value,updated_at,metadata_json
+                ) VALUES(?,NULL,?,?)
+                ON CONFLICT(collector_name) DO UPDATE SET
+                    updated_at=excluded.updated_at,
+                    metadata_json=excluded.metadata_json""",
+                (BACKFILL_COLLECTOR_NAME, stamp,
+                 json.dumps(metadata, sort_keys=True, separators=(",", ":"))),
+            )
+        return initial_start
+
     def mark_backfill_complete(self, cursor_value, *, recorded_at=None, initial_start=None):
         """Persist the one-time backfill completion marker in the existing state table."""
         completed_at = int(time.time()) if recorded_at is None else recorded_at
