@@ -87,7 +87,7 @@ class FibaroCollectionRunnerTests(unittest.TestCase):
         # Simulate a previous partial import whose live cursor starts much later
         # than the requested backfill range. Backfill must not skip the earlier gap.
         self.collector.save_batch([], start=5000, end=6000, collected_at=6100)
-        target = 900 + 8 * 86400
+        target = 900 + 14 * 86400
         result = collect_fibaro_backfill(
             self.provider, self.collector, now=target,
             initial_start=900, collected_at=target + 10,
@@ -100,6 +100,26 @@ class FibaroCollectionRunnerTests(unittest.TestCase):
         self.assertEqual(backfill["last_successful_end"], target)
         self.assertTrue(backfill["backfill_complete"])
         self.assertEqual(self.collector.event_coverage(start=900, end=target)["stored_events"], 1)
+
+    def test_unrelated_hc3_events_are_not_persisted(self):
+        relevant = {
+            "id": 11, "timestamp": 1000, "type": "DevicePropertyUpdatedEvent",
+            "data": {"id": 2162, "property": "heatRequired",
+                     "oldValue": False, "newValue": True},
+        }
+        unrelated = {
+            "id": 12, "timestamp": 1001, "type": "DevicePropertyUpdatedEvent",
+            "data": {"id": 999, "property": "batteryLevel",
+                     "oldValue": 90, "newValue": 89},
+        }
+        self.provider.get_events_range = lambda start, end: [relevant, unrelated]
+        result = collect_fibaro_once(
+            self.provider, self.collector, start=900, end=1100, collected_at=1200
+        )
+        self.assertEqual(result["events"]["fetched"], 2)
+        self.assertEqual(result["events"]["inserted"], 1)
+        self.assertEqual(result["events"]["ignored_irrelevant"], 1)
+        self.assertEqual(len(self.collector.read_events(start=900, end=1100)), 1)
 
     def test_rejects_unbounded_or_invalid_windows(self):
         for start, end in ((0, 10), (10, 10), (20, 10), (1, 1 + 8 * 86400)):
