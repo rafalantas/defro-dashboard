@@ -125,8 +125,8 @@ class FibaroShadowPipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "evaluated")
         self.assertEqual(result["summary"]["negative_predictions_clipped"], 5)
         self.assertEqual(result["summary"]["candidate_mae"], 0.0)
-        self.assertEqual(result["backtest"]["cases"][0]["candidate"]["raw_value"], -2.0)
-        self.assertEqual(result["backtest"]["cases"][0]["candidate"]["value"], 0.0)
+        self.assertEqual(result["prediction_audit"][0]["raw_prediction"], -2.0)
+        self.assertEqual(result["prediction_audit"][0]["scored_prediction"], 0.0)
 
     def test_invalid_prediction_returns_unavailable_instead_of_crashing(self):
         model = {

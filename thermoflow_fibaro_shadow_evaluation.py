@@ -128,6 +128,11 @@ def evaluate_fibaro_shadow(model_result):
         "mode": "offline_shadow_only",
         "promotion": "disabled",
         "backtest": report,
+        "prediction_audit": [
+            {"day": str(row["timestamp"]), "raw_prediction": case["candidate"]["raw_value"],
+             "scored_prediction": case["candidate"]["value"]}
+            for row, case in zip(holdout, cases)
+        ],
         "summary": {
             "holdout_days": len(cases),
             "candidate_mae": round(candidate_mae, 6),
