@@ -89,6 +89,9 @@ services:
         target: /var/lib/thermoflow
         bind:
           create_host_path: false
+      # Optional HC3 credentials JSON can be placed in this host directory
+      # and referenced as /run/thermoflow/fibaro-credentials.json.
+      - ./data/thermoflow:/run/thermoflow:ro
     command:
       - python
       - -m
