@@ -75,18 +75,33 @@ def _grouped_rows(db, table, group_column):
 
 
 def _source_inventory(db, table, source_column, timestamp_column, *, start, end):
-    columns = {row["name"] for row in db.execute(f'PRAGMA table_info("{table}")')}
-    if source_column not in columns or timestamp_column not in columns:
+    if (table, source_column, timestamp_column) == (
+        "telemetry_samples", "source", "observed_at"
+    ):
+        query = """
+            SELECT source AS name, COUNT(*) AS count,
+                   MIN(observed_at) AS first_at, MAX(observed_at) AS last_at,
+                   SUM(CASE WHEN observed_at >= ? AND observed_at <= ? THEN 1 ELSE 0 END) AS window_count,
+                   COUNT(DISTINCT CASE WHEN observed_at >= ? AND observed_at <= ?
+                       THEN date(observed_at, 'unixepoch') END) AS observed_utc_days
+            FROM telemetry_samples
+            GROUP BY source ORDER BY source
+        """
+    elif (table, source_column, timestamp_column) == (
+        "refill_events", "source", "occurred_at"
+    ):
+        query = """
+            SELECT source AS name, COUNT(*) AS count,
+                   MIN(occurred_at) AS first_at, MAX(occurred_at) AS last_at,
+                   SUM(CASE WHEN occurred_at >= ? AND occurred_at <= ? THEN 1 ELSE 0 END) AS window_count,
+                   COUNT(DISTINCT CASE WHEN occurred_at >= ? AND occurred_at <= ?
+                       THEN date(occurred_at, 'unixepoch') END) AS observed_utc_days
+            FROM refill_events
+            GROUP BY source ORDER BY source
+        """
+    else:
         return []
-    rows = db.execute(
-        f'SELECT "{source_column}" AS name, COUNT(*) AS count, '
-        f'MIN("{timestamp_column}") AS first_at, MAX("{timestamp_column}") AS last_at, '
-        f'SUM(CASE WHEN "{timestamp_column}" >= ? AND "{timestamp_column}" <= ? THEN 1 ELSE 0 END) AS window_count, '
-        f'COUNT(DISTINCT CASE WHEN "{timestamp_column}" >= ? AND "{timestamp_column}" <= ? '
-        f'THEN date("{timestamp_column}",\'unixepoch\') END) AS observed_utc_days '
-        f'FROM "{table}" GROUP BY "{source_column}" ORDER BY "{source_column}"',
-        (start, end, start, end),
-    ).fetchall()
+    rows = db.execute(query, (start, end, start, end)).fetchall()
     return [{
         "name": str(row["name"] or "unknown"),
         "count": int(row["count"]),
