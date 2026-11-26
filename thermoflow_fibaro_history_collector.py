@@ -473,7 +473,6 @@ class FibaroHistoryCollector:
             ).fetchone()
         return {
             "stored_events": int(row["n"]),
-            "stored_events_in_window": int(row["n"]),
             "first_event_timestamp": int(row["first_at"]) if row["first_at"] is not None else None,
             "last_event_timestamp": int(row["last_at"]) if row["last_at"] is not None else None,
         }
