@@ -22,7 +22,8 @@ class FibaroStoreApiTests(unittest.TestCase):
         self.collector = FibaroHistoryCollector(self.store)
         self.collector.save_snapshot({"zones": [], "heads": []}, captured_at=1000)
         self.collector.save_batch(
-            [{"id": 1, "timestamp": 1100, "type": "test"}],
+            [{"id": 1, "timestamp": 1100, "type": "ClimateZoneTemperatureChangedEvent",
+              "data": {"id": 7, "oldValue": 20.0, "newValue": 20.5}}],
             start=1000, end=1200, collected_at=1300,
         )
 
