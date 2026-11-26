@@ -56,7 +56,13 @@ services:
       THERMOFLOW_FUEL_LEDGER_PATH: ${THERMOFLOW_FUEL_LEDGER_PATH:-}
     volumes:
       - ./data/thermoflow:/run/thermoflow:ro
-      - thermoflow-db:/var/lib/thermoflow
+      # SSD image is mounted by the host at /mnt/thermoflow.
+      # Refuse to create a fallback directory on the microSD if the mount is missing.
+      - type: bind
+        source: /mnt/thermoflow/db
+        target: /var/lib/thermoflow
+        bind:
+          create_host_path: false
     expose:
       - "8000"
     restart: unless-stopped
@@ -77,7 +83,12 @@ services:
       FIBARO_HC3_TIMEOUT_SECONDS: ${FIBARO_HC3_TIMEOUT_SECONDS:-12}
       THERMOFLOW_DB_PATH: /var/lib/thermoflow/thermoflow.sqlite3
     volumes:
-      - thermoflow-db:/var/lib/thermoflow
+      # Same SSD-backed database directory as the API.
+      - type: bind
+        source: /mnt/thermoflow/db
+        target: /var/lib/thermoflow
+        bind:
+          create_host_path: false
     command:
       - python
       - -m
@@ -103,7 +114,3 @@ services:
     depends_on:
       - thermoflow
     restart: unless-stopped
-
-volumes:
-  thermoflow-db:
-    name: defro-dashboard-thermoflow-db
