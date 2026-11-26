@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from thermoflow_store import SQLiteStore
-from thermoflow_thingspeak_collector import ThingSpeakHistoryCollector
+from thermoflow_thingspeak_collector import MAX_BATCH_FEEDS_PER_CHANNEL, ThingSpeakHistoryCollector
 
 
 class ThingSpeakCollectorTests(unittest.TestCase):
@@ -156,7 +156,7 @@ class ThingSpeakCollectorTests(unittest.TestCase):
     def test_rejects_unbounded_windows_and_oversized_responses(self):
         with self.assertRaises(ValueError):
             self.collector.save_batch(self.channels(), start=self.start, end=self.start + 8 * 86400)
-        too_many = [{"entry_id": i + 1, "created_at": "2026-11-25T10:00:00Z"} for i in range(8001)]
+        too_many = [{"entry_id": i + 1, "created_at": "2026-11-25T10:00:00Z"} for i in range(MAX_BATCH_FEEDS_PER_CHANNEL + 1)]
         with self.assertRaises(ValueError):
             self.collector.save_batch(
                 {"one": {"kind": "telemetry", "channel_id": "1", "feeds": too_many}},
