@@ -71,6 +71,8 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
         }
 
     snapshot = snapshot_record["payload"]
+    snapshot_reader = getattr(collector, "read_snapshots", None)
+    snapshot_history = snapshot_reader(start=start, end=end) if callable(snapshot_reader) else None
     quality = assess_fibaro_history_quality(
         events, snapshot, start=start, end=end,
         minimum_events=minimum_events,
@@ -92,7 +94,8 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
             day_events = [event for event in by_timestamp
                           if window_start <= event["timestamp"] <= window_end]
             history = analyze_fibaro_event_history(
-                snapshot, day_events, window_start, window_end
+                snapshot, day_events, window_start, window_end,
+                snapshot_history=snapshot_history,
             )
             profile = build_fibaro_time_profile(
                 snapshot, history, timezone_name=timezone_name

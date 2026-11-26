@@ -108,7 +108,7 @@ def _snapshot_heat_required(snapshot):
     return {"available": True, "true": counts["true"], "false": counts["false"], "unknown": counts["unknown"]}
 
 
-def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: int) -> dict:
+def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: int, *, snapshot_history=None) -> dict:
     """Summarize observed transitions and expose why tracked events are absent."""
     if (isinstance(start, bool) or isinstance(end, bool)
             or not isinstance(start, int) or not isinstance(end, int)
@@ -118,7 +118,27 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
         raise ValueError("Historia zdarzeń Fibaro HC3 musi być listą")
 
     by_head, by_zone = _zone_index(snapshot)
+    history = None
+    if snapshot_history is not None:
+        if not isinstance(snapshot_history, list):
+            raise ValueError("Historia snapshotów Fibaro musi być listą")
+        history = []
+        for record in snapshot_history:
+            if not isinstance(record, dict):
+                continue
+            captured_at = _timestamp(record.get("captured_at"))
+            payload = record.get("payload")
+            if captured_at is not None and captured_at <= end and isinstance(payload, dict):
+                history.append((captured_at, payload))
+        history.sort(key=lambda item: item[0])
+        deduplicated = {}
+        for captured_at, payload in history:
+            deduplicated[captured_at] = payload
+        history = sorted(deduplicated.items())
+
     zone_transitions = {zone_id: [] for zone_id in by_zone}
+    zone_metadata = {zone_id: zone for zone_id, zone in by_zone.items()}
+    unmapped_due_to_missing_snapshot = 0
     recognized = ignored = mapped_head_device_events = 0
     valid_timestamps = set()
     event_type_counts = Counter()
@@ -141,11 +161,21 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
             ignored += 1
             continue
 
-        # Audit opaque event types without interpreting their payloads: only an
-        # exact data.id match against the current snapshot's mapped head IDs is
-        # counted. Record key names, never payload values.
+        event_by_head, event_by_zone = by_head, by_zone
+        if history is not None:
+            eligible = [item for item in history if item[0] <= timestamp]
+            if eligible:
+                event_by_head, event_by_zone = _zone_index(eligible[-1][1])
+            else:
+                event_by_head, event_by_zone = {}, {}
+                unmapped_due_to_missing_snapshot += 1
+        for zone_id, zone in event_by_zone.items():
+            zone_metadata.setdefault(zone_id, zone)
+            zone_transitions.setdefault(zone_id, [])
+
+        # Audit opaque event types against the mapping valid at event time.
         mapped_device_id = _identifier(data.get("id"))
-        if isinstance(event_type, str) and mapped_device_id in by_head:
+        if isinstance(event_type, str) and mapped_device_id in event_by_head:
             mapped_head_event_type_counts[event_type] += 1
             for key in data:
                 if isinstance(key, str):
@@ -155,7 +185,7 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
         if event_type == "DevicePropertyUpdatedEvent":
             device_id = _identifier(data.get("id"))
             property_name = data.get("property")
-            if device_id in by_head:
+            if device_id in event_by_head:
                 mapped_head_device_events += 1
                 if isinstance(property_name, str):
                     mapped_head_property_counts[property_name] += 1
@@ -171,12 +201,12 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
                 ignored += 1
                 continue
             tracked_property_valid_transitions[property_name] += 1
-            zone_targets = by_head[device_id]
+            zone_targets = event_by_head[device_id]
             transition = {"kind": property_name, "head_id": device_id,
                           "old_value": old_value, "new_value": new_value}
         elif event_type == "ClimateZoneTemperatureChangedEvent":
             zone_id = _identifier(data.get("id") or data.get("zoneId"))
-            if zone_id not in by_zone:
+            if zone_id not in event_by_zone:
                 ignored += 1
                 continue
             old_value, new_value = _number(data.get("oldValue")), _number(data.get("newValue"))
@@ -196,11 +226,12 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
         event_id = event.get("id") if isinstance(event.get("id"), int) and not isinstance(event.get("id"), bool) else None
         for zone_id in zone_targets:
             zone_transitions[zone_id].append({
-                "event_id": event_id, "timestamp": timestamp, "at": _iso(timestamp), **transition
+                "event_id": event_id, "timestamp": timestamp, "at": _iso(timestamp),
+                "zone_name": zone_metadata.get(zone_id, {}).get("name"), **transition
             })
 
     output_zones, total_transitions, suspected_spikes = [], 0, 0
-    for zone_id, zone in sorted(by_zone.items()):
+    for zone_id, zone in sorted(zone_metadata.items()):
         transitions = sorted(zone_transitions[zone_id],
                              key=lambda item: (item["timestamp"], item["event_id"] or 0))
         suspected_spikes += _temperature_spike_flags(transitions)
@@ -249,9 +280,17 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
             "mapped_head_event_type_counts": dict(sorted(mapped_head_event_type_counts.items())),
             "mapped_head_event_data_key_counts": dict(sorted(mapped_head_event_data_key_counts.items())),
             "mapped_head_event_matching_rule": (
-                "Exact data.id match against head IDs mapped from the current climate-zone snapshot; "
+                "Exact data.id match against head IDs mapped from the snapshot valid at event time; "
                 "opaque event payload values are not interpreted or returned."
+                if history is not None else
+                "Exact data.id match against head IDs mapped from the supplied snapshot."
             ),
+            "historical_mapping": {
+                "enabled": history is not None,
+                "snapshots_available": len(history) if history is not None else 0,
+                "events_without_prior_snapshot": unmapped_due_to_missing_snapshot,
+                "policy": "latest_snapshot_at_or_before_event; never apply a future snapshot retroactively",
+            },
             "tracked_property_events": {name: tracked_property_events[name] for name in sorted(TRACKED_DEVICE_PROPERTIES)},
             "tracked_property_valid_transitions": {name: tracked_property_valid_transitions[name] for name in sorted(TRACKED_DEVICE_PROPERTIES)},
             "heat_required_history": {

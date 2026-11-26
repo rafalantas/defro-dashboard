@@ -109,5 +109,45 @@ class FibaroEventHistoryTests(unittest.TestCase):
         self.assertFalse(result["safety"]["device_commands_sent"])
 
 
+    def test_uses_mapping_valid_at_each_event_timestamp(self):
+        old_snapshot = {
+            "zones": [{"id": 7, "name": "Salon", "properties": {"devices": [2162]}}],
+            "heads": [],
+        }
+        new_snapshot = {
+            "zones": [{"id": 13, "name": "Sypialnia", "properties": {"devices": [2162]}}],
+            "heads": [],
+        }
+        history = [
+            {"captured_at": 90, "payload": old_snapshot},
+            {"captured_at": 105, "payload": new_snapshot},
+        ]
+        events = [
+            {"id": 1, "timestamp": 100, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatRequired", "oldValue": False, "newValue": True}},
+            {"id": 2, "timestamp": 110, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatRequired", "oldValue": True, "newValue": False}},
+        ]
+        result = analyze_fibaro_event_history(
+            new_snapshot, events, 90, 120, snapshot_history=history
+        )
+        zones = {zone["id"]: zone for zone in result["zones"]}
+        self.assertEqual(zones[7]["transitions"][0]["zone_name"], "Salon")
+        self.assertEqual(zones[13]["transitions"][0]["zone_name"], "Sypialnia")
+        self.assertEqual(result["event_audit"]["historical_mapping"]["events_without_prior_snapshot"], 0)
+
+    def test_does_not_apply_future_snapshot_to_older_events(self):
+        history = [{"captured_at": 105, "payload": self.snapshot}]
+        events = [
+            {"id": 1, "timestamp": 100, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatRequired", "oldValue": False, "newValue": True}},
+        ]
+        result = analyze_fibaro_event_history(
+            self.snapshot, events, 90, 120, snapshot_history=history
+        )
+        self.assertEqual(result["counts"]["events_recognized"], 0)
+        self.assertEqual(result["event_audit"]["historical_mapping"]["events_without_prior_snapshot"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
