@@ -22,6 +22,15 @@ class ThermoFlowComposeStorageTests(unittest.TestCase):
         self.assertEqual(compose.count("source: /mnt/thermoflow/db"), 2)
         self.assertEqual(compose.count("create_host_path: false"), 2)
 
+    def test_analytics_scheduler_runs_inside_api_without_extra_service(self):
+        compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        api = compose.split("  api:", 1)[1].split("  fibaro-collector:", 1)[0]
+        self.assertIn("THERMOFLOW_ANALYTICS_ENABLED:", api)
+        self.assertIn("THERMOFLOW_ANALYTICS_INTERVAL_SECONDS:", api)
+        self.assertIn("THERMOFLOW_ANALYTICS_INITIAL_DELAY_SECONDS:", api)
+        self.assertNotIn("thermoflow-analytics:", compose)
+        self.assertNotIn("thermoflow_analytics_scheduler", compose)
+
     def test_read_only_model_mount_is_preserved_separately(self):
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertIn("./data/thermoflow:/run/thermoflow:ro", compose)
