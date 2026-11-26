@@ -52,8 +52,6 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
             duplicates += 1
             continue
         seen.add(event_id)
-        valid.append(event)
-        timestamps.append(stamp)
         if event.get("type") not in ALLOWED_TYPES:
             unknown_types += 1
             continue
@@ -67,6 +65,8 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
                 malformed += 1
                 continue
             temperature_values.extend((float(old), float(new)))
+        valid.append(event)
+        timestamps.append(stamp)
 
     if malformed:
         issues.append(_issue("malformed_or_out_of_window_events", "blocking",
@@ -86,15 +86,8 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
         issues.append(_issue("snapshot_mapping_unavailable", "blocking",
                              "A non-empty current zone/head snapshot is required for event mapping."))
 
-    observed_days = len({stamp // 86400 for stamp in timestamps})
-    if len(valid) < minimum_events:
-        issues.append(_issue("insufficient_event_volume", "warning",
-                             f"{len(valid)} valid events; {minimum_events} required."))
-    if observed_days < minimum_observed_days:
-        issues.append(_issue("insufficient_observed_days", "warning",
-                             f"{observed_days} observed UTC days; {minimum_observed_days} required."))
-
     recognized = transitions = suspected_spikes = 0
+    recognized_timestamps = set()
     try:
         # The on-demand HC3 analyzer accepts at most seven days per call.
         # Analyze adjacent, non-overlapping inclusive chunks for longer retained
@@ -108,12 +101,27 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
             recognized += history["counts"]["events_recognized"]
             transitions += history["counts"]["transitions"]
             suspected_spikes += history["temperature_quality"]["suspected_transient_spikes"]
+            for zone in history.get("zones", []):
+                if not isinstance(zone, dict):
+                    continue
+                for transition in zone.get("transitions", []):
+                    stamp = transition.get("timestamp") if isinstance(transition, dict) else None
+                    if type(stamp) is int and start <= stamp <= end:
+                        recognized_timestamps.add(stamp)
             cursor = chunk_end + 1
     except (KeyError, TypeError, ValueError):
         recognized = transitions = suspected_spikes = 0
         issues.append(_issue("history_analysis_failed", "blocking",
                              "Existing event-history analyzer rejected the supplied evidence."))
 
+    observed_days = len({stamp // 86400 for stamp in recognized_timestamps})
+    if recognized < minimum_events:
+        issues.append(_issue("insufficient_event_volume", "warning",
+                             f"{recognized} recognized events; {minimum_events} required."))
+    if observed_days < minimum_observed_days:
+        issues.append(_issue("insufficient_observed_days", "warning",
+                             f"{observed_days} days with recognized transitions; "
+                             f"{minimum_observed_days} required."))
     if recognized == 0:
         issues.append(_issue("no_recognized_transitions", "warning",
                              "No supported mapped transitions were observed in this window."))
