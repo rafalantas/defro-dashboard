@@ -61,6 +61,34 @@ services:
       - "8000"
     restart: unless-stopped
 
+  fibaro-collector:
+    image: ghcr.io/rafalantas/defro-dashboard-api:latest
+    pull_policy: always
+    container_name: thermoflow-fibaro-collector
+    profiles:
+      - fibaro-collector
+    depends_on:
+      - api
+    environment:
+      FIBARO_HC3_URL: ${FIBARO_HC3_URL:-}
+      FIBARO_HC3_USERNAME: ${FIBARO_HC3_USERNAME:-}
+      FIBARO_HC3_PASSWORD: ${FIBARO_HC3_PASSWORD:-}
+      FIBARO_HC3_CREDENTIALS_FILE: ${FIBARO_HC3_CREDENTIALS_FILE:-}
+      FIBARO_HC3_TIMEOUT_SECONDS: ${FIBARO_HC3_TIMEOUT_SECONDS:-12}
+      THERMOFLOW_DB_PATH: /var/lib/thermoflow/thermoflow.sqlite3
+    volumes:
+      - thermoflow-db:/var/lib/thermoflow
+    command:
+      - python
+      - -m
+      - thermoflow_fibaro_scheduler
+      - /var/lib/thermoflow/thermoflow.sqlite3
+      - --initial-start
+      - "${FIBARO_HC3_INITIAL_START:-}"
+      - --interval-seconds
+      - "300"
+    restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: defro-dashboard-cloudflared
