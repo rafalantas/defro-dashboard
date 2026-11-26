@@ -20,13 +20,13 @@ The connected eModul poller stores one compact observation in
 `telemetry_samples` per successful poll. Its payload uses
 `thermoflow-emodul-ml-input/1` and an explicit allow-list:
 
-- temperatures: CO, DHW, flue, outdoor, room and buffer;
+- temperatures: CO, DHW, flue, outdoor, room, return and buffer;
 - boiler power and its observation timestamp;
 - floor, 4D, DHW and circulation pump states;
 - 4D valve current/return/set/opening/corrections;
 - fuel level/runtime and controller fuel metrics;
 - FIRE state/signal/brightness;
-- fan and disinfection state;
+- fan, feeder/heater outputs and disinfection state;
 - controller mode/status, setpoints and hysteresis.
 
 UI-only tiles, translations, zones, menus, raw controller metadata and
@@ -35,7 +35,7 @@ precomputed training feature set. Versioned feature windows and datasets are
 built separately from these observations and registered in their dedicated
 SQLite tables.
 
-Each row preserves source/module identity, UTC observation time, local record
+Each row preserves the selected controller module ID, UTC observation time, local record
 time and a SHA-256 digest. Identical replays are ignored; changed content for
 the same source timestamp is reported as a conflict and never overwrites the
 original sample.

@@ -1139,6 +1139,7 @@ def _read_snapshot() -> dict:
         "source": "eModul",
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "controller": {
+            "module_id": str(udid),
             "name": module.get("name"),
             "company": module.get("company"),
             "type": module.get("type"),
@@ -1809,13 +1810,13 @@ def _poll_forever() -> None:
     """Keep ThingSpeak history recording even when no dashboard tab is open."""
     while True:
         payload = snapshot()
-        # Persist the complete normalized eModul snapshot independently of
+        # Persist only allow-listed AI/ML measurements independently of
         # dashboard traffic. The helper is fail-soft and never runs migrations.
         try:
             persist_emodul_snapshot(
                 payload,
                 database_path=os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
-                module_id=os.getenv("TECH_MODULE_ID", "default"),
+                module_id=(payload.get("controller") or {}).get("module_id") or os.getenv("TECH_MODULE_ID") or "default",
             )
         except Exception:
             # Storage is an archival side path; never interrupt the live poller.
