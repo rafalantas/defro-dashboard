@@ -204,7 +204,8 @@ def _make_feature(event, snapshots):
         if raw_zone_id is None:
             raw_zone_id = data.get("zoneId")
         zone_id = _positive_id(raw_zone_id)
-        if zone_id is None or zone_id not in zone_index:
+        # HC3 supplies the zone ID on this event; no head mapping snapshot is needed.
+        if zone_id is None:
             return None, "unknown_zone_id"
 
         old_value = _finite_number(data.get("oldValue"), 0.0, 40.0)
