@@ -48,3 +48,20 @@ Choose an explicit UTC Unix window no longer than seven days. The manual command
 ## Safety
 
 All upstream calls are GET-only. No device commands, setpoint changes, background worker, forecast replacement, or heating-control integration is performed. Production database initialization and scheduling remain separate, explicit operational steps.
+
+
+## Historical zone feature mapping
+
+The Fibaro candidate dataset resolves head events through the latest persisted
+snapshot captured at or before the event timestamp. A head transition is
+assigned to a zone only when that snapshot contains the head in exactly one
+zone. Events with no prior snapshot, no matching zone, or multiple matching
+zones remain unassigned and are counted in the curation report. A future
+snapshot is never used retroactively.
+
+The curated feature contract is version 3. It retains both the head ID and the
+verified event-time zone ID for setpoint, heat-demand and window transitions.
+Zone temperature changes retain the explicit zone ID from the HC3 event.
+These are event observations, not periodic samples: missing intervals, initial
+state, temperature holds and state durations are not synthesized. Candidate
+datasets remain non-promoted and raw Fibaro events/snapshots are preserved.
