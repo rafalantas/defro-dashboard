@@ -54,6 +54,21 @@ class AnalyticsSchedulerTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(result["reason"], "no_fibaro_snapshot_for_identity_validation")
 
+    @patch("thermoflow_analytics_scheduler.curate_database")
+    def test_no_validated_features_waits_without_creating_backup(self, curate):
+        self._add_source_evidence()
+        curate.return_value = {
+            "status": "dry_run",
+            "content_sha256": "c" * 64,
+            "curated_features": 0,
+        }
+
+        result = run_once(str(self.database), now=2000)
+
+        self.assertEqual(result["status"], "collecting")
+        self.assertEqual(result["reason"], "no_validated_heating_transitions")
+        curate.assert_called_once_with(str(self.database), apply=False)
+
     @patch("thermoflow_analytics_scheduler.run_fibaro_shadow_pipeline")
     @patch("thermoflow_analytics_scheduler.read_heating_analytics")
     @patch("thermoflow_analytics_scheduler.curate_database")
