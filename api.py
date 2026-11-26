@@ -20,6 +20,7 @@ from thermoflow_live_ml import LiveMLRuntime
 from thermoflow_emodul_store import persist_emodul_snapshot
 from thermoflow_production_acceptance import PATH as ACCEPTANCE_PATH, build_acceptance_report
 from thermoflow_acceptance_evidence import build_acceptance_evidence
+from thermoflow_model_monitoring import PATH as MODEL_MONITORING_PATH, monitor_sqlite_database
 from thermoflow_weather_forecast import project_weather_forecast
 from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
 from fibaro_hc3_api import build_hc3_snapshot
@@ -1675,6 +1676,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path == MODEL_MONITORING_PATH:
+            try:
+                payload = monitor_sqlite_database(
+                    os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
+                    now=int(time.time()),
+                )
+            except Exception:
+                payload = {
+                    "schema": "thermoflow-model-monitoring/1",
+                    "as_of": int(time.time()),
+                    "mode": "read_only_shadow_monitoring",
+                    "status": "collecting",
+                    "promotion": "disabled",
+                    "error": "monitoring_unavailable",
+                    "modules": {},
+                }
+            self._send_json(200, payload)
+            return
         if path == SHADOW_PATH:
             self._send_json(200, _shadow_runtime.read(time.time()))
             return
