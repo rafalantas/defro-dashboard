@@ -77,3 +77,26 @@ Run:
 python -m unittest discover -s tests -p 'test_thermoflow_store.py' -v
 python -m unittest discover -s tests -p 'test_thermoflow_compose_storage.py' -v
 ```
+
+
+## eModul live snapshot ingestion
+
+The API poller now archives each connected, normalized eModul snapshot in
+`telemetry_samples` independently of dashboard requests. The source is
+`emodul`; the source key combines the configured module ID and the exact
+upstream snapshot timestamp. `observed_at` is the UTC epoch parsed from
+`fetched_at`, while `recorded_at` records when this API process wrote the row.
+The full normalized snapshot is stored as canonical JSON with a SHA-256 digest.
+
+This is an additional local archive; it does not replace the existing
+ThingSpeak writes or reads. Identical replays are ignored, and a changed payload
+for the same module/timestamp is reported as a conflict rather than overwriting
+the original evidence. The API poller does not create a missing database, run
+migrations, or start any collector. If the database or schema is not ready,
+archiving is skipped and live API polling continues normally.
+
+The first ingestion step intentionally has no automatic pruning. Monitor the
+SSD database growth before selecting a retention period; do not delete source
+history or old database volumes as part of this change. This poller stores the
+normalized eModul snapshot (including its current tiles, zones, menus and
+statistics projection), not raw HTTP response bodies from the eModul service.

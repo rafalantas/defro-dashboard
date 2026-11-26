@@ -17,6 +17,7 @@ from fuel_schema import timezone as thermoflow_timezone
 from thermoflow_shadow_runtime import PATH as SHADOW_PATH, ShadowRuntime
 from thermoflow_unified_runtime import PATH as INTELLIGENCE_PATH, REFRESH_SECONDS, UnifiedRuntime
 from thermoflow_live_ml import LiveMLRuntime
+from thermoflow_emodul_store import persist_emodul_snapshot
 from thermoflow_production_acceptance import PATH as ACCEPTANCE_PATH, build_acceptance_report
 from thermoflow_acceptance_evidence import build_acceptance_evidence
 from thermoflow_weather_forecast import project_weather_forecast
@@ -1808,6 +1809,17 @@ def _poll_forever() -> None:
     """Keep ThingSpeak history recording even when no dashboard tab is open."""
     while True:
         payload = snapshot()
+        # Persist the complete normalized eModul snapshot independently of
+        # dashboard traffic. The helper is fail-soft and never runs migrations.
+        try:
+            persist_emodul_snapshot(
+                payload,
+                database_path=os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
+                module_id=os.getenv("TECH_MODULE_ID", "default"),
+            )
+        except Exception:
+            # Storage is an archival side path; never interrupt the live poller.
+            pass
         try:
             _shadow_runtime.observe(payload)
         except Exception:
