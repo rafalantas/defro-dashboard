@@ -328,13 +328,13 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
                  int(time.time()), feature["dataset_version"], feature["values_json"]),
             )
 
+        dataset_version = features[0]["dataset_version"] if features else None
         stored = int(db.execute(
-            "SELECT COUNT(*) FROM feature_windows WHERE feature_set=?",
-            (FEATURE_SET,),
+            "SELECT COUNT(*) FROM feature_windows WHERE feature_set=? AND dataset_version=?",
+            (FEATURE_SET, dataset_version),
         ).fetchone()[0])
-        expected_versions = {item["dataset_version"] for item in features}
-        if stored < len(expected_versions):
-            raise RuntimeError("Nie wszystkie cechy zostały zapisane; surowe logi zachowano.")
+        if stored < len(features):
+            raise RuntimeError("Nie wszystkie okna cech zostały zapisane; surowe logi zachowano.")
 
         existing_dataset = db.execute(
             "SELECT content_sha256,manifest_json FROM datasets WHERE name=? AND version=?",
