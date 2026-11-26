@@ -237,14 +237,31 @@ class FibaroHistoryCollector:
     def read_latest_snapshot(self):
         """Return the latest distinct snapshot and its last observation time."""
         with self.store.connection() as db:
-            row = db.execute(
-                "SELECT id,captured_at,payload_json,payload_sha256 "
-                "FROM fibaro_snapshots ORDER BY captured_at DESC,id DESC LIMIT 1"
-            ).fetchone()
             state = db.execute(
-                "SELECT updated_at FROM collector_state "
+                "SELECT updated_at,metadata_json FROM collector_state "
                 "WHERE collector_name='fibaro_hc3_snapshot'"
             ).fetchone()
+            latest_digest = None
+            if state is not None:
+                try:
+                    metadata = json.loads(state["metadata_json"] or "{}")
+                    latest_digest = metadata.get("payload_sha256")
+                except (TypeError, ValueError):
+                    latest_digest = None
+            if isinstance(latest_digest, str) and len(latest_digest) == 64:
+                row = db.execute(
+                    "SELECT id,captured_at,payload_json,payload_sha256 "
+                    "FROM fibaro_snapshots WHERE payload_sha256=? "
+                    "ORDER BY captured_at DESC,id DESC LIMIT 1",
+                    (latest_digest,),
+                ).fetchone()
+            else:
+                # Backward-compatible fallback for databases written before
+                # the latest-observation digest was stored in collector_state.
+                row = db.execute(
+                    "SELECT id,captured_at,payload_json,payload_sha256 "
+                    "FROM fibaro_snapshots ORDER BY captured_at DESC,id DESC LIMIT 1"
+                ).fetchone()
         if row is None:
             return None
         return {

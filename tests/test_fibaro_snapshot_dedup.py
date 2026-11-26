@@ -57,6 +57,17 @@ class FibaroSnapshotDedupTests(unittest.TestCase):
         latest = self.collector.read_latest_snapshot()
         self.assertEqual(latest["last_observed_at"], 1100)
 
+    def test_returning_to_previous_payload_selects_latest_observation(self):
+        snapshot_a = {"zones": [{"id": 1}], "heads": [{"id": 11}]}
+        snapshot_b = {"zones": [{"id": 2}], "heads": [{"id": 22}]}
+        self.collector.save_snapshot(snapshot_a, captured_at=1000)
+        self.collector.save_snapshot(snapshot_b, captured_at=1100)
+        returned = self.collector.save_snapshot(snapshot_a, captured_at=1200)
+        self.assertEqual(returned["status"], "duplicate")
+        latest = self.collector.read_latest_snapshot()
+        self.assertEqual(latest["payload"], snapshot_a)
+        self.assertEqual(latest["last_observed_at"], 1200)
+
     def test_empty_store_has_no_snapshot(self):
         self.assertIsNone(self.collector.read_latest_snapshot())
 

@@ -75,6 +75,21 @@ class FibaroShadowPipelineTests(unittest.TestCase):
         self.assertEqual(result["safety"]["return_protection"], "55°C ±1°C")
         self.assertIn(result["status"], ("evaluated", "collecting"))
 
+    def test_unknown_events_do_not_satisfy_quality_volume_or_day_gates(self):
+        collector, start, end = evidence(days=10)
+        collector.events = [
+            {"id": 9000 + index, "timestamp": start + index * 86400,
+             "type": "UnrecognizedHC3Event", "data": {"value": index}}
+            for index in range(10)
+        ]
+        result = run_fibaro_shadow_pipeline(
+            collector, start=start, end=end, minimum_events=1, minimum_observed_days=1
+        )
+        self.assertEqual(result["quality"]["status"], "collecting")
+        self.assertEqual(result["quality"]["counts"]["recognized_events"], 0)
+        self.assertEqual(result["quality"]["counts"]["unknown_event_types"], 10)
+        self.assertEqual(result["quality"]["counts"]["observed_utc_days"], 0)
+
     def test_missing_days_are_not_synthesized(self):
         collector, start, end = evidence()
         collector.events = [
