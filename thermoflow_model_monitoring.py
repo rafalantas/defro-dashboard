@@ -254,7 +254,7 @@ def monitor_sqlite_models(store, *, now):
                     "WHERE model_name='fuel_rate' ORDER BY created_at DESC,id DESC LIMIT 1"
                 ).fetchone(),
                 "fibaro_daily_ml": db.execute(
-                    "SELECT version,artifact_sha256,metadata_json FROM model_versions "
+                    "SELECT version,created_at,artifact_sha256,metadata_json FROM model_versions "
                     "WHERE model_name='fibaro_daily_heat_demand' ORDER BY created_at DESC,id DESC LIMIT 1"
                 ).fetchone(),
             }
