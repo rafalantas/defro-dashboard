@@ -171,6 +171,7 @@ def analyze_fibaro_event_history(snapshot: dict, events: list, start: int, end: 
                 unmapped_due_to_missing_snapshot += 1
         for zone_id, zone in event_by_zone.items():
             zone_metadata.setdefault(zone_id, zone)
+            zone_transitions.setdefault(zone_id, [])
 
         # Audit opaque event types against the mapping valid at event time.
         mapped_device_id = _identifier(data.get("id"))
