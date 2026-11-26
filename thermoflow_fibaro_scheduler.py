@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -39,6 +40,19 @@ def run_scheduler(cycle, *, interval_seconds=300, max_cycles=None, wait=time.sle
     return results
 
 
+def _parse_initial_start(value):
+    """Parse the optional fixed backfill boundary from the environment."""
+    if value is None or not str(value).strip():
+        return None
+    try:
+        timestamp = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("FIBARO_HC3_INITIAL_START must be a positive UTC Unix timestamp") from None
+    if timestamp <= 0:
+        raise ValueError("FIBARO_HC3_INITIAL_START must be a positive UTC Unix timestamp")
+    return timestamp
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("database", help="Existing, migrated ThermoFlow SQLite database")
@@ -50,6 +64,11 @@ def main(argv=None):
     parser.add_argument("--overlap-seconds", type=int, default=120)
     parser.add_argument("--once", action="store_true", help="Run exactly one collection cycle")
     args = parser.parse_args(argv)
+    if args.initial_start is None:
+        try:
+            args.initial_start = _parse_initial_start(os.environ.get("FIBARO_HC3_INITIAL_START"))
+        except ValueError as error:
+            parser.error(str(error))
     if not Path(args.database).expanduser().is_file():
         parser.error("database file does not exist; run the explicit SQLite migration step first")
     if args.initial_start is not None and args.initial_start <= 0:

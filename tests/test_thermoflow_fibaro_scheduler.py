@@ -1,6 +1,6 @@
 """Tests for the opt-in Fibaro scheduler loop."""
 import unittest
-from thermoflow_fibaro_scheduler import run_scheduler
+from thermoflow_fibaro_scheduler import run_scheduler, _parse_initial_start
 
 
 class FibaroSchedulerTests(unittest.TestCase):
@@ -29,6 +29,15 @@ class FibaroSchedulerTests(unittest.TestCase):
         self.assertEqual(results[0], {"status": "error", "error_type": "RuntimeError"})
         self.assertEqual(results[1]["status"], "complete")
         self.assertEqual(waits, [60])
+
+    def test_initial_start_environment_value_is_optional_and_validated(self):
+        self.assertIsNone(_parse_initial_start(None))
+        self.assertIsNone(_parse_initial_start(""))
+        self.assertEqual(_parse_initial_start("1792972800"), 1792972800)
+        with self.assertRaises(ValueError):
+            _parse_initial_start("not-a-timestamp")
+        with self.assertRaises(ValueError):
+            _parse_initial_start("0")
 
     def test_interval_is_bounded(self):
         with self.assertRaises(ValueError):
