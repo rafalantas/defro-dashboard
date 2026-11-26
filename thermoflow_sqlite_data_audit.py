@@ -83,7 +83,7 @@ def _source_inventory(db, table, source_column, timestamp_column, *, start, end)
         f'MIN("{timestamp_column}") AS first_at, MAX("{timestamp_column}") AS last_at, '
         f'SUM(CASE WHEN "{timestamp_column}" >= ? AND "{timestamp_column}" <= ? THEN 1 ELSE 0 END) AS window_count, '
         f'COUNT(DISTINCT CASE WHEN "{timestamp_column}" >= ? AND "{timestamp_column}" <= ? '
-        f'THEN date("{timestamp_column}",\\'unixepoch\\') END) AS observed_utc_days '
+        f'THEN date("{timestamp_column}",\'unixepoch\') END) AS observed_utc_days '
         f'FROM "{table}" GROUP BY "{source_column}" ORDER BY "{source_column}"',
         (start, end, start, end),
     ).fetchall()
