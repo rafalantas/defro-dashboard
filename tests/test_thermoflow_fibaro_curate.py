@@ -203,5 +203,54 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM datasets").fetchone()[0], 0)
 
 
+    def test_zone_membership_changes_are_resolved_at_each_event_time(self):
+        old_snapshot = {
+            "zones": [{"id": 7, "name": "Salon", "properties": {"devices": [2162]}}],
+            "heads": [{"id": 2162, "properties": {}}],
+        }
+        new_snapshot = {
+            "zones": [{"id": 13, "name": "Sypialnia", "properties": {"devices": [2162]}}],
+            "heads": [{"id": 2162, "properties": {}}],
+        }
+        events = [
+            {"id": 201, "timestamp": 925, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatingThermostatSetpoint",
+                      "oldValue": 20.0, "newValue": 20.5}},
+            {"id": 202, "timestamp": 975, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatingThermostatSetpoint",
+                      "oldValue": 20.5, "newValue": 21.0}},
+        ]
+        with self.store.connection() as db:
+            db.execute("DELETE FROM fibaro_snapshots")
+            db.execute("DELETE FROM fibaro_events")
+            for captured_at, payload, digest in (
+                (850, old_snapshot, "zone-old"),
+                (950, new_snapshot, "zone-new"),
+            ):
+                db.execute(
+                    "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) VALUES(?,?,?)",
+                    (captured_at, json.dumps(payload), digest),
+                )
+            for event in events:
+                db.execute(
+                    """INSERT INTO fibaro_events(
+                        event_id,observed_at,event_type,payload_json,payload_sha256,collected_at
+                    ) VALUES(?,?,?,?,?,?)""",
+                    (event["id"], event["timestamp"], event["type"],
+                     json.dumps(event), f"event-{event['id']}", 1001),
+                )
+            features, report = build_curated_rows(db)
+
+        transitions = [
+            item for feature in features
+            for item in json.loads(feature["values_json"])["transitions"]
+        ]
+        transitions.sort(key=lambda item: item["source_event_id"])
+        self.assertEqual([item["zone_id"] for item in transitions], [7, 13])
+        self.assertEqual([item["snapshot_at"] for item in transitions], [850, 950])
+        self.assertEqual(report["head_zone_mapping"]["verified"], 2)
+        self.assertEqual(report["head_zone_mapping"]["unmapped"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
