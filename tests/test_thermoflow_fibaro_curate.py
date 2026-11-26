@@ -87,19 +87,15 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(result["raw_events"], 9)
-        self.assertEqual(result["curated_features"], 4)
-        self.assertEqual(result["feature_windows"], 4)
+        self.assertEqual(result["curated_features"], 1)
+        self.assertEqual(result["feature_windows"], 1)
         self.assertEqual(
             result["signal_counts"],
-            {
-                "heat_required": 1,
-                "setpoint": 1,
-                "window_open": 1,
-                "zone_temperature": 1,
-            },
+            {"zone_temperature": 1},
         )
         self.assertEqual(result["skipped_by_reason"]["unrelated_device_property"], 1)
         self.assertEqual(result["skipped_by_reason"]["unknown_head_id"], 1)
+        self.assertEqual(result["skipped_by_reason"]["event_without_prior_snapshot"], 3)
         self.assertEqual(result["skipped_by_reason"]["unchanged_value"], 1)
         self.assertEqual(result["skipped_by_reason"]["duplicate_transition"], 1)
         self.assertEqual(result["skipped_by_reason"]["invalid_boolean_transition"], 1)
@@ -164,7 +160,7 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
                 "SELECT values_json FROM feature_windows WHERE feature_set=? ORDER BY window_start",
                 (FEATURE_SET,),
             ).fetchall()
-            self.assertEqual(len(rows), 4)
+            self.assertEqual(len(rows), 1)
             transitions = [
                 item
                 for row in rows
