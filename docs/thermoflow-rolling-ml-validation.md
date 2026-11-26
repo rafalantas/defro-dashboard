@@ -17,3 +17,7 @@ result = validate_rolling_origin(
 ```
 
 The result reports per-fold and aggregate MAE/RMSE against a median-of-training baseline, coverage gates, and rejected-row counts. A candidate that does not beat the baseline remains a failed benchmark; insufficient temporal coverage returns collecting. The module does not produce a promoted artifact, persist a model, retrain from HTTP, or change fuel estimates or boiler control.
+
+## Fibaro daily demand integration
+
+The Fibaro shadow pipeline also reports a Fibaro-specific rolling validation for the actual `next_day_heat_starts` target. It reuses the same consecutive-day dataset and quality gate as the existing Fibaro model, converts local-day labels to UTC timestamps for chronology checks, and requires the five expanding folds to cover the minimum time span and months. The existing 20+5 backtest remains visible for continuity; rolling validation is an additional, stricter readiness signal and does not promote a model.
