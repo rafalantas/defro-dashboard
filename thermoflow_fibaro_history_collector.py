@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 
 from thermoflow_store import SQLiteStore
@@ -22,7 +23,7 @@ def _valid_timestamp(value):
 
 
 def _is_relevant_heating_event(event):
-    """Keep only verified heating signals; discard unrelated HC3 device chatter."""
+    """Keep only valid, changed heating signals; discard unrelated HC3 chatter."""
     if not isinstance(event, dict):
         return False
     data = event.get("data")
@@ -30,19 +31,45 @@ def _is_relevant_heating_event(event):
         return False
     event_type = event.get("type")
     if event_type == "ClimateZoneTemperatureChangedEvent":
-        return _event_positive_id(data.get("id", data.get("zoneId")))
+        zone_id = data.get("id")
+        if zone_id is None:
+            zone_id = data.get("zoneId")
+        if not _event_positive_id(zone_id):
+            return False
+        old_value, new_value = data.get("oldValue"), data.get("newValue")
+        return (
+            _finite_event_number(old_value, 0.0, 40.0)
+            and _finite_event_number(new_value, 0.0, 40.0)
+            and old_value != new_value
+        )
     if event_type != "DevicePropertyUpdatedEvent":
         return False
-    if data.get("property") not in {
+    property_name = data.get("property")
+    if property_name not in {
         "heatingThermostatSetpoint", "heatRequired", "windowOpened"
-    }:
+    } or not _event_positive_id(data.get("id")):
         return False
-    return _event_positive_id(data.get("id"))
+    old_value, new_value = data.get("oldValue"), data.get("newValue")
+    if property_name in {"heatRequired", "windowOpened"}:
+        return (
+            isinstance(old_value, bool) and isinstance(new_value, bool)
+            and old_value != new_value
+        )
+    return (
+        _finite_event_number(old_value, 5.0, 35.0)
+        and _finite_event_number(new_value, 5.0, 35.0)
+        and old_value != new_value
+    )
+
+
+def _finite_event_number(value, minimum, maximum):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value) and minimum <= value <= maximum
 
 
 def _event_positive_id(value):
     return type(value) is int and value > 0
-
 
 def _event_identity(event):
     if not isinstance(event, dict):
