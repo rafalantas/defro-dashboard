@@ -80,6 +80,7 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
         events, snapshot, start=start, end=end,
         minimum_events=minimum_events,
         minimum_observed_days=minimum_observed_days,
+        snapshot_history=snapshot_history,
     )
 
     by_timestamp = [event for event in events

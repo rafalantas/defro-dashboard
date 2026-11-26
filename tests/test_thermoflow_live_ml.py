@@ -273,6 +273,61 @@ class FuelLiveArtifactTests(unittest.TestCase):
             self.assertEqual(runtime._burner_model_version, version)
             self.assertEqual(runtime._burner["schema"], artifact["schema"])
 
+
+    def test_runtime_prefers_checksum_verified_fuel_artifact_from_sqlite(self):
+        import hashlib
+        snapshot, benchmark = fuel_inputs()
+        artifact = build_fuel_artifact(benchmark, snapshot, created_at=NOW)
+        canonical = json.dumps(artifact, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        version = "1.0.0+" + digest[:16]
+        metadata = {
+            "schema": "thermoflow-fuel-artifact-store/1",
+            "mode": "read_only_shadow",
+            "model_artifact": artifact,
+            "model_artifact_sha256": digest,
+            "automatic_promotion": False,
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "thermoflow.sqlite3"
+            store = SQLiteStore(database)
+            store.migrate()
+            with store.connection() as db:
+                db.execute(
+                    "INSERT INTO model_versions(model_name,version,created_at,artifact_path,"
+                    "artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
+                    ("fuel_rate", version, NOW, None, digest,
+                     json.dumps(metadata, sort_keys=True), "shadow"),
+                )
+            runtime = LiveMLRuntime(db_path=str(database))
+            runtime.refresh(now=NOW)
+            self.assertEqual(runtime._fuel_state, "loaded_sqlite")
+            self.assertEqual(runtime._fuel["schema"], FUEL_SCHEMA)
+            self.assertEqual(runtime._fuel["created_at"], artifact["created_at"])
+
+    def test_runtime_fails_closed_for_corrupt_sqlite_fuel_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "thermoflow.sqlite3"
+            store = SQLiteStore(database)
+            store.migrate()
+            artifact = {"schema": FUEL_SCHEMA, "created_at": iso(NOW)}
+            metadata = {
+                "model_artifact": artifact,
+                "model_artifact_sha256": "0" * 64,
+            }
+            with store.connection() as db:
+                db.execute(
+                    "INSERT INTO model_versions(model_name,version,created_at,artifact_path,"
+                    "artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
+                    ("fuel_rate", "broken", NOW, None, "0" * 64,
+                     json.dumps(metadata), "shadow"),
+                )
+            runtime = LiveMLRuntime(db_path=str(database))
+            runtime.refresh(now=NOW)
+            self.assertEqual(runtime._fuel_state, "invalid_or_stale_artifact")
+            self.assertIsNone(runtime._fuel)
+
     def _register_sqlite_burner_model(self, database):
         store = SQLiteStore(database)
         store.migrate()

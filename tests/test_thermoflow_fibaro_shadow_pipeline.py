@@ -11,6 +11,14 @@ class FakeCollector:
     def __init__(self, events=None, snapshot=None):
         self.events = events or []
         self.snapshot = snapshot
+        self.snapshot_history = None
+
+    def read_snapshots(self, *, start=None, end=None):
+        if self.snapshot_history is None:
+            return None
+        return [record for record in self.snapshot_history
+                if (start is None or record["captured_at"] >= start)
+                and (end is None or record["captured_at"] <= end)]
 
     def read_latest_snapshot(self):
         return self.snapshot
@@ -84,6 +92,28 @@ class FibaroShadowPipelineTests(unittest.TestCase):
         self.assertFalse(result["safety"]["automatic_promotion"])
         self.assertEqual(result["safety"]["return_protection"], "55°C ±1°C")
         self.assertIn(result["status"], ("evaluated", "collecting"))
+
+
+    def test_quality_uses_historical_snapshot_mapping_not_latest_snapshot(self):
+        collector, start, end = evidence(days=10)
+        collector.snapshot = {
+            "captured_at": end,
+            "payload": {"zones": [], "heads": []},
+        }
+        historical_mapping = {
+            "zones": [{"id": 7, "name": "Salon", "properties": {"devices": [2162]}}],
+            "heads": [{"id": 2162, "properties": {"heatRequired": True}}],
+        }
+        collector.snapshot_history = [{
+            "captured_at": start + 3600,
+            "payload": historical_mapping,
+        }]
+        result = run_fibaro_shadow_pipeline(
+            collector, start=start, end=end, minimum_events=1, minimum_observed_days=1
+        )
+        self.assertEqual(result["quality"]["status"], "ready")
+        self.assertEqual(result["quality"]["counts"]["recognized_events"], 30)
+        self.assertEqual(result["evidence"]["observed_days_with_transitions"], 10)
 
     def test_unknown_events_do_not_satisfy_quality_volume_or_day_gates(self):
         collector, start, end = evidence(days=10)

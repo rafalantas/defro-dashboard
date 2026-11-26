@@ -64,6 +64,55 @@ class HeatingDiagnosticsTests(unittest.TestCase):
             row = db.execute("SELECT status FROM datasets WHERE name='thermoflow_heating_aggregates'").fetchone()
             self.assertEqual(row["status"], "candidate")
 
+
+    def test_thingspeak_samples_are_aligned_and_not_reused(self):
+        stamp = 1795712400
+        with self.store.connection() as db:
+            for offset, entry in ((20, 1), (25, 2)):
+                payload = {"field1": "68.5", "field2": "55.0"}
+                db.execute(
+                    "INSERT INTO telemetry_samples(source,source_key,observed_at,recorded_at,"
+                    "payload_json,payload_sha256) VALUES(?,?,?,?,?,?)",
+                    ("thingspeak:temperatures_power", f"channel:{entry}", stamp + offset,
+                     stamp + 100, json.dumps(payload), f"ts-hash-{entry}"),
+                )
+        result = read_heating_analytics(self.path, start=1795712300, end=1795712500,
+                                        tolerance_seconds=90)
+        self.assertEqual(result["source_counts"]["thingspeak_samples"], 2)
+        self.assertEqual(result["aligned"]["counts"]["matched_by_source"]["thingspeak:temperatures_power"], 1)
+        self.assertIn("thingspeak:temperatures_power", result["aligned"]["observations"][0]["telemetry"])
+        self.assertEqual(result["aligned"]["counts"]["matched"], 1)
+        metric = result["aggregates"]["hourly"][0]["metrics"]["thingspeak:temperatures_power.field1"]
+        self.assertEqual(metric["mean"], 68.5)
+        self.assertEqual(result["aggregates"]["hourly"][0]["unique_telemetry_samples"], 2)
+        self.assertEqual(result["aggregates"]["hourly"][0]["unique_emodul_samples"], 1)
+
+
+    def test_refill_event_feed_is_not_treated_as_heating_telemetry(self):
+        stamp = 1795712400
+        with self.store.connection() as db:
+            db.execute(
+                "INSERT INTO telemetry_samples(source,source_key,observed_at,recorded_at,"
+                "payload_json,payload_sha256) VALUES(?,?,?,?,?,?)",
+                ("thingspeak:fuel_refills_raw", "fuel:1", stamp + 20, stamp + 100,
+                 json.dumps({"field1": "15"}), "fuel-raw-hash"),
+            )
+        result = read_heating_analytics(self.path, start=1795712300, end=1795712500)
+        self.assertEqual(result["source_counts"]["thingspeak_samples"], 0)
+        self.assertNotIn("thingspeak:fuel_refills_raw",
+                         result["aligned"]["counts"]["matched_by_source"])
+
+    def test_thingSpeak_fields_are_kept_as_raw_numeric_features(self):
+        from thermoflow_time_alignment import align_observations
+        feature = {"values": {"schema": "thermoflow-fibaro-heating-feature/2",
+                              "observed_at": 1000, "transitions": [
+                                  {"source_event_id": 1, "signal": "setpoint"}]}}
+        samples = [{"source": "thingspeak:valve_pumps_fuel", "source_key": "c:1",
+                    "observed_at": 1005, "payload_json": json.dumps({"field1": "42.5"})}]
+        aligned = align_observations([feature], samples, tolerance_seconds=10)
+        sample = aligned["observations"][0]["telemetry"]["thingspeak:valve_pumps_fuel"]
+        self.assertEqual(sample["data"]["field1"], "42.5")
+
     def test_no_candidate_dataset_fails_closed(self):
         with self.store.connection() as db:
             db.execute("DELETE FROM datasets")

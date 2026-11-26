@@ -1,6 +1,6 @@
 # ThermoFlow heating analytics and storage
 
-The analytics endpoint reads the v2 Fibaro candidate feature set and the existing curated eModul `telemetry_samples`. It does not read raw Fibaro event payloads as an analytics fallback.
+The analytics endpoint reads the v2 Fibaro candidate feature set and existing curated eModul plus ThingSpeak `telemetry_samples`. It does not read raw Fibaro event payloads as an analytics fallback. ThingSpeak field names are retained verbatim (for example `thingspeak:temperatures_power.field1`); field units are not guessed when channel metadata is unavailable.
 
 ## Read-only API
 
@@ -23,7 +23,8 @@ This writes deterministic hourly/daily rows to the existing `feature_windows` ta
 
 - Head events without historical membership evidence remain head-level and unassigned to a zone.
 - `heatRequired` records are transitions, not continuous demand samples.
-- eModul context is nearest-observation evidence within a bounded time tolerance, not proof of causality.
+- eModul and ThingSpeak context are nearest-observation evidence within a bounded time tolerance, not proof of causality.
+- ThingSpeak numeric fields are parsed only for descriptive aggregates; original field names are retained and units/meaning are not inferred.
 - Missing hours/days and unmatched samples remain missing; no interpolation or forward fill is performed.
-- ThingSpeak is not copied into this database layer; existing eModul samples are the source for this analysis.
+- ThingSpeak samples already archived in the shared SQLite database are read directly; this analytics path performs no network requests.
 - All diagnostics and datasets remain descriptive/candidate. No model promotion or heating control is performed.

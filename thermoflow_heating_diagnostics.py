@@ -34,12 +34,14 @@ def _telemetry_samples(database_path, start, end, tolerance):
     with store.connection() as db:
         db.execute("PRAGMA query_only=ON")
         rows = db.execute(
-            "SELECT source_key,observed_at,payload_json FROM telemetry_samples "
-            "WHERE source='emodul' AND observed_at BETWEEN ? AND ? "
-            "ORDER BY observed_at,id",
+            "SELECT source,source_key,observed_at,payload_json FROM telemetry_samples "
+            "WHERE source IN ('emodul','thingspeak:fire',"
+            "'thingspeak:temperatures_power','thingspeak:valve_pumps_fuel') "
+            "AND observed_at BETWEEN ? AND ? ORDER BY observed_at,id",
             (max(1, start - tolerance), end + tolerance),
         ).fetchall()
-    return [{"source_key": row["source_key"], "observed_at": int(row["observed_at"]),
+    return [{"source": row["source"], "source_key": row["source_key"],
+             "observed_at": int(row["observed_at"]),
              "payload_json": row["payload_json"]} for row in rows]
 
 
@@ -57,9 +59,11 @@ def _diagnostic_summary(aligned):
             mapping_unverified += 1
         if signal != "heat_required" or row.get("new_value") not in (True, False):
             continue
-        if not row.get("matched") or not isinstance(row.get("emodul"), dict):
+        if not row.get("matched"):
             continue
-        context = row["emodul"]
+        context = row.get("emodul")
+        if not isinstance(context, dict):
+            continue
         observed = context.get("observed_at", {})
         sample_key = (observed.get("unix") if isinstance(observed, dict) else None,
                       context.get("source_key"))
@@ -88,8 +92,9 @@ def _diagnostic_summary(aligned):
         }
     total = len(observations)
     matched = int(aligned["counts"]["matched"])
+    matched_by_source = aligned.get("counts", {}).get("matched_by_source", {})
     return {
-        "schema": "thermoflow-heating-diagnostics/1",
+        "schema": "thermoflow-heating-diagnostics/2",
         "status": "available" if total else "collecting",
         "event_counts_by_signal": dict(sorted(signal_counts.items())),
         "telemetry_match": {
@@ -99,6 +104,7 @@ def _diagnostic_summary(aligned):
         },
         "head_events_with_unverified_zone_mapping": mapping_unverified,
         "telemetry_context_after_heat_required_transition": context_summary,
+        "telemetry_match_by_source": dict(sorted(matched_by_source.items())),
         "interpretation": {
             "descriptive_only": True,
             "correlation_is_not_causation": True,
@@ -124,7 +130,7 @@ def persist_heating_aggregates(database_path, aggregates, *, recorded_at=None):
     version = "v1-" + digest[:16]
     manifest = {
         "schema": "thermoflow-heating-aggregate-dataset/1",
-        "source": "fibaro_curated_v2+emodul_telemetry_samples",
+        "source": "fibaro_curated_v2+emodul_and_thingspeak_telemetry_samples",
         "content_sha256": digest,
         "timezone": aggregates["timezone"],
         "hourly_windows": len(hourly), "daily_windows": len(daily),
@@ -220,9 +226,17 @@ def read_heating_analytics(database_path=None, *, start, end,
         "status": "available" if diagnostics["status"] == "available" else "collecting",
         "window": {"start": start, "end": end, "timezone": timezone_name},
         "feature_dataset": features["dataset"],
-        "source_counts": {"fibaro_feature_windows": features["count"],
-                          "emodul_samples": len(samples),
-                          "fibaro_transitions": aligned["counts"]["fibaro_transitions"]},
+        "source_counts": {
+            "fibaro_feature_windows": features["count"],
+            "emodul_samples": sum(item.get("source") == "emodul" for item in samples),
+            "thingspeak_samples": sum(str(item.get("source", "")).startswith("thingspeak:")
+                                      for item in samples),
+            "telemetry_samples_by_source": {
+                source: sum(item.get("source") == source for item in samples)
+                for source in sorted({item.get("source") for item in samples})
+            },
+            "fibaro_transitions": aligned["counts"]["fibaro_transitions"],
+        },
         "aligned": aligned,
         "aggregates": aggregates,
         "diagnostics": diagnostics,

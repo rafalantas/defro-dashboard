@@ -24,3 +24,13 @@ gap is interpolated, and no model is trained or promoted.
 
 
 Quality gate output is a screening aid; the operator remains responsible for confirming physical provenance before model use.
+
+
+## Historical Fibaro zone mapping
+
+When persisted snapshot history is available, the quality gate and daily feature
+builder both resolve head-to-zone membership from the latest snapshot captured
+at or before each event. The current snapshot is not substituted for missing
+historical evidence. Events before the first retained snapshot remain unmapped;
+a non-empty historical snapshot is required for the requested window. Unknown
+mappings remain unknown and never become inferred zone assignments.
