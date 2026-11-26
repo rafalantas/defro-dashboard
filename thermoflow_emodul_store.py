@@ -23,18 +23,19 @@ SAMPLE_SCHEMA = "thermoflow-emodul-ml-input/1"
 # Explicit allow-list: fields useful for time-series diagnostics and ML.
 # Deliberately excludes raw tile/menu/zone structures and UI presentation data.
 FIELD_ALLOWLIST = {
-    "temperatures": {"co", "dhw", "flue", "outdoor", "room", "buffer_upper"},
+    "temperatures": {"co", "dhw", "flue", "outdoor", "room", "return", "buffer_upper"},
     "boiler_power_kw": None,
     "boiler_power_at": None,
     "pumps": {"floor", "valve4d", "dhw", "circulation"},
     "valve": {"current", "return", "set", "opening", "set_correction",
-              "room_reduction", "set_after_correction"},
+              "room_reduction", "set_after_correction", "working"},
     "fuel": {"percent", "hours"},
     "controller_metrics": {"feeder_temperature_c", "instant_fuel_consumption"},
     "fire": None,
     "fire_signal": None,
-    "fire_brightness_estimate": None,
+    "fire_brightness": None,
     "fan": {"running", "percent", "rpm"},
+    "outputs": {"feeder", "heater"},
     "disinfection": {"active", "percent"},
     "mode": None,
     "controller_status": None,

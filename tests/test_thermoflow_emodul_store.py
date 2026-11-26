@@ -24,12 +24,14 @@ class EmodulSnapshotStoreTests(unittest.TestCase):
             "fetched_at": "2026-11-26T10:00:00+00:00",
             "controller": {"name": "Defro", "type": "APC", "metadata": {"secret": "omit"}},
             "data": {
-                "temperatures": {"co": 65.0, "flue": 90.0, "outdoor": 2.0},
+                "temperatures": {"co": 65.0, "flue": 90.0, "outdoor": 2.0, "return": 54.5},
                 "boiler_power_kw": 12.5,
                 "pumps": {"floor": True, "dhw": False},
-                "valve": {"return": 55.0, "opening": 35.0},
+                "valve": {"return": 55.0, "opening": 35.0, "working": True},
                 "fuel": {"percent": 72},
                 "fire": True,
+                "fire_brightness": 143.0,
+                "outputs": {"feeder": True, "heater": False, "unknown_output": True},
                 "setpoints": {"co": 70.0},
                 "hysteresis": {"boiler": 6.0},
                 "other_tiles": [{"label": "UI-only", "value": 999}],
@@ -62,6 +64,10 @@ class EmodulSnapshotStoreTests(unittest.TestCase):
         self.assertEqual(row["recorded_at"], 1795687500)
         self.assertEqual(sample["schema"], SAMPLE_SCHEMA)
         self.assertEqual(sample["data"]["temperatures"]["co"], 65.0)
+        self.assertEqual(sample["data"]["temperatures"]["return"], 54.5)
+        self.assertEqual(sample["data"]["fire_brightness"], 143.0)
+        self.assertEqual(sample["data"]["valve"]["working"], True)
+        self.assertEqual(sample["data"]["outputs"], {"feeder": True, "heater": False})
         self.assertEqual(sample["data"]["pumps"]["floor"], True)
         self.assertNotIn("zones", sample)
         self.assertNotIn("menus", sample)
@@ -72,13 +78,15 @@ class EmodulSnapshotStoreTests(unittest.TestCase):
 
     def test_allowlist_omits_unknown_and_non_finite_values(self):
         selected = select_ml_fields({
-            "temperatures": {"co": 65.0, "unknown_sensor": 12, "bad": float("nan")},
+            "temperatures": {"co": 65.0, "return": 54.5, "unknown_sensor": 12, "bad": float("nan")},
             "pumps": {"floor": True, "unexpected": "x"},
+            "outputs": {"feeder": True, "unknown_output": True},
             "zones": [{"name": "not-ml-input"}],
         })
         self.assertEqual(selected, {
-            "temperatures": {"co": 65.0},
+            "temperatures": {"co": 65.0, "return": 54.5},
             "pumps": {"floor": True},
+            "outputs": {"feeder": True},
         })
 
     def test_identical_replay_is_idempotent(self):
