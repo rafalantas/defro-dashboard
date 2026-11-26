@@ -163,6 +163,7 @@ def run_once(database_path: str = DEFAULT_DB_PATH, *, now: int | None = None) ->
             "reason": shadow.get("reason"),
             "evidence": shadow.get("evidence"),
             "quality": shadow.get("quality"),
+            "readiness": shadow.get("readiness"),
             "persistence": shadow.get("persistence"),
         },
         "safety": {

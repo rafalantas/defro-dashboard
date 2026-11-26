@@ -7,7 +7,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from thermoflow_fibaro_data_quality import assess_fibaro_history_quality
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history
 from thermoflow_fibaro_shadow_evaluation import evaluate_fibaro_shadow
-from thermoflow_fibaro_shadow_ml import train_fibaro_daily_model
+from thermoflow_fibaro_shadow_ml import (
+    HOLDOUT_SAMPLES, MIN_TRAINING_SAMPLES, train_fibaro_daily_model,
+)
 from thermoflow_fibaro_rolling_validation import validate_fibaro_daily_rolling
 from thermoflow_fibaro_time_profile import build_fibaro_time_profile
 
@@ -111,6 +113,41 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
     model = train_fibaro_daily_model(daily_features, quality)
     backtest = evaluate_fibaro_shadow(model)
     rolling_validation = validate_fibaro_daily_rolling(daily_features, quality)
+    dataset = model.get("dataset") if isinstance(model.get("dataset"), dict) else {}
+    observed_dates = []
+    for row in daily_features:
+        try:
+            observed_dates.append(date.fromisoformat(row["date"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    longest_consecutive_run = run = 0
+    previous_day = None
+    for observed_day in sorted(set(observed_dates)):
+        run = run + 1 if previous_day is not None and observed_day == previous_day + timedelta(days=1) else 1
+        longest_consecutive_run = max(longest_consecutive_run, run)
+        previous_day = observed_day
+    readiness = {
+        "status": "ready" if model.get("status") == "evaluated" else "collecting",
+        "reason": model.get("reason"),
+        "quality_gate": quality.get("status"),
+        "quality_gate_eligible": bool(
+            isinstance(quality.get("training_gate"), dict)
+            and quality["training_gate"].get("eligible") is True
+        ),
+        "observed_days": len(set(observed_dates)),
+        "longest_consecutive_observed_days": longest_consecutive_run,
+        "eligible_samples": int(dataset.get("eligible_samples", 0) or 0),
+        "required_samples": int(dataset.get("required_samples", MIN_TRAINING_SAMPLES + HOLDOUT_SAMPLES) or 0),
+        "training_samples": int(dataset.get("training_samples", 0) or 0),
+        "required_training_samples": MIN_TRAINING_SAMPLES,
+        "holdout_samples": int(dataset.get("holdout_samples", 0) or 0),
+        "required_holdout_samples": HOLDOUT_SAMPLES,
+        "minimum_consecutive_days_for_sample_count": MIN_TRAINING_SAMPLES + HOLDOUT_SAMPLES + 1,
+        "rejected_days_or_pairs": dataset.get("rejected_days_or_pairs", {}),
+        "rejected_samples": dataset.get("rejected_samples", {}),
+        "promotion": "disabled",
+        "mode": "offline_shadow_only",
+    }
     status = "evaluated" if backtest.get("status") == "evaluated" else (
         "blocked" if quality.get("status") == "blocked" else "collecting"
     )
@@ -127,6 +164,7 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
             "observed_hour_buckets": len(hourly_features),
         },
         "quality": quality,
+        "readiness": readiness,
         "daily_features": daily_features,
         "model": model,
         "backtest": backtest,
