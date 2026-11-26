@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thermoflow_fibaro_history_collector import FibaroHistoryCollector
+from thermoflow_fibaro_history_collector import FibaroHistoryCollector, BACKFILL_COLLECTOR_NAME
 from thermoflow_fibaro_shadow_pipeline import run_fibaro_shadow_pipeline
 from thermoflow_store import SQLiteStore
 
@@ -30,6 +30,7 @@ def read_fibaro_store_status(database_path):
         "schema": "thermoflow-fibaro-store-api/1",
         "status": "available",
         "collector": collector.status(),
+        "backfill": collector.status(BACKFILL_COLLECTOR_NAME),
         "schema_version": store.schema_version(),
         "journal_mode": store.journal_mode(),
         "integrity_check": store.integrity_check(),

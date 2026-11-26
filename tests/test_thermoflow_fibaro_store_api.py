@@ -22,7 +22,8 @@ class FibaroStoreApiTests(unittest.TestCase):
         self.collector = FibaroHistoryCollector(self.store)
         self.collector.save_snapshot({"zones": [], "heads": []}, captured_at=1000)
         self.collector.save_batch(
-            [{"id": 1, "timestamp": 1100, "type": "test"}],
+            [{"id": 1, "timestamp": 1100, "type": "ClimateZoneTemperatureChangedEvent",
+              "data": {"id": 7, "oldValue": 20.0, "newValue": 20.5}}],
             start=1000, end=1200, collected_at=1300,
         )
 
@@ -33,6 +34,10 @@ class FibaroStoreApiTests(unittest.TestCase):
         result = read_fibaro_store_status(self.path)
         self.assertEqual(result["status"], "available")
         self.assertEqual(result["collector"]["events"], 1)
+        self.collector.mark_backfill_complete(1200, recorded_at=1300, initial_start=1000)
+        result = read_fibaro_store_status(self.path)
+        self.assertTrue(result["backfill"]["backfill_complete"])
+        self.assertEqual(result["backfill"]["last_successful_end"], 1200)
         self.assertTrue(result["integrity_check"]["ok"])
         self.assertTrue(result["read_only"])
 

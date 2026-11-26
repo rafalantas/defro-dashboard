@@ -89,13 +89,16 @@ services:
         target: /var/lib/thermoflow
         bind:
           create_host_path: false
+      # Optional HC3 credentials JSON can be placed in this host directory
+      # and referenced as /run/thermoflow/fibaro-credentials.json.
+      - ./data/thermoflow:/run/thermoflow:ro
     command:
       - python
       - -m
       - thermoflow_fibaro_scheduler
       - /var/lib/thermoflow/thermoflow.sqlite3
-      - --initial-start
-      - "${FIBARO_HC3_INITIAL_START:-}"
+      - --history-days
+      - "14"
       - --interval-seconds
       - "300"
     restart: unless-stopped
