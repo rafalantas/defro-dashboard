@@ -2,7 +2,7 @@
 
 The thermoflow_ml_validation module evaluates shadow models on multiple chronological holdout blocks. Each fold expands the training history and tests only on the immediately following unseen block. The holdout is never used for fitting, feature scaling, or baseline selection.
 
-Defaults require at least 40 initial training rows, three consecutive holdout blocks of five rows (55 eligible samples total), at least 60 days between the first and last eligible observation, and observations in at least three UTC calendar months. These gates prevent a large but temporally narrow dataset from being mistaken for seasonal evidence.
+Defaults require at least 40 initial training rows, five holdout blocks of five rows (65 eligible samples total), spaced across the full history, at least 60 days between the first and last eligible observation, and observations in at least three UTC calendar months. These gates prevent a large but temporally narrow dataset from being mistaken for seasonal evidence.
 
 Example:
 
