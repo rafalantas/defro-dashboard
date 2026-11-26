@@ -87,23 +87,19 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(result["raw_events"], 9)
-        self.assertEqual(result["curated_features"], 4)
-        self.assertEqual(result["feature_windows"], 4)
+        self.assertEqual(result["curated_features"], 1)
+        self.assertEqual(result["feature_windows"], 1)
         self.assertEqual(
             result["signal_counts"],
-            {
-                "heat_required": 1,
-                "setpoint": 1,
-                "window_open": 1,
-                "zone_temperature": 1,
-            },
+            {"zone_temperature": 1},
         )
         self.assertEqual(result["skipped_by_reason"]["unrelated_device_property"], 1)
         self.assertEqual(result["skipped_by_reason"]["unknown_head_id"], 1)
+        self.assertEqual(result["skipped_by_reason"]["event_without_prior_snapshot"], 3)
         self.assertEqual(result["skipped_by_reason"]["unchanged_value"], 1)
         self.assertEqual(result["skipped_by_reason"]["duplicate_transition"], 1)
         self.assertEqual(result["skipped_by_reason"]["invalid_boolean_transition"], 1)
-        self.assertEqual(result["historical_head_zone_mapping"], "unverified")
+        self.assertEqual(result["historical_head_zone_mapping"], "event_time_snapshot_only")
         self.assertTrue(result["raw_source_events_preserved"])
 
         with self.store.connection() as db:
@@ -123,14 +119,17 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
         head_transitions = [item for item in transitions if item["entity"] == "head"]
         zone_transitions = [item for item in transitions if item["entity"] == "zone"]
 
-        self.assertEqual(len(head_transitions), 3)
-        self.assertTrue(all(item["zone_id"] is None for item in head_transitions))
-        self.assertTrue(all(item["historical_zone_mapping"] == "unverified" for item in head_transitions))
-        self.assertTrue(all(item["identity_basis"] == "current_snapshot_identity_only" for item in head_transitions))
+        # The only snapshot in this fixture is at t=1000. Events at t=900..907
+        # must not borrow its future mapping retroactively.
+        self.assertEqual(len(head_transitions), 0)
         self.assertEqual(len(zone_transitions), 1)
         self.assertEqual(zone_transitions[0]["zone_id"], 7)
         self.assertEqual(zone_transitions[0]["identity_basis"], "zone_id_from_event_payload")
         self.assertEqual(report["snapshots_used"], 1)
+        self.assertEqual(report["head_zone_mapping"]["verified"], 0)
+        self.assertEqual(report["head_zone_mapping"]["unmapped"], 3)
+        self.assertFalse(report["head_zone_mapping"]["future_snapshot_fallback"])
+        self.assertEqual(report["skipped_by_reason"]["event_without_prior_snapshot"], 3)
 
     def test_dataset_hash_is_deterministic(self):
         with self.store.connection() as db:
@@ -161,7 +160,7 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
                 "SELECT values_json FROM feature_windows WHERE feature_set=? ORDER BY window_start",
                 (FEATURE_SET,),
             ).fetchall()
-            self.assertEqual(len(rows), 4)
+            self.assertEqual(len(rows), 1)
             transitions = [
                 item
                 for row in rows
@@ -169,11 +168,11 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
             ]
             self.assertEqual(
                 {item["signal"] for item in transitions},
-                {"setpoint", "zone_temperature", "heat_required", "window_open"},
+                {"zone_temperature"},
             )
             self.assertEqual(
                 {json.loads(row["values_json"])["schema"] for row in rows},
-                {"thermoflow-fibaro-heating-feature/2"},
+                {"thermoflow-fibaro-heating-feature/3"},
             )
             dataset = db.execute(
                 "SELECT status,manifest_json FROM datasets WHERE name=?",
@@ -183,7 +182,7 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
             self.assertEqual(dataset["status"], "candidate")
             manifest = json.loads(dataset["manifest_json"])
             self.assertTrue(manifest["source_event_payloads_retained"])
-            self.assertEqual(manifest["historical_head_zone_mapping"], "unverified")
+            self.assertEqual(manifest["historical_head_zone_mapping"], "event_time_snapshot_only")
 
     def test_missing_snapshot_fails_without_writing_or_deleting(self):
         with self.store.connection() as db:
@@ -198,6 +197,55 @@ class FibaroCandidateDatasetTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 9)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM feature_windows").fetchone()[0], 0)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM datasets").fetchone()[0], 0)
+
+
+    def test_zone_membership_changes_are_resolved_at_each_event_time(self):
+        old_snapshot = {
+            "zones": [{"id": 7, "name": "Salon", "properties": {"devices": [2162]}}],
+            "heads": [{"id": 2162, "properties": {}}],
+        }
+        new_snapshot = {
+            "zones": [{"id": 13, "name": "Sypialnia", "properties": {"devices": [2162]}}],
+            "heads": [{"id": 2162, "properties": {}}],
+        }
+        events = [
+            {"id": 201, "timestamp": 925, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatingThermostatSetpoint",
+                      "oldValue": 20.0, "newValue": 20.5}},
+            {"id": 202, "timestamp": 975, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatingThermostatSetpoint",
+                      "oldValue": 20.5, "newValue": 21.0}},
+        ]
+        with self.store.connection() as db:
+            db.execute("DELETE FROM fibaro_snapshots")
+            db.execute("DELETE FROM fibaro_events")
+            for captured_at, payload, digest in (
+                (850, old_snapshot, "zone-old"),
+                (950, new_snapshot, "zone-new"),
+            ):
+                db.execute(
+                    "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) VALUES(?,?,?)",
+                    (captured_at, json.dumps(payload), digest),
+                )
+            for event in events:
+                db.execute(
+                    """INSERT INTO fibaro_events(
+                        event_id,observed_at,event_type,payload_json,payload_sha256,collected_at
+                    ) VALUES(?,?,?,?,?,?)""",
+                    (event["id"], event["timestamp"], event["type"],
+                     json.dumps(event), f"event-{event['id']}", 1001),
+                )
+            features, report = build_curated_rows(db)
+
+        transitions = [
+            item for feature in features
+            for item in json.loads(feature["values_json"])["transitions"]
+        ]
+        transitions.sort(key=lambda item: item["source_event_id"])
+        self.assertEqual([item["zone_id"] for item in transitions], [7, 13])
+        self.assertEqual([item["snapshot_at"] for item in transitions], [850, 950])
+        self.assertEqual(report["head_zone_mapping"]["verified"], 2)
+        self.assertEqual(report["head_zone_mapping"]["unmapped"], 0)
 
 
 if __name__ == "__main__":

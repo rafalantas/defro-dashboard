@@ -4,9 +4,9 @@ Dry-run is the default. --apply writes a deterministic candidate dataset to
 feature_windows/datasets after a verified SQLite backup. It NEVER deletes raw
 Fibaro events and NEVER contacts HC3 or sends device commands.
 
-Historical head-to-zone membership is not inferred from a later snapshot:
-head-level transitions remain unassigned to a zone and are explicitly marked
-as historically unverified.
+Head-to-zone membership is resolved only from the latest persisted snapshot
+captured at or before the event. Events without prior mapping evidence remain
+unassigned; future snapshots are never applied retroactively.
 """
 from __future__ import annotations
 
@@ -20,10 +20,10 @@ from pathlib import Path
 
 from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
-FEATURE_SET = "fibaro_heating_event_v2"
-DATASET_NAME = "fibaro_heating_history_v2"
-DATASET_SCHEMA = "thermoflow-fibaro-curated-dataset/2"
-FEATURE_SCHEMA = "thermoflow-fibaro-heating-feature/2"
+FEATURE_SET = "fibaro_heating_event_v3"
+DATASET_NAME = "fibaro_heating_history_v3"
+DATASET_SCHEMA = "thermoflow-fibaro-curated-dataset/3"
+FEATURE_SCHEMA = "thermoflow-fibaro-heating-feature/3"
 
 DEVICE_PROPERTIES = {
     "heatingThermostatSetpoint": ("setpoint", "number", "C", 5.0, 35.0),
@@ -100,14 +100,34 @@ def _load_snapshots(db):
 
 
 def _snapshot_for(timestamp, snapshots):
-    prior = [item for item in snapshots if item[0] <= timestamp]
-    if prior:
-        selected = prior[-1]
-        return selected[1], selected[2], "snapshot_at_or_before_event", selected[0]
-    if snapshots:
-        selected = min(snapshots, key=lambda item: (item[0] - timestamp, item[0]))
-        return selected[1], selected[2], "current_snapshot_identity_only", selected[0]
-    return {}, {}, "no_snapshot", None
+    """Resolve identity using evidence that existed no later than the event."""
+    selected = None
+    for item in snapshots:
+        if item[0] > timestamp:
+            break
+        selected = item
+    if selected is None:
+        return {}, {}, "no_prior_snapshot", None
+    return selected[1], selected[2], "snapshot_at_or_before_event", selected[0]
+
+
+def _zone_for_head(device_id, head_index, zone_index):
+    """Return an unambiguous zone for a head in the event-time snapshot."""
+    if device_id not in head_index:
+        return None, "head_absent_from_event_snapshot"
+    matches = []
+    for zone_id, zone in zone_index.items():
+        properties = zone.get("properties")
+        devices = properties.get("devices") if isinstance(properties, dict) else None
+        if not isinstance(devices, list):
+            continue
+        if device_id in {_positive_id(value) for value in devices}:
+            matches.append(zone_id)
+    if not matches:
+        return None, "head_not_mapped_in_event_snapshot"
+    if len(matches) > 1:
+        return None, "head_mapped_to_multiple_zones_in_event_snapshot"
+    return matches[0], None
 
 
 def _make_feature(event, snapshots):
@@ -140,7 +160,17 @@ def _make_feature(event, snapshots):
             return None, "unrelated_device_property"
 
         device_id = _positive_id(data.get("id"))
-        if device_id is None or device_id not in head_index:
+        if device_id is None:
+            return None, "unknown_head_id"
+
+        # A later snapshot may establish that an ID is a Fibaro head, but it
+        # must never establish that head's historical zone membership.
+        known_head_ids = {
+            known_id
+            for _, known_heads, _ in snapshots
+            for known_id in known_heads
+        }
+        if device_id not in known_head_ids:
             return None, "unknown_head_id"
 
         signal, kind, unit, minimum, maximum = definition
@@ -159,22 +189,37 @@ def _make_feature(event, snapshots):
         if old_value == new_value:
             return None, "unchanged_value"
 
+        if snapshot_basis == "no_prior_snapshot":
+            # Keep the transition long enough for duplicate detection and
+            # value validation, but never emit it as a zone feature.
+            zone_id = None
+        else:
+            zone_id, mapping_error = _zone_for_head(
+                device_id, head_index, zone_index
+            )
+            if mapping_error:
+                return None, mapping_error
+
         return {
             "source_event_id": event_id,
             "entity": "head",
             "device_id": device_id,
-            "zone_id": None,
+            "zone_id": zone_id,
             "signal": signal,
             "old_value": old_value,
             "new_value": new_value,
             "unit": unit,
             "identity_basis": (
-                "historical_snapshot_at_or_before_event"
+                "snapshot_at_or_before_event"
                 if snapshot_basis == "snapshot_at_or_before_event"
-                else "current_snapshot_identity_only"
+                else "no_prior_snapshot"
             ),
             "snapshot_at": snapshot_at,
-            "historical_zone_mapping": "unverified",
+            "historical_zone_mapping": (
+                "verified_from_event_time_snapshot"
+                if zone_id is not None
+                else "unavailable_no_prior_snapshot"
+            ),
         }, None
 
     if event_type == "ClimateZoneTemperatureChangedEvent":
@@ -182,7 +227,8 @@ def _make_feature(event, snapshots):
         if raw_zone_id is None:
             raw_zone_id = data.get("zoneId")
         zone_id = _positive_id(raw_zone_id)
-        if zone_id is None or zone_id not in zone_index:
+        # HC3 supplies the zone ID on this event; no head mapping snapshot is needed.
+        if zone_id is None:
             return None, "unknown_zone_id"
 
         old_value = _finite_number(data.get("oldValue"), 0.0, 40.0)
@@ -226,6 +272,7 @@ def build_curated_rows(db):
     signals = Counter()
     mapping = Counter()
     seen_transitions = set()
+    head_zone_verified = 0
 
     for row in rows:
         try:
@@ -271,9 +318,15 @@ def build_curated_rows(db):
             continue
         seen_transitions.add(signature)
 
+        if transition["entity"] == "head" and transition["zone_id"] is None:
+            skipped["event_without_prior_snapshot"] += 1
+            continue
+
         grouped.setdefault(timestamp, []).append(transition)
         signals[transition["signal"]] += 1
         mapping[transition["identity_basis"]] += 1
+        if transition["entity"] == "head":
+            head_zone_verified += 1
 
     features = []
     for timestamp, transitions in sorted(grouped.items()):
@@ -281,7 +334,7 @@ def build_curated_rows(db):
             "schema": FEATURE_SCHEMA,
             "source": "fibaro-hc3",
             "observed_at": timestamp,
-            "historical_head_zone_mapping": "unverified",
+            "historical_head_zone_mapping": "event_time_snapshot_only",
             "transitions": sorted(
                 transitions, key=lambda item: item["source_event_id"]
             ),
@@ -322,11 +375,22 @@ def build_curated_rows(db):
             "first": min(snapshot_times),
             "last": max(snapshot_times),
         },
-        "historical_head_zone_mapping": "unverified",
+        "historical_head_zone_mapping": "event_time_snapshot_only",
+        "head_zone_mapping": {
+            "verified": head_zone_verified,
+            "unmapped": sum(
+                skipped[key] for key in (
+                    "event_without_prior_snapshot",
+                    "head_not_mapped_in_event_snapshot",
+                    "head_mapped_to_multiple_zones_in_event_snapshot",
+                )
+            ),
+            "future_snapshot_fallback": False,
+        },
         "raw_source_events_preserved": True,
         "content_sha256": digest,
     }
-    dataset_version = f"v2-{digest[:16]}"
+    dataset_version = f"v3-{digest[:16]}"
     for item in features:
         item["dataset_version"] = dataset_version
     return features, report
@@ -378,7 +442,7 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
     if not backup.get("ok"):
         raise RuntimeError("Backup SQLite nie przeszedł weryfikacji; przerwano.")
 
-    dataset_version = f"v2-{report['content_sha256'][:16]}"
+    dataset_version = f"v3-{report['content_sha256'][:16]}"
     manifest = {
         "schema": DATASET_SCHEMA,
         "source": "fibaro-hc3",
@@ -387,10 +451,10 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
         "source_event_payloads_retained": True,
         "hc3_queried": False,
         "device_commands_sent": False,
-        "historical_head_zone_mapping": "unverified",
+        "historical_head_zone_mapping": "event_time_snapshot_only",
         "training_eligibility": (
-            "candidate_only; do_not_join_heads_to_historical_zones "
-            "without independent temporal mapping evidence"
+            "candidate_only; head transitions are assigned only when exactly "
+            "one zone maps that head in a snapshot captured at or before the event"
         ),
     }
     manifest_json = json.dumps(
