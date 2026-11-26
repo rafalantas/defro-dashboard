@@ -184,23 +184,47 @@ class FibaroHistoryCollector:
         )
         with self.store.connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            existing = db.execute(
-                "SELECT id,captured_at FROM fibaro_snapshots "
-                "WHERE payload_sha256=? ORDER BY captured_at DESC,id DESC LIMIT 1",
-                (digest,),
+            state = db.execute(
+                "SELECT metadata_json FROM collector_state "
+                "WHERE collector_name='fibaro_hc3_snapshot'"
             ).fetchone()
+            latest_digest = None
+            if state is not None:
+                try:
+                    latest_digest = json.loads(state["metadata_json"] or "{}").get("payload_sha256")
+                except (TypeError, ValueError):
+                    latest_digest = None
+            if latest_digest is None:
+                latest = db.execute(
+                    "SELECT payload_sha256 FROM fibaro_snapshots "
+                    "ORDER BY captured_at DESC,id DESC LIMIT 1"
+                ).fetchone()
+                latest_digest = latest["payload_sha256"] if latest is not None else None
+
+            if latest_digest == digest:
+                existing = db.execute(
+                    "SELECT id,captured_at FROM fibaro_snapshots "
+                    "WHERE payload_sha256=? ORDER BY captured_at DESC,id DESC LIMIT 1",
+                    (digest,),
+                ).fetchone()
+            else:
+                existing = None
+
             if existing is not None:
                 snapshot_id = int(existing["id"])
                 status = "duplicate"
                 original_captured_at = int(existing["captured_at"])
             else:
+                # Record every content transition, including A -> B -> A.
+                # Global content deduplication would erase the second A's
+                # effective timestamp and corrupt historical zone mapping.
                 cursor = db.execute(
                     "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) "
                     "VALUES(?,?,?)",
                     (stamp, payload, digest),
                 )
                 snapshot_id = int(cursor.lastrowid)
-                status = "inserted"
+                status = "inserted" if latest_digest is None else "transition"
                 original_captured_at = stamp
 
             db.execute(
