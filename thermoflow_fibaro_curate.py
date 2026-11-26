@@ -183,11 +183,8 @@ def _make_feature(event, snapshots):
     if old_value == new_value:
         return None, "unchanged_value"
 
-    values = {
-        "schema": "thermoflow-fibaro-heating-feature/1",
-        "source": "fibaro-hc3",
+    return {
         "source_event_id": event_id,
-        "observed_at": timestamp,
         "entity": entity,
         "device_id": device_id,
         "device_name": device_name,
@@ -199,16 +196,6 @@ def _make_feature(event, snapshots):
         "unit": unit,
         "mapping_basis": mapping_basis,
         "mapping_snapshot_at": snapshot_at,
-    }
-    return {
-        "feature_set": FEATURE_SET,
-        "window_start": timestamp,
-        "window_end": timestamp + 1,
-        "dataset_version": f"hc3-event-{event_id}",
-        "values_json": json.dumps(
-            values, ensure_ascii=False, sort_keys=True,
-            separators=(",", ":"), allow_nan=False,
-        ),
     }, None
 
 
@@ -219,7 +206,7 @@ def build_curated_rows(db):
     rows = db.execute(
         "SELECT event_id,observed_at,event_type,payload_json FROM fibaro_events ORDER BY observed_at,event_id"
     ).fetchall()
-    features = []
+    grouped = {}
     skipped = Counter()
     mapping = Counter()
     for row in rows:
@@ -228,18 +215,38 @@ def build_curated_rows(db):
         except (TypeError, ValueError):
             skipped["invalid_json"] += 1
             continue
-        feature, reason = _make_feature(event, snapshots)
-        if feature is None:
+        transition, reason = _make_feature(event, snapshots)
+        if transition is None:
             skipped[reason] += 1
             continue
-        features.append(feature)
-        mapping[json.loads(feature["values_json"])["mapping_basis"]] += 1
-    digest_input = "\n".join(item["values_json"] for item in features).encode("utf-8")
+        timestamp = int(event["timestamp"])
+        grouped.setdefault(timestamp, []).append(transition)
+        mapping[transition["mapping_basis"]] += 1
+
+    features = []
+    for timestamp, transitions in sorted(grouped.items()):
+        values = {
+            "schema": "thermoflow-fibaro-heating-feature/1",
+            "source": "fibaro-hc3",
+            "observed_at": timestamp,
+            "transitions": sorted(transitions, key=lambda item: item["source_event_id"]),
+        }
+        features.append({
+            "feature_set": FEATURE_SET,
+            "window_start": timestamp,
+            "window_end": timestamp + 1,
+            "values_json": json.dumps(
+                values, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            ),
+        })
+    digest_input = "\\n".join(item["values_json"] for item in features).encode("utf-8")
     digest = hashlib.sha256(digest_input).hexdigest()
-    timestamps = [json.loads(item["values_json"])["observed_at"] for item in features]
+    timestamps = [item["window_start"] for item in features]
     report = {
         "raw_events": len(rows),
-        "curated_features": len(features),
+        "curated_features": sum(len(json.loads(item["values_json"])["transitions"]) for item in features),
+        "feature_windows": len(features),
         "skipped_by_reason": dict(sorted(skipped.items())),
         "mapping_basis_counts": dict(sorted(mapping.items())),
         "first_feature_at": min(timestamps) if timestamps else None,
@@ -247,8 +254,10 @@ def build_curated_rows(db):
         "snapshots_used": len(snapshots),
         "content_sha256": digest,
     }
+    dataset_version = f"v1-{digest[:16]}"
+    for item in features:
+        item["dataset_version"] = dataset_version
     return features, report
-
 
 def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
     store = SQLiteStore(db_path)
