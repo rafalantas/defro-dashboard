@@ -20,8 +20,8 @@ from pathlib import Path
 
 from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
-FEATURE_SET = "fibaro_heating_event_v2"
-DATASET_NAME = "fibaro_heating_history_v2"
+FEATURE_SET = "fibaro_heating_event_v3"
+DATASET_NAME = "fibaro_heating_history_v3"
 DATASET_SCHEMA = "thermoflow-fibaro-curated-dataset/3"
 FEATURE_SCHEMA = "thermoflow-fibaro-heating-feature/3"
 
