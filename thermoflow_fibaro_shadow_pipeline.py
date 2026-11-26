@@ -27,7 +27,7 @@ def _local_day_bounds(day, zone):
 
 
 def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/Warsaw",
-                               minimum_events=50, minimum_observed_days=7):
+                               minimum_events=50, minimum_observed_days=7, persist=False, recorded_at=None):
     """Build quality-gated daily features and chronological shadow evaluation.
 
     Reads only persisted HC3 events and the latest persisted snapshot. It does
@@ -109,7 +109,7 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
     status = "evaluated" if backtest.get("status") == "evaluated" else (
         "blocked" if quality.get("status") == "blocked" else "collecting"
     )
-    return {
+    result = {
         "schema": "thermoflow-fibaro-shadow-pipeline/1",
         "status": status,
         "mode": "offline_shadow_only",
@@ -136,3 +136,13 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
             "return_protection": "55°C ±1°C",
         },
     }
+    if persist:
+        from thermoflow_fibaro_artifact_store import persist_fibaro_shadow_result
+        result["persistence"] = persist_fibaro_shadow_result(
+            collector.store, result, recorded_at=recorded_at
+        )
+        result["safety"]["local_store_writes"] = result["persistence"].get("status") == "persisted"
+        result["safety"]["predictions_persisted"] = result["persistence"].get("status") == "persisted"
+    else:
+        result["safety"]["local_store_writes"] = False
+    return result
