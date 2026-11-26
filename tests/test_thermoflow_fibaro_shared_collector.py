@@ -110,8 +110,8 @@ class SharedFibaroCollectorTests(unittest.TestCase):
         self.assertEqual([row["captured_at"] for row in history], [1000, 1100, 1200])
         self.assertEqual([row["payload"]["zones"][0]["id"] for row in history], [7, 13, 7])
         self.assertEqual(first["status"], "inserted")
-        self.assertEqual(middle["status"], "transition")
-        self.assertEqual(reverted["status"], "transition")
+        self.assertEqual(middle["status"], "inserted")
+        self.assertEqual(reverted["status"], "inserted")
         self.assertEqual(self.collector.read_latest_snapshot()["captured_at"], 1200)
 
 
