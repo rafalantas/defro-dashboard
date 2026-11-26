@@ -25,6 +25,7 @@ from fibaro_hc3_api import build_hc3_snapshot
 from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
 from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
+from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_store_history, read_fibaro_store_shadow
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1517,7 +1518,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history"):
+        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1532,6 +1533,34 @@ class Handler(BaseHTTPRequestHandler):
         supplied = self.headers.get("Authorization", "")
         if not hmac.compare_digest(supplied, f"Bearer {expected_token}"):
             self._send_json(401, {"error": "Brak autoryzacji API Fibaro HC3"})
+            return True
+
+        if path.startswith("/api/fibaro/store/"):
+            query = parse_qs(parsed.query)
+            database_path = os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3")
+            try:
+                if path == "/api/fibaro/store/status":
+                    result = read_fibaro_store_status(database_path)
+                else:
+                    if "start" not in query or "end" not in query:
+                        raise ValueError("Podaj wymagane parametry start i end (Unix seconds)")
+                    start, end = int(query["start"][0]), int(query["end"][0])
+                    if path == "/api/fibaro/store/history":
+                        result = read_fibaro_store_history(database_path, start=start, end=end)
+                    else:
+                        result = read_fibaro_store_shadow(database_path, start=start, end=end)
+                self._send_json(200, result)
+            except FileNotFoundError:
+                self._send_json(503, {"configured": False, "source": "shared-sqlite",
+                                      "error": "Baza ThermoFlow SQLite nie jest zainicjalizowana"})
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)[:180]})
+            except RuntimeError:
+                self._send_json(503, {"source": "shared-sqlite",
+                                      "error": "Schemat bazy ThermoFlow SQLite jest niegotowy"})
+            except Exception:
+                self._send_json(500, {"source": "shared-sqlite",
+                                      "error": "Nie udało się odczytać danych z lokalnej bazy"})
             return True
 
         history_start = history_end = None
