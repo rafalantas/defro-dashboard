@@ -93,3 +93,21 @@ or unavailable. Existing offline holdout metrics remain visible separately.
 - Return-temperature protection remains **55°C ±1°C**, unchanged.
 - Without physically verified refill provenance, Fuel ML stays unavailable
   rather than silently learning from assumed refill quantities.
+
+
+## Live outcome persistence (SQLite shadow)
+
+When the live runtime produces a Burner prediction from a checksum-verified,
+SQLite-registered model, it inserts one pending row into shadow_predictions.
+The row is keyed by model version and the confirmed FIRE-on transition
+timestamp. A matching FIRE-off transition in the same continuous observation
+session updates that exact row with the observed cycle duration and marks it
+evaluated.
+
+A process restart, disconnected sample, or telemetry gap longer than the
+runtime continuity limit breaks cycle ownership. Any already-persisted row
+then remains pending; a later FIRE-off event is never attached to it. The
+file-artifact compatibility fallback does not write live outcomes. Persistence
+is observational and failures do not affect telemetry polling, predictions,
+or controller behavior. No migration, collector, training, or model promotion
+is started by the API runtime.
