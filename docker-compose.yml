@@ -71,8 +71,6 @@ services:
     image: ghcr.io/rafalantas/defro-dashboard-api:latest
     pull_policy: always
     container_name: thermoflow-fibaro-collector
-    profiles:
-      - fibaro-collector
     depends_on:
       - api
     environment:
