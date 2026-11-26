@@ -1,0 +1,90 @@
+"""Explicit one-shot Fibaro HC3 collection into the shared ThermoFlow store.
+
+No scheduler or background worker is started. All upstream calls are GET-only.
+"""
+from __future__ import annotations
+import json
+import time
+from pathlib import Path
+from fibaro_hc3_api import build_hc3_snapshot
+from fibaro_hc3_provider import FibaroHC3Provider, HC3Config
+from thermoflow_fibaro_history_collector import FibaroHistoryCollector
+from thermoflow_store import SQLiteStore
+
+MAX_COLLECTION_SECONDS = 7 * 86400
+
+
+def collect_fibaro_once(provider, collector, *, start, end, collected_at=None):
+    """Fetch one bounded event window and one current snapshot, then report coverage."""
+    if type(start) is not int or type(end) is not int or start <= 0 or end <= start:
+        raise ValueError("start and end must be positive ordered Unix timestamps")
+    if end - start > MAX_COLLECTION_SECONDS:
+        raise ValueError("collection window must not exceed seven days")
+    stamp = int(time.time()) if collected_at is None else collected_at
+    if type(stamp) is not int or stamp <= 0:
+        raise ValueError("collected_at must be a positive Unix timestamp")
+    snapshot = build_hc3_snapshot(provider)
+    snapshot_result = collector.save_snapshot(snapshot, captured_at=stamp)
+    events = provider.get_events_range(start, end)
+    batch = collector.save_batch(events, start=start, end=end, collected_at=stamp)
+    stored = collector.read_events(start=start, end=end, limit=100000)
+    timestamps = [event["timestamp"] for event in stored
+                  if isinstance(event, dict) and type(event.get("timestamp")) is int]
+    complete = batch["status"] == "complete" and batch["invalid"] == 0
+    return {
+        "schema": "thermoflow-fibaro-collection/1",
+        "status": "complete" if complete else "partial",
+        "window": {"start": start, "end": end, "duration_seconds": end - start},
+        "snapshot": {
+            "status": snapshot_result["status"], "id": snapshot_result["id"],
+            "captured_at": snapshot_result["last_observed_at"],
+            "zones": snapshot.get("counts", {}).get("zones"),
+            "heads": snapshot.get("counts", {}).get("heads"),
+        },
+        "events": batch,
+        "coverage": {
+            "status": "fetch_complete" if complete else "partial",
+            "stored_events_in_window": len(stored),
+            "first_event_timestamp": min(timestamps) if timestamps else None,
+            "last_event_timestamp": max(timestamps) if timestamps else None,
+            "observed_span_seconds": max(timestamps) - min(timestamps) if len(timestamps) > 1 else 0,
+            "no_events_observed": not timestamps,
+            "interpretation": (
+                "HC3 event history is event-driven; an empty interval is not proof of a data gap, "
+                "and no regular sampling cadence is inferred."
+            ),
+        },
+        "safety": {
+            "read_only_upstream": True, "http_method": "GET",
+            "background_worker_started": False, "device_commands_sent": False,
+            "heating_settings_changed": False, "production_forecast_changed": False,
+        },
+    }
+
+
+def main(argv=None):
+    """Run one explicit collection cycle from an already initialized database."""
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("database", help="Path to the existing shared ThermoFlow SQLite database")
+    parser.add_argument("--start", type=int, required=True, help="Inclusive UTC Unix timestamp")
+    parser.add_argument("--end", type=int, required=True, help="Inclusive UTC Unix timestamp")
+    parser.add_argument("--collected-at", type=int, help="Optional deterministic collection timestamp")
+    args = parser.parse_args(argv)
+    if not Path(args.database).expanduser().is_file():
+        parser.error("database file does not exist; run the explicit migration/setup step first")
+    try:
+        provider = FibaroHC3Provider(HC3Config.from_env())
+        collector = FibaroHistoryCollector(SQLiteStore(args.database))
+        result = collect_fibaro_once(
+            provider, collector, start=args.start, end=args.end,
+            collected_at=args.collected_at,
+        )
+    except (ValueError, RuntimeError) as error:
+        parser.error(str(error))
+    print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    return 0 if result["status"] == "complete" else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
