@@ -33,6 +33,10 @@ class FibaroStoreApiTests(unittest.TestCase):
         result = read_fibaro_store_status(self.path)
         self.assertEqual(result["status"], "available")
         self.assertEqual(result["collector"]["events"], 1)
+        self.collector.mark_backfill_complete(1200, recorded_at=1300, initial_start=1000)
+        result = read_fibaro_store_status(self.path)
+        self.assertTrue(result["backfill"]["backfill_complete"])
+        self.assertEqual(result["backfill"]["last_successful_end"], 1200)
         self.assertTrue(result["integrity_check"]["ok"])
         self.assertTrue(result["read_only"])
 
