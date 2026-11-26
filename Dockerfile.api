@@ -75,6 +75,7 @@ COPY thermoflow_fire_snapshot.py /app/thermoflow_fire_snapshot.py
 COPY thermoflow_shadow_runtime.py thermoflow_anomaly_v2.py thermoflow_anomaly_v3.py thermoflow_health_score.py thermoflow_diagnostic_ai.py /app/
 COPY thermoflow_unified_runtime.py thermoflow_intelligence_bundle.py thermoflow_burner_ml.py thermoflow_observed_cycles.py thermoflow_ml_burner_adapter.py thermoflow_weather_impact.py /app/
 COPY thermoflow_burner_live.py thermoflow_fuel_live.py thermoflow_live_ml.py /app/
+COPY thermoflow_burner_artifact_store.py /app/thermoflow_burner_artifact_store.py
 COPY thermoflow_weather_forecast.py /app/thermoflow_weather_forecast.py
 
 COPY thermoflow_production_acceptance.py thermoflow_acceptance_evidence.py thermoflow_data_quality_gates.py thermoflow_model_monitoring.py thermoflow_shadow_evaluation.py thermoflow_digital_twin.py /app/
