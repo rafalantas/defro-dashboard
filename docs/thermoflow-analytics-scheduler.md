@@ -1,7 +1,9 @@
 # ThermoFlow local analytics scheduler
 
-The `thermoflow-analytics` Compose service runs every six hours against the
-same SSD-backed SQLite database used by the API and Fibaro collector:
+The analytics scheduler runs as a daemon thread inside the existing
+`defro-dashboard-api` process. It does not create a third Compose service or
+container. It uses the same SSD-backed SQLite database as the API and Fibaro
+collector:
 
 `/var/lib/thermoflow/thermoflow.sqlite3`
 
@@ -29,8 +31,11 @@ It performs three local stages:
   hash skips the backup and curation write.
 - SQLite write conflicts or a concurrent source change fail the current cycle
   safely; the next scheduled cycle retries.
-- The default cadence is six hours. The CLI accepts 3600–86400 seconds and
-  supports `--once` for an operator-triggered single cycle.
+- The default cadence is six hours, with a 120-second initial delay after API
+  startup so the Fibaro collector can settle. Configure it with
+  `THERMOFLOW_ANALYTICS_ENABLED`, `THERMOFLOW_ANALYTICS_INTERVAL_SECONDS` and
+  `THERMOFLOW_ANALYTICS_INITIAL_DELAY_SECONDS`. The CLI remains available for
+  operator-triggered one-off runs with `--once`.
 
 ## Model readiness
 
