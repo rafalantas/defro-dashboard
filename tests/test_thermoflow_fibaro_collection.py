@@ -17,9 +17,10 @@ class FakeProvider:
                 "properties": {"heatRequired": True}}
     def get_events_range(self, start, end):
         self.requested = (start, end)
-        return [{"id": 11, "timestamp": 1000, "type": "DevicePropertyUpdatedEvent",
+        event = {"id": 11, "timestamp": 1000, "type": "DevicePropertyUpdatedEvent",
                  "data": {"id": 2162, "property": "heatRequired",
-                          "oldValue": False, "newValue": True}}]
+                          "oldValue": False, "newValue": True}}
+        return [event] if start <= 1000 <= end else []
 
 
 class FibaroCollectionRunnerTests(unittest.TestCase):
