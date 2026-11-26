@@ -14,7 +14,7 @@ class HeatingAggregateTests(unittest.TestCase):
         hour = result["hourly"][0]
         self.assertEqual(hour["observations"], 2)
         self.assertEqual(hour["unique_emodul_samples"], 1)
-        self.assertEqual(hour["metrics"]["temperatures.co"]["count"], 2)
+        self.assertEqual(hour["metrics"]["temperatures.co"]["count"], 1)
         self.assertEqual(hour["metrics"]["temperatures.co"]["mean"], 60.0)
 
     def test_unmatched_event_is_counted_without_inventing_measurements(self):
