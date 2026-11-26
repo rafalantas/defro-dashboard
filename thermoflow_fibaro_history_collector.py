@@ -568,7 +568,7 @@ class FibaroHistoryCollector:
                 metadata = json.loads(row["metadata_json"] or "{}") if row else {}
             except (TypeError, ValueError):
                 metadata = {}
-            existing = metadata.get("initial_start")
+            existing = metadata.get("initial_start", metadata.get("backfill_start"))
             if type(existing) is int and existing > 0:
                 return existing
             metadata["initial_start"] = initial_start
@@ -589,6 +589,7 @@ class FibaroHistoryCollector:
         completed_at = int(time.time()) if recorded_at is None else recorded_at
         metadata = {
             "backfill_complete": True,
+            "initial_start": initial_start,
             "backfill_start": initial_start,
             "backfill_completed_at": completed_at,
             "consecutive_failures": 0,
