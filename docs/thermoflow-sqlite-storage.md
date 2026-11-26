@@ -11,24 +11,42 @@ ThingSpeak and the upstream devices remain source systems. This database is
 not intended to blindly mirror every upstream record. Model binaries remain
 external files; the database stores their paths, hashes, versions, and metrics.
 
+## Runtime storage contract
+
+The production Compose stack configures:
+
+- `THERMOFLOW_DB_PATH=/var/lib/thermoflow/thermoflow.sqlite3`;
+- the named Docker volume `defro-dashboard-thermoflow-db`, mounted at
+  `/var/lib/thermoflow` in the API container;
+- the existing `./data/thermoflow:/run/thermoflow:ro` mount for read-only
+  model/configuration files.
+
+The named volume survives API container replacement and image updates. It is
+separate from the read-only model-file mount. Do not remove the volume as part
+of routine container or stack updates. Removing the named volume permanently
+deletes its database contents unless a verified backup exists.
+
+The database path is fixed in the production Compose file so it cannot
+silently point outside the persistent mount. For local scripts and tests,
+`SQLiteStore` still accepts an explicit path or the `THERMOFLOW_DB_PATH`
+environment variable.
+
 ## First-step safety boundary
 
-This change adds the schema and migration engine only. It does not:
+This runtime wiring does not:
+
 - open the database during API import or startup;
+- run schema migrations automatically;
 - start collectors or background workers;
 - redirect existing JSON ledgers, ThingSpeak reads, or Fibaro history;
 - change dashboard response paths, heater control, or any live device setting.
 
 The store is initialized only by an explicit `SQLiteStore(...).migrate()`
-call from a future integration step.
-
-## Location and configuration
-
-Set `THERMOFLOW_DB_PATH` to the persistent SQLite file path. The default is
-`/var/lib/thermoflow/thermoflow.sqlite3`. The API image includes the SQL
-migration files under `/app/db/migrations`; this PR intentionally does not
-choose or mount a production host directory. Confirm the actual Portainer
-stack and storage target before deployment.
+call from an authorized maintenance or integration workflow. The first
+production initialization must be a separately planned operation with the
+actual Portainer stack confirmed, a verified backup/restore path, and explicit
+operator approval. This PR only provisions durable storage and points the
+store configuration at it.
 
 ## Migration contract
 
@@ -56,5 +74,6 @@ and tested.
 Run:
 
 ```sh
-python -m unittest discover -s tests -p test_thermoflow_store.py -v
+python -m unittest discover -s tests -p 'test_thermoflow_store.py' -v
+python -m unittest discover -s tests -p 'test_thermoflow_compose_storage.py' -v
 ```

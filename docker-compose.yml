@@ -46,6 +46,7 @@ services:
       FUEL_TZ: ${FUEL_TZ:-Europe/Warsaw}
       FUEL_TEMPS_DATA_START: ${FUEL_TEMPS_DATA_START:-}
       THINGSPEAK_WRITE_ENABLED: ${THINGSPEAK_WRITE_ENABLED:-true}
+      THERMOFLOW_DB_PATH: /var/lib/thermoflow/thermoflow.sqlite3
       THERMOFLOW_BURNER_MODEL_PATH: ${THERMOFLOW_BURNER_MODEL_PATH:-/run/thermoflow/burner-model.json}
       THERMOFLOW_FUEL_MODEL_PATH: ${THERMOFLOW_FUEL_MODEL_PATH:-/run/thermoflow/fuel-model.json}
       THERMOFLOW_FIRE_SNAPSHOT_PATH: ${THERMOFLOW_FIRE_SNAPSHOT_PATH:-}
@@ -55,6 +56,7 @@ services:
       THERMOFLOW_FUEL_LEDGER_PATH: ${THERMOFLOW_FUEL_LEDGER_PATH:-}
     volumes:
       - ./data/thermoflow:/run/thermoflow:ro
+      - thermoflow-db:/var/lib/thermoflow
     expose:
       - "8000"
     restart: unless-stopped
@@ -73,3 +75,7 @@ services:
     depends_on:
       - thermoflow
     restart: unless-stopped
+
+volumes:
+  thermoflow-db:
+    name: defro-dashboard-thermoflow-db
