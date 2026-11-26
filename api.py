@@ -28,6 +28,7 @@ from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
 from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_store_history, read_fibaro_store_shadow
+from thermoflow_fibaro_dashboard import read_fibaro_dashboard
 from thermoflow_heating_diagnostics import read_heating_analytics
 from thermoflow_analytics_scheduler import start_background_scheduler
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1524,11 +1525,35 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow", "/api/fibaro/store/analytics"):
+        if path not in ("/api/fibaro/dashboard", "/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow", "/api/fibaro/store/analytics"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
             self._send_json(405, {"error": "Fibaro HC3 API udostępnia wyłącznie GET"})
+            return True
+
+        # Bounded read-only projection from the shared SQLite archive.
+        # This endpoint never contacts HC3 or exposes credentials/raw head payloads.
+        if path == "/api/fibaro/dashboard":
+            query = parse_qs(parsed.query)
+            try:
+                days = int(query.get("days", ["14"])[0])
+                result = read_fibaro_dashboard(
+                    os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
+                    days=days,
+                )
+                self._send_json(200, result)
+            except FileNotFoundError:
+                self._send_json(503, {"source": "shared-sqlite",
+                                      "error": "Baza ThermoFlow SQLite nie jest zainicjalizowana"})
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)[:180]})
+            except RuntimeError:
+                self._send_json(503, {"source": "shared-sqlite",
+                                      "error": "Schemat bazy ThermoFlow SQLite jest niegotowy"})
+            except Exception:
+                self._send_json(500, {"source": "shared-sqlite",
+                                      "error": "Nie udało się odczytać danych Fibaro z lokalnej bazy"})
             return True
 
         expected_token = os.getenv("FIBARO_HC3_API_TOKEN", "").strip()

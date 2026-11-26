@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="/assets/css/fuel.css?v=__APP_COMMIT__">
   <link rel="stylesheet" href="/assets/css/theme.css?v=__APP_COMMIT__">
   <link rel="stylesheet" href="/assets/css/ui-polish.css?v=__APP_COMMIT__">
+  <link rel="stylesheet" href="/assets/css/fibaro.css?v=__APP_COMMIT__">
 </head>
 <body><div class="app">
   <header class="topbar"><div class="brand"><div class="brandmark"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M35 8C31 19 19 28 19 40a13 13 0 0 0 26 0c0-8-5-15-10-21 1 8-3 11-7 14 1-9 8-15 7-25Z" fill="currentColor"/><path d="M24 47c5 3 12 3 17-1" fill="none" stroke="#153b3c" stroke-linecap="round" stroke-width="4"/></svg></div><div>Centrum sterowania ogrzewaniem<small>THERMOFLOW · PANEL INSTALACJI <span class="build-version-inline" id="buildVersion" title="Wersja obrazu dashboardu">WERSJA —</span></small></div></div><div class="topright"><span class="clock" id="clock">--:--</span><span class="badge warn" id="modeBadge">● OCZEKIWANIE NA API</span><button class="button" id="pauseBtn">Ⅱ &nbsp; Wstrzymaj</button></div></header>
@@ -37,6 +38,7 @@
     <button type="button" class="view-tab" data-view-target="fuel" aria-selected="false">Paliwo i prognoza</button>
     <button type="button" class="view-tab" data-view-target="history" aria-selected="false">Historia</button>
     <button type="button" class="view-tab" data-view-target="diagnostics" aria-selected="false">Diagnostyka</button>
+    <button type="button" class="view-tab" data-view-target="fibaro" aria-selected="false">Fibaro</button>
   </nav>
 
   <div class="grid"><main class="maincol">
@@ -177,6 +179,15 @@
         </div>
       </div>
     </section>
+    <section class="card" data-view="fibaro" id="fibaroPanel" aria-labelledby="fibaroTitle" hidden>
+      <div class="cardhead"><div><h2 id="fibaroTitle">Strefy Fibaro</h2><div class="subhead">Temperatury, nastawy i historia stref klimatycznych · dane z lokalnej bazy SQLite · tylko odczyt</div></div><span class="badge warn" id="fibaroStatus">OCZEKIWANIE NA DANE</span></div>
+      <div class="fibaro-toolbar"><div id="fibaroUpdated" class="overview-muted">Oczekiwanie na snapshot Fibaro…</div><button type="button" class="button" id="fibaroRefresh">Odśwież dane</button></div>
+      <div class="fibaro-summary" id="fibaroSummary"><div class="overview-muted">Oczekiwanie na dane…</div></div>
+      <div class="fibaro-section"><h3>Temperatura i nastawa w każdej strefie</h3><div class="fibaro-zone-grid" id="fibaroZones"><p class="overview-muted">Dane zostaną pobrane po otwarciu zakładki.</p></div></div>
+      <div class="fibaro-section"><div class="cardhead" style="padding:0 0 10px"><div><h3 id="fibaroHistoryTitle">Historia temperatury</h3><div class="subhead" id="fibaroWindowMeta">Ostatnie 14 dni</div></div><div class="fibaro-history-controls" role="group" aria-label="Zakres historii temperatury"><button type="button" class="stats-period" data-fibaro-range="1" aria-pressed="false">24 h</button><button type="button" class="stats-period" data-fibaro-range="7" aria-pressed="false">7 dni</button><button type="button" class="stats-period active" data-fibaro-range="14" aria-pressed="true">14 dni</button></div></div><div class="fibaro-chart" id="fibaroChart"><div class="fibaro-chart-empty">Wybierz strefę, aby zobaczyć zapisane zmiany temperatury.</div></div></div>
+      <div class="fibaro-section"><h3>Głowice i łączność</h3><div class="fibaro-head-layout"><div class="fibaro-head-summary" id="fibaroHeadSummary"><p class="overview-muted">Oczekiwanie na dane…</p></div><div class="fibaro-head-list" id="fibaroHeadList"><p class="overview-muted">Oczekiwanie na dane…</p></div></div></div>
+      <p class="fibaro-note">Historia temperatury pochodzi wyłącznie ze zdarzeń HC3 z identyfikatorem strefy. HC3 nie zapisuje regularnej próbki w każdym momencie, dlatego brak punktów nie oznacza stałej temperatury. Nastawa na wykresie jest bieżącym punktem odniesienia, nie odtworzoną nastawą historyczną. Powiązania głowic ze strefami dotyczą wyłącznie ostatniego snapshotu. Panel nie wysyła poleceń do Fibaro i nie zmienia nastaw.</p>
+    </section>
   </main></div>
   <div class="valve-tooltip" id="valve4Tooltip" role="tooltip" hidden></div>
   <section class="card sensor-panel" data-view="diagnostics"><div class="cardhead"><div><h2>Czujniki instalacji</h2><div class="subhead">Dostępność i odczyty udostępniane przez eModul</div></div></div><div class="sensor-grid">
@@ -240,4 +251,5 @@
   <script src="/assets/js/shadow-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/intelligence-panel.js?v=__APP_COMMIT__" defer></script>
   <script src="/assets/js/acceptance-panel.js?v=__APP_COMMIT__" defer></script>
-  <script src="/assets/js/navigation.js?v=__APP_COMMIT__" defer></script></body></html>
+  <script src="/assets/js/navigation.js?v=__APP_COMMIT__" defer></script>
+  <script src="/assets/js/fibaro.js?v=__APP_COMMIT__" defer></script></body></html>
