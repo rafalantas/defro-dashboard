@@ -117,6 +117,66 @@ class SQLiteModelMonitoringTests(unittest.TestCase):
         self.assertEqual(fuel["status"], "invalid")
         self.assertIn("artifact_checksum_mismatch", fuel["alerts"])
 
+
+    def insert_fibaro_model(self, *, quality_status="ready", with_outcome=True):
+        artifact = {
+            "model_schema_version": "1.0.0",
+            "mode": "offline_shadow_only",
+        }
+        digest = hashlib.sha256(canonical(artifact).encode("utf-8")).hexdigest()
+        version = "1.0.0+" + digest[:16]
+        metadata = {
+            "schema": "thermoflow-fibaro-artifact-store/1",
+            "mode": "offline_shadow_only",
+            "model_artifact": artifact,
+            "model_artifact_sha256": digest,
+            "automatic_promotion": False,
+        }
+        metrics = {
+            "schema": "thermoflow-fibaro-artifact-store/1",
+            "quality_status": quality_status,
+            "backtest_summary": {"holdout_samples": 5},
+            "readiness": {"status": "ready" if quality_status == "ready" else "collecting"},
+        }
+        with self.store.connection() as db:
+            db.execute(
+                "INSERT INTO model_versions(model_name,version,created_at,artifact_path,"
+                "artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
+                ("fibaro_daily_heat_demand", version, NOW - 60, None,
+                 digest, canonical(metadata), "shadow"),
+            )
+            db.execute(
+                "INSERT INTO model_evaluations(model_name,model_version,dataset_version,"
+                "evaluated_at,metrics_json,status) VALUES(?,?,?,?,?,?)",
+                ("fibaro_daily_heat_demand", version, "dataset-test", NOW - 30,
+                 canonical(metrics), "evaluated"),
+            )
+            if with_outcome:
+                db.execute(
+                    "INSERT INTO shadow_predictions(model_name,model_version,entity_key,"
+                    "predicted_at,target_at,prediction_json,actual_json,evaluation_status) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    ("fibaro_daily_heat_demand", version, "local-day:2026-11-20",
+                     NOW - 100, NOW - 50, canonical({"value": 4.0}),
+                     canonical({"value": 3.0, "verified": True}), "evaluated"),
+                )
+
+    def test_reads_fibaro_artifact_evaluation_and_verified_outcomes(self):
+        self.insert_fibaro_model()
+        result = monitor_sqlite_models(self.store, now=NOW)
+        fibaro = result["modules"]["fibaro_daily_ml"]
+        self.assertEqual(fibaro["status"], "observing")
+        self.assertEqual(fibaro["outcomes"]["evaluated"], 1)
+        self.assertEqual(fibaro["evaluation"]["quality_status"], "ready")
+        self.assertEqual(fibaro["alerts"], [])
+
+    def test_fibaro_quality_gate_not_ready_stays_collecting(self):
+        self.insert_fibaro_model(quality_status="collecting")
+        result = monitor_sqlite_models(self.store, now=NOW)
+        fibaro = result["modules"]["fibaro_daily_ml"]
+        self.assertEqual(fibaro["status"], "collecting")
+        self.assertIn("fibaro_quality_gate_not_ready", fibaro["alerts"])
+
     def test_pending_prediction_does_not_count_as_verified_coverage(self):
         self.insert_fuel_model(predictions=False)
         result = monitor_sqlite_models(self.store, now=NOW)

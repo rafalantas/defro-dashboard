@@ -42,8 +42,8 @@ def _artifact_state(name, artifact, now, max_age):
 
 
 def monitor_models(*, now, artifacts=None, ledgers=None, artifact_errors=None,
-                   max_artifact_age_seconds=30*86400, minimum_coverage=0.8,
-                   regression_worsening_ratio=0.25):
+                   fibaro=None, max_artifact_age_seconds=30*86400,
+                   minimum_coverage=0.8, regression_worsening_ratio=0.25):
     """Evaluate only recorded evidence; absence is collecting, not healthy."""
     if type(now) not in (int, float) or not isfinite(now) or now <= 0:
         raise ValueError("now must be a positive finite UTC timestamp")
@@ -108,6 +108,53 @@ def monitor_models(*, now, artifacts=None, ledgers=None, artifact_errors=None,
             status = "observing"
         modules[name] = {"status": status, "artifact": state, "evaluation": evaluation,
                          "alerts": sorted(set(alerts))}
+    fibaro = fibaro or {}
+    fibaro_error = artifact_errors.get("fibaro_daily_ml")
+    fibaro_state = (
+        {"status": "invalid", "age_seconds": None, "alerts": [fibaro_error]}
+        if fibaro_error else
+        _artifact_state("fibaro_daily_ml", artifacts.get("fibaro_daily_ml"),
+                        now, max_artifact_age_seconds)
+    )
+    fibaro_alerts = list(fibaro_state["alerts"])
+    fibaro_evaluation = fibaro.get("evaluation")
+    if not isinstance(fibaro_evaluation, dict):
+        fibaro_alerts.append("evaluation_missing")
+    else:
+        if fibaro_evaluation.get("status") != "evaluated":
+            fibaro_alerts.append("evaluation_not_complete")
+        if fibaro_evaluation.get("quality_status") != "ready":
+            fibaro_alerts.append("fibaro_quality_gate_not_ready")
+    outcomes = fibaro.get("outcomes") if isinstance(fibaro.get("outcomes"), dict) else {}
+    total_outcomes = int(outcomes.get("total", 0) or 0)
+    evaluated_outcomes = int(outcomes.get("evaluated", 0) or 0)
+    pending_outcomes = int(outcomes.get("pending", 0) or 0)
+    if total_outcomes == 0:
+        fibaro_alerts.append("shadow_outcomes_missing")
+    elif evaluated_outcomes == 0:
+        fibaro_alerts.append("shadow_outcomes_unverified")
+    elif pending_outcomes:
+        fibaro_alerts.append("shadow_outcomes_pending")
+    if fibaro_state["status"] in ("missing", "invalid", "stale"):
+        fibaro_status = fibaro_state["status"]
+    elif (not isinstance(fibaro_evaluation, dict)
+          or fibaro_evaluation.get("status") != "evaluated"
+          or fibaro_evaluation.get("quality_status") != "ready"
+          or evaluated_outcomes == 0):
+        fibaro_status = "collecting"
+    elif pending_outcomes:
+        fibaro_status = "limited_coverage"
+    else:
+        fibaro_status = "observing"
+    modules["fibaro_daily_ml"] = {
+        "status": fibaro_status, "artifact": fibaro_state,
+        "evaluation": fibaro_evaluation,
+        "outcomes": {
+            "total": total_outcomes, "evaluated": evaluated_outcomes,
+            "pending": pending_outcomes,
+        },
+        "alerts": sorted(set(fibaro_alerts)),
+    }
     overall = ("review" if any(x["status"] in ("invalid", "stale", "review") for x in modules.values())
                else "collecting" if any(x["status"] in ("missing", "collecting") for x in modules.values())
                else "limited_coverage" if any(x["status"] == "limited_coverage" for x in modules.values())
@@ -192,19 +239,23 @@ def _build_ledger(module_name, rows, now):
 
 def monitor_sqlite_models(store, *, now):
     """Build a read-only monitoring report from registered SQLite artifacts and outcomes."""
-    artifacts, ledgers, errors = {}, {}, {}
+    artifacts, ledgers, errors, fibaro = {}, {}, {}, {}
     if store is None:
         return monitor_models(now=now)
     try:
         with store.connection() as db:
             model_rows = {
                 "burner_ml": db.execute(
-                    "SELECT version,artifact_sha256,metadata_json FROM model_versions "
+                    "SELECT version,created_at,artifact_sha256,metadata_json FROM model_versions "
                     "WHERE model_name='burner_cycle_duration' ORDER BY created_at DESC,id DESC LIMIT 1"
                 ).fetchone(),
                 "fuel_ml": db.execute(
                     "SELECT version,artifact_sha256,metadata_json FROM model_versions "
                     "WHERE model_name='fuel_rate' ORDER BY created_at DESC,id DESC LIMIT 1"
+                ).fetchone(),
+                "fibaro_daily_ml": db.execute(
+                    "SELECT version,artifact_sha256,metadata_json FROM model_versions "
+                    "WHERE model_name='fibaro_daily_heat_demand' ORDER BY created_at DESC,id DESC LIMIT 1"
                 ).fetchone(),
             }
             for module_name, row in model_rows.items():
@@ -218,25 +269,76 @@ def monitor_sqlite_models(store, *, now):
                             or _artifact_digest(artifact) != expected
                             or metadata.get("model_artifact_sha256") != expected):
                         raise ValueError("artifact_checksum_mismatch")
-                    artifacts[module_name] = artifact
+                    if module_name == "fibaro_daily_ml" and "created_at" not in artifact:
+                        # Fibaro stores the model payload, not a live-artifact
+                        # envelope. Use its registered row timestamp for freshness.
+                        artifacts[module_name] = {**artifact, "created_at": row["created_at"]}
+                    else:
+                        artifacts[module_name] = artifact
                 except (TypeError, ValueError, KeyError, RecursionError):
                     errors[module_name] = "artifact_checksum_mismatch"
 
-                model_name = ("burner_cycle_duration" if module_name == "burner_ml" else "fuel_rate")
+                model_name = {
+                    "burner_ml": "burner_cycle_duration",
+                    "fuel_ml": "fuel_rate",
+                    "fibaro_daily_ml": "fibaro_daily_heat_demand",
+                }[module_name]
                 prediction_rows = db.execute(
-                    "SELECT entity_key,predicted_at,target_at,prediction_json,actual_json "
+                    "SELECT entity_key,predicted_at,target_at,prediction_json,actual_json,evaluation_status "
                     "FROM shadow_predictions WHERE model_name=? AND model_version=? "
                     "ORDER BY target_at ASC,id ASC LIMIT 5000",
                     (model_name, row["version"]),
                 ).fetchall()
-                ledger = _build_ledger(module_name, prediction_rows, int(now))
-                if ledger is not None:
-                    ledgers[module_name] = ledger
+                if module_name == "fibaro_daily_ml":
+                    evaluation_row = db.execute(
+                        "SELECT status,metrics_json FROM model_evaluations "
+                        "WHERE model_name=? AND model_version=? "
+                        "ORDER BY evaluated_at DESC,id DESC LIMIT 1",
+                        (model_name, row["version"]),
+                    ).fetchone()
+                    evaluation = None
+                    if evaluation_row is not None:
+                        try:
+                            evaluation = json.loads(evaluation_row["metrics_json"])
+                            if not isinstance(evaluation, dict):
+                                raise ValueError("invalid Fibaro evaluation")
+                            evaluation["status"] = evaluation_row["status"]
+                        except (TypeError, ValueError):
+                            errors[module_name] = "evaluation_metadata_invalid"
+                            evaluation = None
+                    evaluated = pending = 0
+                    for prediction in prediction_rows:
+                        if prediction["evaluation_status"] != "evaluated" or not prediction["actual_json"]:
+                            pending += 1
+                            continue
+                        try:
+                            actual = json.loads(prediction["actual_json"])
+                        except (TypeError, ValueError):
+                            pending += 1
+                            continue
+                        if (isinstance(actual, dict) and actual.get("verified") is True
+                                and type(actual.get("value")) in (int, float)
+                                and isfinite(actual["value"])):
+                            evaluated += 1
+                        else:
+                            pending += 1
+                    fibaro = {
+                        "evaluation": evaluation,
+                        "outcomes": {
+                            "total": len(prediction_rows),
+                            "evaluated": evaluated,
+                            "pending": pending,
+                        },
+                    }
+                else:
+                    ledger = _build_ledger(module_name, prediction_rows, int(now))
+                    if ledger is not None:
+                        ledgers[module_name] = ledger
     except (OSError, sqlite3.Error, KeyError, TypeError, ValueError):
         return monitor_models(now=now)
 
     return monitor_models(now=now, artifacts=artifacts, ledgers=ledgers,
-                          artifact_errors=errors)
+                          artifact_errors=errors, fibaro=fibaro)
 
 
 def monitor_sqlite_database(database_path=DEFAULT_DB_PATH, *, now):

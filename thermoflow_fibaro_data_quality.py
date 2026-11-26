@@ -21,7 +21,8 @@ def _finite_number(value):
 
 
 def assess_fibaro_history_quality(events, snapshot, *, start, end,
-                                  minimum_events=50, minimum_observed_days=7):
+                                  minimum_events=50, minimum_observed_days=7,
+                                  snapshot_history=None):
     """Assess event integrity and evidence volume; fail closed for ML eligibility."""
     if (type(start) is not int or type(end) is not int or start <= 0
             or end <= start or end - start > 90 * 86400):
@@ -80,11 +81,30 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
             issues.append(_issue("implausible_temperature_values", "blocking",
                                  f"{implausible} temperature values fall outside -10..45 °C."))
 
-    zones = snapshot.get("zones")
-    heads = snapshot.get("heads")
-    if not isinstance(zones, list) or not zones or not isinstance(heads, list) or not heads:
-        issues.append(_issue("snapshot_mapping_unavailable", "blocking",
-                             "A non-empty current zone/head snapshot is required for event mapping."))
+    if snapshot_history is not None and not isinstance(snapshot_history, list):
+        raise ValueError("snapshot_history must be a list when supplied")
+    if snapshot_history is None:
+        zones = snapshot.get("zones")
+        heads = snapshot.get("heads")
+        mapping_available = (
+            isinstance(zones, list) and bool(zones)
+            and isinstance(heads, list) and bool(heads)
+        )
+    else:
+        mapping_available = any(
+            isinstance(record, dict)
+            and isinstance(record.get("payload"), dict)
+            and isinstance(record["payload"].get("zones"), list)
+            and bool(record["payload"]["zones"])
+            and isinstance(record["payload"].get("heads"), list)
+            and bool(record["payload"]["heads"])
+            for record in snapshot_history
+        )
+    if not mapping_available:
+        issues.append(_issue(
+            "snapshot_mapping_unavailable", "blocking",
+            "No persisted snapshot with non-empty zone/head mapping is available for the requested history."
+        ))
 
     recognized = transitions = suspected_spikes = 0
     recognized_timestamps = set()
@@ -97,7 +117,10 @@ def assess_fibaro_history_quality(events, snapshot, *, start, end,
             chunk_end = min(cursor + MAX_HISTORY_SECONDS, end)
             chunk = [event for event in valid
                      if cursor <= event["timestamp"] <= chunk_end]
-            history = analyze_fibaro_event_history(snapshot, chunk, cursor, chunk_end)
+            history = analyze_fibaro_event_history(
+                snapshot, chunk, cursor, chunk_end,
+                snapshot_history=snapshot_history,
+            )
             recognized += history["counts"]["events_recognized"]
             transitions += history["counts"]["transitions"]
             suspected_spikes += history["temperature_quality"]["suspected_transient_spikes"]

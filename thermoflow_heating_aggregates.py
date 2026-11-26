@@ -23,7 +23,17 @@ def _zone(name):
 
 
 def _numeric(value):
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            value = float(value)
+        except ValueError:
+            return None
+    if not isinstance(value, (int, float)):
         return None
     number = float(value)
     return number if number == number and abs(number) != float("inf") else None
@@ -62,7 +72,8 @@ def _new_bucket(key, label, window_start, window_end):
     return {"bucket": key, "label": label, "window_start": window_start,
             "window_end": window_end, "observations": 0,
             "matched_fibaro_transitions": 0, "signal_counts": {},
-            "metrics": {}, "_timestamps": set(), "_samples": set()}
+            "metrics": {}, "_timestamps": set(), "_samples": set(),
+            "_emodul_samples": set()}
 
 
 def _add_metric(target, name, value):
@@ -78,7 +89,8 @@ def _add_metric(target, name, value):
 
 
 def _finalize(bucket):
-    bucket["unique_emodul_samples"] = len(bucket.pop("_samples"))
+    bucket["unique_telemetry_samples"] = len(bucket.pop("_samples"))
+    bucket["unique_emodul_samples"] = len(bucket.pop("_emodul_samples"))
     timestamps = sorted(bucket.pop("_timestamps"))
     bucket["first_observed_at"] = timestamps[0] if timestamps else None
     bucket["last_observed_at"] = timestamps[-1] if timestamps else None
@@ -116,20 +128,35 @@ def aggregate_heating_observations(aligned, *, timezone_name="Europe/Warsaw"):
             signal = row.get("signal")
             if isinstance(signal, str):
                 bucket["signal_counts"][signal] = bucket["signal_counts"].get(signal, 0) + 1
-            if row.get("matched") and isinstance(row.get("emodul"), dict):
+            telemetry = row.get("telemetry")
+            if not isinstance(telemetry, dict) and isinstance(row.get("emodul"), dict):
+                telemetry = {"emodul": row["emodul"]}
+            if row.get("matched") and isinstance(telemetry, dict):
                 bucket["matched_fibaro_transitions"] += 1
-                emodul = row["emodul"]
-                observed = emodul.get("observed_at", {})
-                sample_stamp = observed.get("unix") if isinstance(observed, dict) else None
-                sample_key = (sample_stamp, emodul.get("source_key"))
-                is_new_sample = sample_stamp is not None and sample_key not in bucket["_samples"]
-                if is_new_sample:
+                for source, sample in telemetry.items():
+                    if not isinstance(sample, dict):
+                        continue
+                    observed = sample.get("observed_at", {})
+                    sample_stamp = observed.get("unix") if isinstance(observed, dict) else None
+                    sample_key = (source, sample_stamp, sample.get("source_key"))
+                    if sample_stamp is None or sample_key in bucket["_samples"]:
+                        continue
                     bucket["_samples"].add(sample_key)
+                    if source == "emodul":
+                        bucket["_emodul_samples"].add(sample_key)
                     bucket["_timestamps"].add(sample_stamp)
-                    data = emodul.get("data")
-                    if isinstance(data, dict):
+                    data = sample.get("data")
+                    if not isinstance(data, dict):
+                        continue
+                    if source == "emodul":
                         for path in METRIC_PATHS:
                             _add_metric(bucket, path, _path(data, path))
+                    else:
+                        # Preserve ThingSpeak's original field identity. Until
+                        # channel field labels are available, never guess units.
+                        for field, value in sorted(data.items()):
+                            if isinstance(field, str) and field.startswith("field"):
+                                _add_metric(bucket, f"{source}.{field}", value)
     result = {}
     for period, values in buckets.items():
         result["hourly" if period == "hour" else "daily"] = [

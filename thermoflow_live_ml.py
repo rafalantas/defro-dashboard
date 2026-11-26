@@ -15,6 +15,7 @@ from thermoflow_burner_live import predict_cycle_duration
 from thermoflow_fuel_live import load_live_artifact as load_fuel_artifact
 from thermoflow_fuel_live import predict_fuel_rate
 from thermoflow_burner_artifact_store import load_burner_model_artifact
+from thermoflow_fuel_artifact_store import load_fuel_model_artifact
 from thermoflow_store import SQLiteStore
 
 MAX_ARTIFACT_BYTES = 16 * 1024
@@ -109,7 +110,19 @@ class LiveMLRuntime:
                 burner_state, burner = "invalid_or_stale_artifact", None
         else:
             burner_state, burner = self._load(self.burner_path, load_burner_artifact, clock)
-        fuel_state, fuel = self._load(self.fuel_path, load_fuel_artifact, clock)
+        if self._store is not None:
+            try:
+                stored_fuel = load_fuel_model_artifact(self._store, now=clock)
+                if stored_fuel is not None:
+                    fuel_state, fuel = "loaded_sqlite", stored_fuel["artifact"]
+                else:
+                    fuel_state, fuel = self._load(self.fuel_path, load_fuel_artifact, clock)
+            except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
+                # A corrupt registered artifact must fail closed; never fall back
+                # to a potentially older file when SQLite is authoritative.
+                fuel_state, fuel = "invalid_or_stale_artifact", None
+        else:
+            fuel_state, fuel = self._load(self.fuel_path, load_fuel_artifact, clock)
         with self._lock:
             self._burner_state, self._burner = burner_state, burner
             self._burner_model_version = burner_version
