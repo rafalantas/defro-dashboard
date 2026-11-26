@@ -172,12 +172,6 @@ def _make_feature(event, snapshots):
         }
         if device_id not in known_head_ids:
             return None, "unknown_head_id"
-        if snapshot_basis == "no_prior_snapshot":
-            return None, "event_without_prior_snapshot"
-
-        zone_id, mapping_error = _zone_for_head(device_id, head_index, zone_index)
-        if mapping_error:
-            return None, mapping_error
 
         signal, kind, unit, minimum, maximum = definition
         old_raw = data.get("oldValue")
@@ -195,6 +189,17 @@ def _make_feature(event, snapshots):
         if old_value == new_value:
             return None, "unchanged_value"
 
+        if snapshot_basis == "no_prior_snapshot":
+            # Keep the transition long enough for duplicate detection and
+            # value validation, but never emit it as a zone feature.
+            zone_id = None
+        else:
+            zone_id, mapping_error = _zone_for_head(
+                device_id, head_index, zone_index
+            )
+            if mapping_error:
+                return None, mapping_error
+
         return {
             "source_event_id": event_id,
             "entity": "head",
@@ -204,9 +209,17 @@ def _make_feature(event, snapshots):
             "old_value": old_value,
             "new_value": new_value,
             "unit": unit,
-            "identity_basis": "snapshot_at_or_before_event",
+            "identity_basis": (
+                "snapshot_at_or_before_event"
+                if snapshot_basis == "snapshot_at_or_before_event"
+                else "no_prior_snapshot"
+            ),
             "snapshot_at": snapshot_at,
-            "historical_zone_mapping": "verified_from_event_time_snapshot",
+            "historical_zone_mapping": (
+                "verified_from_event_time_snapshot"
+                if zone_id is not None
+                else "unavailable_no_prior_snapshot"
+            ),
         }, None
 
     if event_type == "ClimateZoneTemperatureChangedEvent":
@@ -304,6 +317,10 @@ def build_curated_rows(db):
             skipped["duplicate_transition"] += 1
             continue
         seen_transitions.add(signature)
+
+        if transition["entity"] == "head" and transition["zone_id"] is None:
+            skipped["event_without_prior_snapshot"] += 1
+            continue
 
         grouped.setdefault(timestamp, []).append(transition)
         signals[transition["signal"]] += 1
