@@ -189,7 +189,8 @@ def run_scheduler(cycle, *, interval_seconds=DEFAULT_INTERVAL_SECONDS,
     while max_cycles is None or len(results) < max_cycles:
         try:
             result = cycle()
-            results.append(result)
+            if max_cycles is not None:
+                results.append(result)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False), flush=True)
         except Exception as error:
             # Keep logs useful without exposing paths, URLs or upstream details.
@@ -198,7 +199,8 @@ def run_scheduler(cycle, *, interval_seconds=DEFAULT_INTERVAL_SECONDS,
                 "status": "error",
                 "error_type": type(error).__name__,
             }
-            results.append(failure)
+            if max_cycles is not None:
+                results.append(failure)
             print(json.dumps(failure), flush=True)
         if max_cycles is None or len(results) < max_cycles:
             wait(interval_seconds)
