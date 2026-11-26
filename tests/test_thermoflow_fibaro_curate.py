@@ -1,19 +1,26 @@
-"""Regression tests for safe Fibaro raw-history curation."""
+"""Regression tests for the safe Fibaro ML candidate dataset."""
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from thermoflow_store import SQLiteStore
-from thermoflow_fibaro_curate import curate_database, FEATURE_SET
+from thermoflow_fibaro_curate import (
+    DATASET_NAME,
+    FEATURE_SET,
+    build_curated_rows,
+    curate_database,
+)
 
 
-class FibaroCurationTests(unittest.TestCase):
+class FibaroCandidateDatasetTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / "thermoflow.sqlite3"
+        self.backup_dir = Path(self.temp.name) / "backups"
         self.store = SQLiteStore(self.db_path)
         self.store.migrate()
+
         snapshot = {
             "schema": "fibaro-hc3-snapshot/1",
             "zones": [
@@ -37,7 +44,16 @@ class FibaroCurationTests(unittest.TestCase):
              "data": {"id": 2297, "property": "heatRequired", "oldValue": False, "newValue": True}},
             {"id": 5, "timestamp": 904, "type": "DevicePropertyUpdatedEvent",
              "data": {"id": 9999, "property": "heatingThermostatSetpoint", "oldValue": 20.0, "newValue": 21.0}},
+            {"id": 6, "timestamp": 905, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2170, "property": "windowOpened", "oldValue": False, "newValue": True}},
+            {"id": 7, "timestamp": 906, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatingThermostatSetpoint", "oldValue": 21.0, "newValue": 21.0}},
+            {"id": 8, "timestamp": 900, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatingThermostatSetpoint", "oldValue": 21.5, "newValue": 21.0}},
+            {"id": 9, "timestamp": 907, "type": "DevicePropertyUpdatedEvent",
+             "data": {"id": 2162, "property": "heatRequired", "oldValue": "false", "newValue": True}},
         ]
+
         with self.store.connection() as db:
             db.execute(
                 "INSERT INTO fibaro_snapshots(captured_at,payload_json,payload_sha256) VALUES(?,?,?)",
@@ -48,8 +64,14 @@ class FibaroCurationTests(unittest.TestCase):
                     """INSERT INTO fibaro_events(
                         event_id,observed_at,event_type,payload_json,payload_sha256,collected_at
                     ) VALUES(?,?,?,?,?,?)""",
-                    (event["id"], event["timestamp"], event["type"],
-                     json.dumps(event), f"hash-{event['id']}", 1001),
+                    (
+                        event["id"],
+                        event["timestamp"],
+                        event["type"],
+                        json.dumps(event),
+                        f"hash-{event['id']}",
+                        1001,
+                    ),
                 )
             db.execute(
                 """INSERT INTO telemetry_samples(
@@ -60,60 +82,122 @@ class FibaroCurationTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_dry_run_is_read_only_and_excludes_noise(self):
+    def test_dry_run_is_read_only_and_filters_to_useful_signals(self):
         result = curate_database(str(self.db_path), apply=False)
-        self.assertEqual(result["status"], "dry_run")
-        self.assertEqual(result["raw_events"], 5)
-        self.assertEqual(result["curated_features"], 3)
-        self.assertEqual(result["skipped_by_reason"]["unrelated_head_property"], 1)
-        self.assertEqual(result["skipped_by_reason"]["not_a_mapped_head"], 1)
-        with self.store.connection() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 5)
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM feature_windows").fetchone()[0], 0)
 
-    def test_apply_backs_up_then_atomically_replaces_raw_events(self):
-        result = curate_database(str(self.db_path), apply=True)
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["raw_events"], 9)
+        self.assertEqual(result["curated_features"], 4)
+        self.assertEqual(result["feature_windows"], 4)
+        self.assertEqual(
+            result["signal_counts"],
+            {
+                "heat_required": 1,
+                "setpoint": 1,
+                "window_open": 1,
+                "zone_temperature": 1,
+            },
+        )
+        self.assertEqual(result["skipped_by_reason"]["unrelated_device_property"], 1)
+        self.assertEqual(result["skipped_by_reason"]["unknown_head_id"], 1)
+        self.assertEqual(result["skipped_by_reason"]["unchanged_value"], 1)
+        self.assertEqual(result["skipped_by_reason"]["duplicate_transition"], 1)
+        self.assertEqual(result["skipped_by_reason"]["invalid_boolean_transition"], 1)
+        self.assertEqual(result["historical_head_zone_mapping"], "unverified")
+        self.assertTrue(result["raw_source_events_preserved"])
+
+        with self.store.connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 9)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM feature_windows").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM datasets").fetchone()[0], 0)
+
+    def test_head_features_do_not_claim_historical_zone_membership(self):
+        with self.store.connection() as db:
+            features, report = build_curated_rows(db)
+
+        transitions = [
+            transition
+            for feature in features
+            for transition in json.loads(feature["values_json"])["transitions"]
+        ]
+        head_transitions = [item for item in transitions if item["entity"] == "head"]
+        zone_transitions = [item for item in transitions if item["entity"] == "zone"]
+
+        self.assertEqual(len(head_transitions), 3)
+        self.assertTrue(all(item["zone_id"] is None for item in head_transitions))
+        self.assertTrue(all(item["historical_zone_mapping"] == "unverified" for item in head_transitions))
+        self.assertTrue(all(item["identity_basis"] == "current_snapshot_identity_only" for item in head_transitions))
+        self.assertEqual(len(zone_transitions), 1)
+        self.assertEqual(zone_transitions[0]["zone_id"], 7)
+        self.assertEqual(zone_transitions[0]["identity_basis"], "zone_id_from_event_payload")
+        self.assertEqual(report["snapshots_used"], 1)
+
+    def test_dataset_hash_is_deterministic(self):
+        with self.store.connection() as db:
+            _, first = build_curated_rows(db)
+        with self.store.connection() as db:
+            _, second = build_curated_rows(db)
+        self.assertEqual(first["content_sha256"], second["content_sha256"])
+
+    def test_apply_persists_candidate_and_retains_all_raw_source_events(self):
+        result = curate_database(
+            str(self.db_path), apply=True, backup_dir=str(self.backup_dir)
+        )
+
         self.assertEqual(result["status"], "applied")
-        self.assertEqual(result["raw_events_deleted"], 5)
-        self.assertEqual(result["fibaro_events_remaining"], 0)
+        self.assertEqual(result["raw_events_deleted"], 0)
+        self.assertEqual(result["fibaro_events_remaining"], 9)
+        self.assertTrue(result["raw_source_events_preserved"])
+        self.assertEqual(result["dataset_status"], "candidate")
         self.assertEqual(result["sqlite_integrity"], "ok")
         self.assertTrue(Path(result["backup"]).is_file())
         self.assertEqual(result["backup_integrity"], ["ok"])
+
         with self.store.connection() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 9)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_snapshots").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM telemetry_samples").fetchone()[0], 1)
             rows = db.execute(
                 "SELECT values_json FROM feature_windows WHERE feature_set=? ORDER BY window_start",
                 (FEATURE_SET,),
             ).fetchall()
-            self.assertEqual(len(rows), 3)
-            features = [json.loads(row["values_json"]) for row in rows]
+            self.assertEqual(len(rows), 4)
             transitions = [
-                transition for feature in features
-                for transition in feature["transitions"]
+                item
+                for row in rows
+                for item in json.loads(row["values_json"])["transitions"]
             ]
             self.assertEqual(
                 {item["signal"] for item in transitions},
-                {"setpoint", "zone_temperature", "heat_required"},
+                {"setpoint", "zone_temperature", "heat_required", "window_open"},
             )
-            self.assertTrue(all(
-                item["mapping_basis"] == "nearest_available_snapshot_after_event"
-                for item in transitions
-            ))
             self.assertEqual(
-                {feature["schema"] for feature in features},
-                {"thermoflow-fibaro-heating-feature/1"},
+                {json.loads(row["values_json"])["schema"] for row in rows},
+                {"thermoflow-fibaro-heating-feature/2"},
             )
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM datasets WHERE name='fibaro_heating_history'").fetchone()[0], 1)
+            dataset = db.execute(
+                "SELECT status,manifest_json FROM datasets WHERE name=?",
+                (DATASET_NAME,),
+            ).fetchone()
+            self.assertIsNotNone(dataset)
+            self.assertEqual(dataset["status"], "candidate")
+            manifest = json.loads(dataset["manifest_json"])
+            self.assertTrue(manifest["source_event_payloads_retained"])
+            self.assertEqual(manifest["historical_head_zone_mapping"], "unverified")
 
-    def test_missing_snapshot_fails_without_deleting_raw_events(self):
+    def test_missing_snapshot_fails_without_writing_or_deleting(self):
         with self.store.connection() as db:
             db.execute("DELETE FROM fibaro_snapshots")
+
         with self.assertRaises(RuntimeError):
-            curate_database(str(self.db_path), apply=True)
+            curate_database(
+                str(self.db_path), apply=True, backup_dir=str(self.backup_dir)
+            )
+
         with self.store.connection() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 5)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM fibaro_events").fetchone()[0], 9)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM feature_windows").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM datasets").fetchone()[0], 0)
 
 
 if __name__ == "__main__":
