@@ -13,6 +13,8 @@ from thermoflow_burner_live import load_live_artifact as load_burner_artifact
 from thermoflow_burner_live import predict_cycle_duration
 from thermoflow_fuel_live import load_live_artifact as load_fuel_artifact
 from thermoflow_fuel_live import predict_fuel_rate
+from thermoflow_burner_artifact_store import load_burner_model_artifact
+from thermoflow_store import SQLiteStore
 
 MAX_ARTIFACT_BYTES = 16 * 1024
 MAX_TELEMETRY_AGE = 90
@@ -51,9 +53,15 @@ def _regular_file(path):
 class LiveMLRuntime:
     """One poller writer, read-only HTTP readers, and fail-closed model loading."""
 
-    def __init__(self, *, burner_path=None, fuel_path=None):
+    def __init__(self, *, burner_path=None, fuel_path=None, db_path=None):
         self.burner_path = (burner_path or "").strip() or None
         self.fuel_path = (fuel_path or "").strip() or None
+        configured_db = (db_path or os.getenv("THERMOFLOW_DB_PATH", "")).strip()
+        # Do not create a missing DB or run migrations from the API runtime.
+        self._store = SQLiteStore(configured_db) if configured_db and os.path.isfile(configured_db) else None
+        self._burner_model_version = None
+        self._prediction_entity_key = None
+        self._prediction_model_version = None
         self._lock = Lock()
         self._burner = None
         self._fuel = None
@@ -68,7 +76,7 @@ class LiveMLRuntime:
 
     @property
     def configured(self):
-        return bool(self.burner_path or self.fuel_path)
+        return bool(self.burner_path or self.fuel_path or self._store)
 
     def _load(self, path, loader, now):
         if not path:
@@ -82,10 +90,24 @@ class LiveMLRuntime:
 
     def refresh(self, *, now=None):
         clock = time.time() if now is None else now
-        burner_state, burner = self._load(self.burner_path, load_burner_artifact, clock)
+        burner_version = None
+        if self._store is not None:
+            try:
+                stored = load_burner_model_artifact(self._store, now=clock)
+                if stored is not None:
+                    burner_state, burner = "loaded_sqlite", stored["artifact"]
+                    burner_version = stored["model_version"]
+                else:
+                    burner_state, burner = self._load(self.burner_path, load_burner_artifact, clock)
+            except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
+                # Corrupt/stale DB artifacts fail closed; do not fall back to an older file.
+                burner_state, burner = "invalid_or_stale_artifact", None
+        else:
+            burner_state, burner = self._load(self.burner_path, load_burner_artifact, clock)
         fuel_state, fuel = self._load(self.fuel_path, load_fuel_artifact, clock)
         with self._lock:
             self._burner_state, self._burner = burner_state, burner
+            self._burner_model_version = burner_version
             self._fuel_state, self._fuel = fuel_state, fuel
 
     def observe(self, payload):
