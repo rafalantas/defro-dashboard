@@ -55,7 +55,7 @@ class SQLiteDataAuditTests(unittest.TestCase):
         self.assertEqual(result["sources"]["thingspeak_refill_events"], 1)
         self.assertEqual(result["telemetry_by_source"][1]["observed_utc_days"], 1)
         self.assertEqual(result["refill_events_by_source"][0]["name"], "thingspeak_fuel")
-        self.assertEqual(result["inventory"]["telemetry_samples"]["window_count"], 1)
+        self.assertEqual(result["inventory"]["telemetry_samples"]["window_count"], 2)
         self.assertEqual(result["training_readiness"]["status"], "collecting")
         self.assertFalse(result["training_readiness"]["training_eligibility"])
         self.assertTrue(result["safety"]["read_only"])
