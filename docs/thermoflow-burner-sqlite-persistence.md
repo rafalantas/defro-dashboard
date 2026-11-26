@@ -21,22 +21,28 @@ SHA-256 when loaded.
 
 The database must already exist and have the current schema. This command does
 not run migrations, fetch data, train a model, promote a model, or touch the
-boiler controller:
+boiler controller.
+
+Copy the three local JSON files into the running API container, then import
+them into the existing SSD-backed database:
 
 ```sh
-docker exec -i defro-dashboard-api \
-  python -m thermoflow_burner_artifact_store \
+docker cp "$HOME/observed-cycles.json" defro-dashboard-api:/tmp/observed-cycles.json
+docker cp "$HOME/burner-benchmark.json" defro-dashboard-api:/tmp/burner-benchmark.json
+docker cp "$HOME/burner-model.json" defro-dashboard-api:/tmp/burner-model.json
+
+docker exec defro-dashboard-api python -m thermoflow_burner_artifact_store \
   /var/lib/thermoflow/thermoflow.sqlite3 \
-  /dev/stdin /tmp/burner-benchmark.json /tmp/burner-model.json
+  /tmp/observed-cycles.json \
+  /tmp/burner-benchmark.json \
+  /tmp/burner-model.json
 ```
 
-The command above is illustrative only: the three JSON input files must be
-available inside the container. Operators may instead run the module in the
-environment where those files and the database are available.
-
 Repeated imports of the same dataset/model are idempotent. Changed source
-snapshots create a new dataset version. The holdout is stored with its actual
-FIRE-confirmed duration and the model's offline estimate.
+snapshots create a new dataset version. Training and holdout rows are stored
+as compact feature windows; the holdout is paired with its model estimate and
+FIRE-confirmed actual duration. The artifact is stored as versioned JSON
+metadata with a SHA-256 checksum.
 
 ## Runtime boundary
 
