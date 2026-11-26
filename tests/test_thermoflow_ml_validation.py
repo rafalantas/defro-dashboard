@@ -25,9 +25,9 @@ class RollingValidationTests(unittest.TestCase):
     def test_runs_expanding_chronological_folds_with_unseen_holdouts(self):
         result = self.validate(self.samples())
         self.assertEqual(result["status"], "evaluated")
-        self.assertEqual(result["fold_count"], 3)
-        self.assertEqual([fold["training_samples"] for fold in result["folds"]], [40, 45, 50])
-        self.assertEqual(result["holdout_samples_total"], 15)
+        self.assertEqual(result["fold_count"], 5)
+        self.assertEqual([fold["training_samples"] for fold in result["folds"]], [40, 53, 67, 81, 95])
+        self.assertEqual(result["holdout_samples_total"], 25)
         for fold in result["folds"]:
             self.assertLess(fold["training_end_timestamp"], fold["holdout_start_timestamp"])
         self.assertTrue(result["coverage"]["span_satisfied"])
