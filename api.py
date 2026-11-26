@@ -84,6 +84,7 @@ _intelligence_runtime = UnifiedRuntime(_intelligence_bundle)
 _live_ml_runtime = LiveMLRuntime(
     burner_path=os.getenv("THERMOFLOW_BURNER_MODEL_PATH", ""),
     fuel_path=os.getenv("THERMOFLOW_FUEL_MODEL_PATH", ""),
+    db_path=os.getenv("THERMOFLOW_DB_PATH", ""),
 )
 _statistics_cache: dict[str, tuple[float, float | None, str | None, float | None, str | None, dict]] = {}
 _statistics_lock = threading.Lock()

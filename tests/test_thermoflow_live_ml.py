@@ -20,6 +20,7 @@ from thermoflow_fuel_live import (
     predict_fuel_rate,
 )
 from thermoflow_live_ml import LiveMLRuntime
+from thermoflow_store import SQLiteStore
 
 NOW = 1_810_000_000
 
@@ -240,6 +241,56 @@ class FuelLiveArtifactTests(unittest.TestCase):
             self.assertEqual(result["burner_ml"]["reason"], "cycle_exceeded_max_duration")
             self.assertNotIn("prediction", result["burner_ml"])
 
+
+    def test_runtime_prefers_checksum_verified_burner_artifact_from_sqlite(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "thermoflow.sqlite3"
+            store = SQLiteStore(database)
+            store.migrate()
+            artifact = burner_artifact()
+            canonical = json.dumps(artifact, ensure_ascii=False, sort_keys=True,
+                                   separators=(",", ":"), allow_nan=False)
+            import hashlib
+            digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            version = "1.0.0+" + digest[:16]
+            metadata = {
+                "schema": "thermoflow-burner-artifact-store/1",
+                "mode": "read_only_shadow",
+                "model_artifact": artifact,
+                "model_artifact_sha256": digest,
+                "automatic_promotion": False,
+            }
+            with store.connection() as db:
+                db.execute(
+                    "INSERT INTO model_versions(model_name,version,created_at,artifact_path,"
+                    "artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
+                    ("burner_cycle_duration", version, NOW, None, digest,
+                     json.dumps(metadata, sort_keys=True), "shadow"),
+                )
+            runtime = LiveMLRuntime(db_path=str(database))
+            runtime.refresh(now=NOW)
+            self.assertEqual(runtime._burner_state, "loaded_sqlite")
+            self.assertEqual(runtime._burner_model_version, version)
+            self.assertEqual(runtime._burner["schema"], artifact["schema"])
+
+    def test_runtime_fails_closed_for_corrupt_sqlite_burner_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "thermoflow.sqlite3"
+            store = SQLiteStore(database)
+            store.migrate()
+            artifact = burner_artifact()
+            metadata = {"model_artifact": artifact, "model_artifact_sha256": "0" * 64}
+            with store.connection() as db:
+                db.execute(
+                    "INSERT INTO model_versions(model_name,version,created_at,artifact_path,"
+                    "artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
+                    ("burner_cycle_duration", "broken", NOW, None, "0" * 64,
+                     json.dumps(metadata), "shadow"),
+                )
+            runtime = LiveMLRuntime(db_path=str(database))
+            runtime.refresh(now=NOW)
+            self.assertEqual(runtime._burner_state, "invalid_or_stale_artifact")
+            self.assertIsNone(runtime._burner)
 
 class LiveMLApiTests(unittest.TestCase):
     def test_unified_intelligence_exposes_separate_live_predictions(self):
