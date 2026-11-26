@@ -2,7 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from thermoflow_fibaro_collection import collect_fibaro_once, collect_fibaro_incremental
+from thermoflow_fibaro_collection import collect_fibaro_once, collect_fibaro_incremental, collect_fibaro_backfill
 from thermoflow_fibaro_history_collector import FibaroHistoryCollector
 from thermoflow_store import SQLiteStore
 
@@ -82,6 +82,24 @@ class FibaroCollectionRunnerTests(unittest.TestCase):
         )
         self.assertEqual(result["window"]["duration_seconds"], 7 * 86400)
         self.assertTrue(result["catch_up_pending"])
+
+    def test_backfill_uses_separate_cursor_and_fills_history_before_old_live_cursor(self):
+        # Simulate a previous partial import whose live cursor starts much later
+        # than the requested backfill range. Backfill must not skip the earlier gap.
+        self.collector.save_batch([], start=5000, end=6000, collected_at=6100)
+        target = 900 + 8 * 86400
+        result = collect_fibaro_backfill(
+            self.provider, self.collector, now=target,
+            initial_start=900, collected_at=target + 10,
+        )
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["chunks_completed"], 2)
+        self.assertEqual(self.provider.requested, (900 + 7 * 86400, target))
+        self.assertEqual(self.collector.status()["last_successful_end"], target)
+        backfill = self.collector.status("fibaro_hc3_backfill")
+        self.assertEqual(backfill["last_successful_end"], target)
+        self.assertTrue(backfill["backfill_complete"])
+        self.assertEqual(self.collector.event_coverage(start=900, end=target)["stored_events"], 1)
 
     def test_rejects_unbounded_or_invalid_windows(self):
         for start, end in ((0, 10), (10, 10), (20, 10), (1, 1 + 8 * 86400)):
