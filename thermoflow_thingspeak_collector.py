@@ -40,14 +40,39 @@ def _entry_id(feed):
 
 
 def _payload(feed):
+    if not isinstance(feed, dict):
+        return None
+    # Identity and timestamp already have indexed relational columns.
+    compact = {key: value for key, value in feed.items()
+               if key not in {"entry_id", "created_at"}}
     try:
         value = json.dumps(
-            feed, ensure_ascii=False, sort_keys=True,
+            compact, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False,
         )
     except (TypeError, ValueError):
         return None
     return value, hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def _is_duplicate(existing, digest, observed_at, compact_payload_json):
+    """Recognize both new compact rows and legacy full-feed rows during rollout."""
+    if existing["observed_at"] != observed_at:
+        return False
+    if existing["payload_sha256"] == digest:
+        return True
+    try:
+        legacy = json.loads(existing["payload_json"])
+        if not isinstance(legacy, dict) or not {"entry_id", "created_at"}.issubset(legacy):
+            return False
+        legacy.pop("entry_id", None)
+        legacy.pop("created_at", None)
+        normalized = json.dumps(
+            legacy, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        )
+    except (TypeError, ValueError):
+        return False
+    return normalized == compact_payload_json
 
 
 class ThingSpeakHistoryCollector:
@@ -139,12 +164,12 @@ class ThingSpeakHistoryCollector:
                     source = f"thingspeak:{name}"
                     source_key = f"{channel_id}:{entry_id}"
                     existing = db.execute(
-                        "SELECT payload_sha256 FROM telemetry_samples "
+                        "SELECT payload_sha256,observed_at,payload_json FROM telemetry_samples "
                         "WHERE source=? AND source_key=?",
                         (source, source_key),
                     ).fetchone()
                     if existing is not None:
-                        if existing["payload_sha256"] == digest:
+                        if _is_duplicate(existing, digest, observed_at, payload_json):
                             duplicates += 1
                         else:
                             conflicts += 1
@@ -161,11 +186,11 @@ class ThingSpeakHistoryCollector:
                     source = f"thingspeak:{name}"
                     event_key = f"{channel_id}:{entry_id}"
                     existing = db.execute(
-                        "SELECT payload_sha256 FROM refill_events WHERE event_key=?",
+                        "SELECT payload_sha256,occurred_at AS observed_at,payload_json FROM refill_events WHERE event_key=?",
                         (event_key,),
                     ).fetchone()
                     if existing is not None:
-                        if existing["payload_sha256"] == digest:
+                        if _is_duplicate(existing, digest, observed_at, payload_json):
                             duplicates += 1
                         else:
                             conflicts += 1
