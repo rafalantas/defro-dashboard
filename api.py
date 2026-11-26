@@ -21,6 +21,7 @@ from thermoflow_emodul_store import persist_emodul_snapshot
 from thermoflow_production_acceptance import PATH as ACCEPTANCE_PATH, build_acceptance_report
 from thermoflow_acceptance_evidence import build_acceptance_evidence
 from thermoflow_model_monitoring import PATH as MODEL_MONITORING_PATH, monitor_sqlite_database
+from thermoflow_sqlite_data_audit import read_sqlite_data_audit
 from thermoflow_weather_forecast import project_weather_forecast
 from fibaro_hc3_provider import HC3Config, HC3Error, FibaroHC3Provider
 from fibaro_hc3_api import build_hc3_snapshot
@@ -1701,6 +1702,26 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path == "/api/thermoflow/data-readiness":
+            query = parse_qs(parsed.query)
+            try:
+                days = int(query.get("days", ["30"])[0])
+                payload = read_sqlite_data_audit(
+                    os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
+                    now=int(time.time()),
+                    days=days,
+                )
+                self._send_json(200, payload)
+            except FileNotFoundError:
+                self._send_json(503, {"status": "unavailable",
+                                      "error": "Baza ThermoFlow SQLite nie jest zainicjalizowana"})
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)[:180]})
+            except Exception:
+                self._send_json(500, {"status": "blocked",
+                                      "error": "Nie udało się wykonać audytu danych ML/AI"})
+            return
+
         if path == MODEL_MONITORING_PATH:
             try:
                 payload = monitor_sqlite_database(
