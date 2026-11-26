@@ -89,11 +89,22 @@ class FibaroCurationTests(unittest.TestCase):
             ).fetchall()
             self.assertEqual(len(rows), 3)
             features = [json.loads(row["values_json"]) for row in rows]
+            transitions = [
+                transition for feature in features
+                for transition in feature["transitions"]
+            ]
             self.assertEqual(
-                {item["signal"] for item in features},
+                {item["signal"] for item in transitions},
                 {"setpoint", "zone_temperature", "heat_required"},
             )
-            self.assertTrue(all(item["mapping_basis"] == "nearest_available_snapshot_after_event" for item in features))
+            self.assertTrue(all(
+                item["mapping_basis"] == "nearest_available_snapshot_after_event"
+                for item in transitions
+            ))
+            self.assertEqual(
+                {feature["schema"] for feature in features},
+                {"thermoflow-fibaro-heating-feature/1"},
+            )
             self.assertEqual(db.execute("SELECT COUNT(*) FROM datasets WHERE name='fibaro_heating_history'").fetchone()[0], 1)
 
     def test_missing_snapshot_fails_without_deleting_raw_events(self):
