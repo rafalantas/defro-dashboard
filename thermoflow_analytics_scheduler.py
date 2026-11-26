@@ -87,6 +87,15 @@ def run_once(database_path: str = DEFAULT_DB_PATH, *, now: int | None = None) ->
         }
 
     dry_run = curate_database(str(path), apply=False)
+    if dry_run.get("curated_features") == 0:
+        return {
+            "schema": "thermoflow-analytics-scheduler/1",
+            "status": "collecting",
+            "reason": "no_validated_heating_transitions",
+            "source": source,
+            "curation": {"status": dry_run.get("status"), "curated_features": 0},
+            "writes": False,
+        }
     digest = dry_run.get("content_sha256")
     if not isinstance(digest, str) or len(digest) != 64:
         return {
