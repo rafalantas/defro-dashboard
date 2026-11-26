@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -95,6 +96,9 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
     model = validated_artifact["model"]
     if benchmark.get("model") != model:
         raise ValueError("artifact model does not match evaluated benchmark model")
+    if (model["training_samples"] != len(training)
+            or model["holdout_samples"] != len(holdout)):
+        raise ValueError("model sample counts do not match the dataset partitions")
 
     evaluation = benchmark.get("evaluation")
     candidate = evaluation.get("candidate") if isinstance(evaluation, dict) else None
@@ -111,16 +115,19 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
                 raise ValueError("malformed Burner dataset row")
             stamp = row.get("timestamp")
             target = row.get("target")
-            if type(stamp) not in (int, float) or stamp <= previous:
-                raise ValueError("dataset rows must be strictly chronological")
-            if type(target) not in (int, float) or target <= 0:
-                raise ValueError("cycle duration target must be positive")
+            if (type(stamp) not in (int, float) or not math.isfinite(stamp)
+                    or stamp <= previous):
+                raise ValueError("dataset rows must be strictly chronological and finite")
+            if type(target) not in (int, float) or not math.isfinite(target) or target <= 0:
+                raise ValueError("cycle duration target must be positive and finite")
             features = row["features"]
             if set(features) != set(FEATURE_KEYS):
                 raise ValueError("unexpected Burner feature keys")
             if (type(features["previous_duration_minutes"]) not in (int, float)
+                    or not math.isfinite(features["previous_duration_minutes"])
                     or features["previous_duration_minutes"] <= 0
                     or type(features["idle_minutes"]) not in (int, float)
+                    or not math.isfinite(features["idle_minutes"])
                     or features["idle_minutes"] < 0):
                 raise ValueError("invalid Burner feature values")
             previous = stamp
@@ -140,8 +147,8 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
         ],
     }
     dataset_version = _digest(dataset_content)
-    model_sha = _digest(model)
-    model_version = f'{model.get("model_schema_version", "unknown")}+{model_sha[:16]}'
+    artifact_sha = _digest(validated_artifact)
+    model_version = f'{model.get("model_schema_version", "unknown")}+{artifact_sha[:16]}'
     manifest = {
         "schema": SCHEMA,
         "source": "fire_confirmed_complete_cycles",
@@ -159,7 +166,7 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
         "schema": SCHEMA,
         "mode": "read_only_shadow",
         "model_artifact": validated_artifact,
-        "model_artifact_sha256": _digest(validated_artifact),
+        "model_artifact_sha256": artifact_sha,
         "automatic_promotion": False,
     }
     metrics = {
@@ -173,7 +180,7 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
 
     with store.connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        db.execute(
+        dataset_cursor = db.execute(
             "INSERT OR IGNORE INTO datasets(name,version,created_at,manifest_json,"
             "content_sha256,status) VALUES(?,?,?,?,?,?)",
             (MODEL_NAME, dataset_version, clock, _canonical(manifest),
@@ -202,11 +209,11 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
             )
             feature_inserted += cursor.rowcount
 
-        db.execute(
+        model_cursor = db.execute(
             "INSERT OR IGNORE INTO model_versions(model_name,version,created_at,"
             "artifact_path,artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
             (MODEL_NAME, model_version, validated_artifact["created_at"], None,
-             _digest(validated_artifact), _canonical(metadata), "shadow"),
+             artifact_sha, _canonical(metadata), "shadow"),
         )
         evaluation_exists = db.execute(
             "SELECT 1 FROM model_evaluations WHERE model_name=? AND model_version=? "
@@ -266,8 +273,8 @@ def persist_burner_shadow_result(store, observed_report, benchmark, artifact,
         "model_version": model_version,
         "inserted": {
             "feature_windows": feature_inserted,
-            "datasets": 1 if feature_inserted or evaluation_inserted else 0,
-            "model_versions": 1,
+            "datasets": dataset_cursor.rowcount,
+            "model_versions": model_cursor.rowcount,
             "model_evaluations": evaluation_inserted,
             "shadow_predictions": predictions_inserted,
         },
