@@ -3,7 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from thermoflow_fibaro_artifact_store import persist_fibaro_shadow_result
+from thermoflow_fibaro_artifact_store import (
+    load_fibaro_model_artifact,
+    persist_fibaro_shadow_result,
+)
 from thermoflow_store import SQLiteStore
 
 
@@ -90,6 +93,37 @@ class FibaroArtifactStoreTests(unittest.TestCase):
         self.assertEqual(second["inserted"]["model_evaluations"], 0)
         self.assertEqual(second["inserted"]["shadow_predictions"], 0)
         self.assertEqual(self.counts()["feature_windows"], 2)
+
+    def test_model_artifact_can_be_loaded_and_checksum_verified(self):
+        saved = persist_fibaro_shadow_result(self.store, result(), recorded_at=1800000000)
+        loaded = load_fibaro_model_artifact(self.store, model_version=saved["model_version"])
+        self.assertEqual(loaded["model"], result()["model"]["model"])
+        self.assertEqual(
+            saved["model_version"],
+            f'1.0.0+{loaded["artifact_sha256"][:16]}',
+        )
+        with self.store.connection() as db:
+            row = db.execute(
+                "SELECT metadata_json FROM model_versions WHERE model_name=?",
+                ("fibaro_daily_heat_demand",),
+            ).fetchone()
+            import json
+            metadata = json.loads(row["metadata_json"])
+            metadata["model_artifact"]["intercept"] = 999.0
+            db.execute(
+                "UPDATE model_versions SET metadata_json=? WHERE model_name=?",
+                (json.dumps(metadata), "fibaro_daily_heat_demand"),
+            )
+        with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            load_fibaro_model_artifact(self.store, model_version=saved["model_version"])
+
+    def test_evaluation_deduplicates_across_recorded_at_timestamps(self):
+        persist_fibaro_shadow_result(self.store, result(), recorded_at=1800000000)
+        persist_fibaro_shadow_result(self.store, result(), recorded_at=1800000100)
+        with self.store.connection() as db:
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM model_evaluations").fetchone()[0], 1
+            )
 
     def test_non_evaluated_result_is_not_persisted(self):
         payload = result()

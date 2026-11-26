@@ -77,6 +77,10 @@ def persist_fibaro_shadow_result(store, result, *, recorded_at=None):
         "feature_keys": model.get("feature_keys", []),
         "target_key": model.get("target_key"),
         "dataset_version": dataset_version,
+        # Keep the complete deterministic, JSON-serializable model artifact
+        # alongside its digest. SQLite stores metadata, not executable binaries.
+        "model_artifact": model,
+        "model_artifact_sha256": model_sha,
         "automatic_promotion": False,
     }
     metrics = {
@@ -126,8 +130,8 @@ def persist_fibaro_shadow_result(store, result, *, recorded_at=None):
         )
         evaluation_exists = db.execute(
             "SELECT 1 FROM model_evaluations WHERE model_name=? AND model_version=? "
-            "AND dataset_version=? AND evaluated_at=?",
-            (MODEL_NAME, model_version, dataset_version, clock),
+            "AND dataset_version=?",
+            (MODEL_NAME, model_version, dataset_version),
         ).fetchone()
         evaluation_inserted = 0
         if evaluation_exists is None:
@@ -178,4 +182,43 @@ def persist_fibaro_shadow_result(store, result, *, recorded_at=None):
         "deduplication": "content_addressed_features_and_model; deterministic_holdout_keys",
         "model_binary_stored": False,
         "raw_source_history_duplicated": False,
+    }
+
+
+def load_fibaro_model_artifact(store, *, model_version=None):
+    """Load and verify a persisted JSON model artifact without executing code."""
+    with store.connection() as db:
+        if model_version is None:
+            row = db.execute(
+                "SELECT version,artifact_sha256,metadata_json FROM model_versions "
+                "WHERE model_name=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                (MODEL_NAME,),
+            ).fetchone()
+        else:
+            row = db.execute(
+                "SELECT version,artifact_sha256,metadata_json FROM model_versions "
+                "WHERE model_name=? AND version=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                (MODEL_NAME, model_version),
+            ).fetchone()
+    if row is None:
+        return None
+    try:
+        metadata = json.loads(row["metadata_json"])
+    except (TypeError, ValueError):
+        raise ValueError("persisted Fibaro model metadata is invalid JSON") from None
+    model = metadata.get("model_artifact") if isinstance(metadata, dict) else None
+    expected = row["artifact_sha256"]
+    if not isinstance(model, dict) or not isinstance(expected, str):
+        raise ValueError("persisted Fibaro model artifact is missing")
+    actual = _digest(model)
+    if actual != expected or metadata.get("model_artifact_sha256") != expected:
+        raise ValueError("persisted Fibaro model artifact checksum mismatch")
+    if model.get("model_schema_version") != "1.0.0" or model.get("mode") != "read_only_shadow":
+        raise ValueError("persisted Fibaro model artifact schema or mode is unsupported")
+    return {
+        "model_name": MODEL_NAME,
+        "model_version": row["version"],
+        "artifact_sha256": expected,
+        "model": model,
+        "mode": "offline_shadow_only",
     }
