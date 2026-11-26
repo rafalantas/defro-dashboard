@@ -160,13 +160,23 @@ def _make_feature(event, snapshots):
             return None, "unrelated_device_property"
 
         device_id = _positive_id(data.get("id"))
-        if device_id is None or device_id not in head_index:
+        if device_id is None:
             return None, "unknown_head_id"
+
+        # A later snapshot may establish that an ID is a Fibaro head, but it
+        # must never establish that head's historical zone membership.
+        known_head_ids = {
+            known_id
+            for _, known_heads, _ in snapshots
+            for known_id in known_heads
+        }
+        if device_id not in known_head_ids:
+            return None, "unknown_head_id"
+        if snapshot_basis == "no_prior_snapshot":
+            return None, "event_without_prior_snapshot"
 
         zone_id, mapping_error = _zone_for_head(device_id, head_index, zone_index)
         if mapping_error:
-            if snapshot_basis == "no_prior_snapshot":
-                return None, "event_without_prior_snapshot"
             return None, mapping_error
 
         signal, kind, unit, minimum, maximum = definition
