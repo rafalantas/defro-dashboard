@@ -4,9 +4,9 @@ Dry-run is the default. --apply writes a deterministic candidate dataset to
 feature_windows/datasets after a verified SQLite backup. It NEVER deletes raw
 Fibaro events and NEVER contacts HC3 or sends device commands.
 
-Historical head-to-zone membership is not inferred from a later snapshot:
-head-level transitions remain unassigned to a zone and are explicitly marked
-as historically unverified.
+Head-to-zone membership is resolved only from the latest persisted snapshot
+captured at or before the event. Events without prior mapping evidence remain
+unassigned; future snapshots are never applied retroactively.
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
 FEATURE_SET = "fibaro_heating_event_v2"
 DATASET_NAME = "fibaro_heating_history_v2"
-DATASET_SCHEMA = "thermoflow-fibaro-curated-dataset/2"
-FEATURE_SCHEMA = "thermoflow-fibaro-heating-feature/2"
+DATASET_SCHEMA = "thermoflow-fibaro-curated-dataset/3"
+FEATURE_SCHEMA = "thermoflow-fibaro-heating-feature/3"
 
 DEVICE_PROPERTIES = {
     "heatingThermostatSetpoint": ("setpoint", "number", "C", 5.0, 35.0),
@@ -100,14 +100,34 @@ def _load_snapshots(db):
 
 
 def _snapshot_for(timestamp, snapshots):
-    prior = [item for item in snapshots if item[0] <= timestamp]
-    if prior:
-        selected = prior[-1]
-        return selected[1], selected[2], "snapshot_at_or_before_event", selected[0]
-    if snapshots:
-        selected = min(snapshots, key=lambda item: (item[0] - timestamp, item[0]))
-        return selected[1], selected[2], "current_snapshot_identity_only", selected[0]
-    return {}, {}, "no_snapshot", None
+    """Resolve identity using evidence that existed no later than the event."""
+    selected = None
+    for item in snapshots:
+        if item[0] > timestamp:
+            break
+        selected = item
+    if selected is None:
+        return {}, {}, "no_prior_snapshot", None
+    return selected[1], selected[2], "snapshot_at_or_before_event", selected[0]
+
+
+def _zone_for_head(device_id, head_index, zone_index):
+    """Return an unambiguous zone for a head in the event-time snapshot."""
+    if device_id not in head_index:
+        return None, "head_absent_from_event_snapshot"
+    matches = []
+    for zone_id, zone in zone_index.items():
+        properties = zone.get("properties")
+        devices = properties.get("devices") if isinstance(properties, dict) else None
+        if not isinstance(devices, list):
+            continue
+        if device_id in {_positive_id(value) for value in devices}:
+            matches.append(zone_id)
+    if not matches:
+        return None, "head_not_mapped_in_event_snapshot"
+    if len(matches) > 1:
+        return None, "head_mapped_to_multiple_zones_in_event_snapshot"
+    return matches[0], None
 
 
 def _make_feature(event, snapshots):
@@ -143,6 +163,12 @@ def _make_feature(event, snapshots):
         if device_id is None or device_id not in head_index:
             return None, "unknown_head_id"
 
+        zone_id, mapping_error = _zone_for_head(device_id, head_index, zone_index)
+        if mapping_error:
+            if snapshot_basis == "no_prior_snapshot":
+                return None, "event_without_prior_snapshot"
+            return None, mapping_error
+
         signal, kind, unit, minimum, maximum = definition
         old_raw = data.get("oldValue")
         new_raw = data.get("newValue")
@@ -163,18 +189,14 @@ def _make_feature(event, snapshots):
             "source_event_id": event_id,
             "entity": "head",
             "device_id": device_id,
-            "zone_id": None,
+            "zone_id": zone_id,
             "signal": signal,
             "old_value": old_value,
             "new_value": new_value,
             "unit": unit,
-            "identity_basis": (
-                "historical_snapshot_at_or_before_event"
-                if snapshot_basis == "snapshot_at_or_before_event"
-                else "current_snapshot_identity_only"
-            ),
+            "identity_basis": "snapshot_at_or_before_event",
             "snapshot_at": snapshot_at,
-            "historical_zone_mapping": "unverified",
+            "historical_zone_mapping": "verified_from_event_time_snapshot",
         }, None
 
     if event_type == "ClimateZoneTemperatureChangedEvent":
@@ -281,7 +303,7 @@ def build_curated_rows(db):
             "schema": FEATURE_SCHEMA,
             "source": "fibaro-hc3",
             "observed_at": timestamp,
-            "historical_head_zone_mapping": "unverified",
+            "historical_head_zone_mapping": "event_time_snapshot_only",
             "transitions": sorted(
                 transitions, key=lambda item: item["source_event_id"]
             ),
@@ -322,7 +344,18 @@ def build_curated_rows(db):
             "first": min(snapshot_times),
             "last": max(snapshot_times),
         },
-        "historical_head_zone_mapping": "unverified",
+        "historical_head_zone_mapping": "event_time_snapshot_only",
+        "head_zone_mapping": {
+            "verified": mapping["snapshot_at_or_before_event"],
+            "unmapped": sum(
+                skipped[key] for key in (
+                    "event_without_prior_snapshot",
+                    "head_not_mapped_in_event_snapshot",
+                    "head_mapped_to_multiple_zones_in_event_snapshot",
+                )
+            ),
+            "future_snapshot_fallback": False,
+        },
         "raw_source_events_preserved": True,
         "content_sha256": digest,
     }
@@ -387,10 +420,10 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
         "source_event_payloads_retained": True,
         "hc3_queried": False,
         "device_commands_sent": False,
-        "historical_head_zone_mapping": "unverified",
+        "historical_head_zone_mapping": "event_time_snapshot_only",
         "training_eligibility": (
-            "candidate_only; do_not_join_heads_to_historical_zones "
-            "without independent temporal mapping evidence"
+            "candidate_only; head transitions are assigned only when exactly "
+            "one zone maps that head in a snapshot captured at or before the event"
         ),
     }
     manifest_json = json.dumps(
