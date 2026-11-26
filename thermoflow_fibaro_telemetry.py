@@ -12,7 +12,6 @@ from math import isfinite
 
 
 SCHEMA = "thermoflow-fibaro-telemetry/1"
-DEFAULT_EXPECTED_HEAD_COUNT = 15
 DEFAULT_EXPECTED_PARAMETER2 = 322
 DEFAULT_MAX_SNAPSHOT_AGE_SECONDS = 180
 LOW_BATTERY_THRESHOLD_PERCENT = 20
@@ -108,7 +107,7 @@ def build_fibaro_telemetry(
     diagnostics: dict,
     *,
     now: datetime | None = None,
-    expected_head_count: int = DEFAULT_EXPECTED_HEAD_COUNT,
+    expected_head_count: int | None = None,
     expected_parameter2: int = DEFAULT_EXPECTED_PARAMETER2,
     max_snapshot_age_seconds: int = DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
 ) -> dict:
@@ -122,9 +121,10 @@ def build_fibaro_telemetry(
     if not isinstance(diagnostics, dict) or not isinstance(diagnostics.get("zones"), list):
         raise ValueError("Brak diagnostyki stref Fibaro HC3")
 
-    expected_head_count = _valid_expected(
-        expected_head_count, "oczekiwanej liczby głowic", 1
-    )
+    if expected_head_count is not None:
+        expected_head_count = _valid_expected(
+            expected_head_count, "oczekiwanej liczby głowic", 1
+        )
     expected_parameter2 = _valid_expected(
         expected_parameter2, "oczekiwanej wartości parametru P2", 0
     )
@@ -183,18 +183,29 @@ def build_fibaro_telemetry(
     unresolved_mapped_ids = sorted(mapped_ids - observed_ids)
     unmapped_head_ids = sorted(observed_ids - mapped_ids)
     mapped_observed_ids = mapped_ids & observed_ids
-    expected_count_matches = len(observed_ids) == expected_head_count
+    expected_count_source = (
+        "configured" if expected_head_count is not None else "live_inventory"
+    )
+    effective_expected_head_count = (
+        expected_head_count if expected_head_count is not None else len(observed_ids)
+    )
+    expected_count_matches = len(observed_ids) == effective_expected_head_count
+    # With no discovered heads, the inventory is unknown rather than
+    # vacuously complete. Otherwise the live HC3 snapshot is authoritative
+    # unless an operator explicitly configures an expected count.
     mapping_complete = (
-        expected_count_matches
+        effective_expected_head_count > 0
+        and expected_count_matches
         and not duplicate_head_ids
         and not duplicate_zone_mappings
         and not unresolved_mapped_ids
         and not unmapped_head_ids
-        and len(mapped_observed_ids) == expected_head_count
+        and len(mapped_observed_ids) == effective_expected_head_count
     )
     mapping = {
         "status": "complete" if mapping_complete else "incomplete",
-        "expected_fgt001_heads": expected_head_count,
+        "expected_fgt001_heads": effective_expected_head_count,
+        "expected_head_count_source": expected_count_source,
         "observed_fgt001_heads": len(observed_ids),
         "mapped_fgt001_heads": len(mapped_observed_ids),
         "mapped_device_ids": sorted(mapped_ids),
@@ -203,8 +214,9 @@ def build_fibaro_telemetry(
         "duplicate_head_ids": sorted(set(duplicate_head_ids)),
         "heads_mapped_to_multiple_zones": duplicate_zone_mappings,
         "invalid_mapping_entries": invalid_mapping_entries,
-        "coverage_percent": round(
-            100.0 * len(mapped_observed_ids) / expected_head_count, 1
+        "coverage_percent": (
+            round(100.0 * len(mapped_observed_ids) / effective_expected_head_count, 1)
+            if effective_expected_head_count else 0.0
         ),
     }
 
