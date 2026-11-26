@@ -435,7 +435,9 @@ class FibaroHistoryCollector:
 
     def event_coverage(self, *, start, end):
         """Return exact stored event coverage without loading raw payloads into memory."""
-        self._validate_window(start, end)
+        if (not _valid_timestamp(start) or not _valid_timestamp(end)
+                or start >= end):
+            raise ValueError("event coverage requires an ordered timestamp range")
         with self.store.connection() as db:
             row = db.execute(
                 "SELECT COUNT(*) AS n,MIN(observed_at) AS first_at,MAX(observed_at) AS last_at "
