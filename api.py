@@ -28,6 +28,7 @@ from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_store_history, read_fibaro_store_shadow
 from thermoflow_heating_diagnostics import read_heating_analytics
+from thermoflow_analytics_scheduler import start_background_scheduler
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.error import HTTPError, URLError
@@ -1851,6 +1852,14 @@ def _refresh_intelligence_forever() -> None:
 
 if __name__ == "__main__":
     threading.Thread(target=_poll_forever, name="eModul-poller", daemon=True).start()
+    try:
+        start_background_scheduler()
+    except Exception as error:
+        print(json.dumps({
+            "component": "thermoflow-analytics",
+            "status": "not_started",
+            "error_type": type(error).__name__,
+        }), flush=True)
     server = ThreadingHTTPServer(("0.0.0.0", 8000), Handler)
     threading.Thread(target=_warmup_fuel, name="fuel-warmup", daemon=True).start()
     if _intelligence_bundle or _live_ml_runtime.configured:
