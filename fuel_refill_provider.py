@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 
 
 def fetch_refills(*, channel_id, read_key, endpoint, request_json, cache,
-                  ttl_seconds, monotonic, normalize, tz, parse_timestamp):
+                  ttl_seconds, monotonic, normalize, tz, parse_timestamp,
+                  on_raw_feeds=None):
     if not channel_id:
         return []
     cached = cache["data"]
@@ -18,6 +19,12 @@ def fetch_refills(*, channel_id, read_key, endpoint, request_json, cache,
     feeds = request_json(
         f"{endpoint}/channels/{channel_id}/feeds.json", params
     ).get("feeds", [])
+    if callable(on_raw_feeds):
+        try:
+            on_raw_feeds(feeds)
+        except Exception:
+            # Archival persistence is optional and must not break fuel estimates.
+            pass
     records = normalize(feeds, tz, parse_timestamp)
     cache.update(at=monotonic(), data=records)
     return [dict(item) for item in records]
