@@ -273,6 +273,83 @@ class FuelLiveArtifactTests(unittest.TestCase):
             self.assertEqual(runtime._burner_model_version, version)
             self.assertEqual(runtime._burner["schema"], artifact["schema"])
 
+    def _register_sqlite_burner_model(self, database):
+        store = SQLiteStore(database)
+        store.migrate()
+        artifact = burner_artifact()
+        canonical = json.dumps(artifact, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False)
+        import hashlib
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        version = "1.0.0+" + digest[:16]
+        metadata = {
+            "schema": "thermoflow-burner-artifact-store/1",
+            "mode": "read_only_shadow", "model_artifact": artifact,
+            "model_artifact_sha256": digest, "automatic_promotion": False,
+        }
+        with store.connection() as db:
+            db.execute(
+                "INSERT INTO model_versions(model_name,version,created_at,artifact_path,"
+                "artifact_sha256,metadata_json,status) VALUES(?,?,?,?,?,?,?)",
+                ("burner_cycle_duration", version, NOW, None, digest,
+                 json.dumps(metadata, sort_keys=True), "shadow"),
+            )
+        return store
+
+    def test_live_sqlite_prediction_is_evaluated_only_by_its_matching_fire_off(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "thermoflow.sqlite3"
+            store = self._register_sqlite_burner_model(database)
+            runtime = LiveMLRuntime(db_path=str(database))
+            runtime.refresh(now=NOW)
+            def sample(offset, fire):
+                runtime.observe({"connected": True, "fetched_at": iso(NOW + offset),
+                                 "data": {"fire": fire}})
+            sample(0, 0)
+            sample(30, 1)
+            sample(90, 0)
+            sample(120, 1)
+            with store.connection() as db:
+                rows = db.execute("SELECT * FROM shadow_predictions WHERE model_name=?",
+                                  ("burner_cycle_duration",)).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["evaluation_status"], "pending")
+            self.assertIsNone(rows[0]["actual_json"])
+            sample(180, 0)
+            sample(180, 0)
+            with store.connection() as db:
+                rows = db.execute("SELECT * FROM shadow_predictions WHERE model_name=?",
+                                  ("burner_cycle_duration",)).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["evaluation_status"], "evaluated")
+            self.assertEqual(rows[0]["target_at"], NOW + 180)
+            actual = json.loads(rows[0]["actual_json"])
+            self.assertEqual(actual["source"], "live_fire_transition")
+            self.assertAlmostEqual(actual["value"], 1.0)
+
+    def test_restart_mid_fire_leaves_pending_live_prediction_unmatched(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "thermoflow.sqlite3"
+            store = self._register_sqlite_burner_model(database)
+            first = LiveMLRuntime(db_path=str(database))
+            first.refresh(now=NOW)
+            for offset, fire in ((0, 0), (30, 1), (90, 0), (120, 1)):
+                first.observe({"connected": True, "fetched_at": iso(NOW + offset),
+                               "data": {"fire": fire}})
+            restarted = LiveMLRuntime(db_path=str(database))
+            restarted.refresh(now=NOW + 150)
+            restarted.observe({"connected": True, "fetched_at": iso(NOW + 150),
+                               "data": {"fire": 1}})
+            restarted.observe({"connected": True, "fetched_at": iso(NOW + 180),
+                               "data": {"fire": 0}})
+            with store.connection() as db:
+                row = db.execute(
+                    "SELECT evaluation_status,actual_json FROM shadow_predictions "
+                    "WHERE model_name=?", ("burner_cycle_duration",),
+                ).fetchone()
+            self.assertEqual(row["evaluation_status"], "pending")
+            self.assertIsNone(row["actual_json"])
+
     def test_runtime_fails_closed_for_corrupt_sqlite_burner_artifact(self):
         with tempfile.TemporaryDirectory() as temp:
             database = Path(temp) / "thermoflow.sqlite3"

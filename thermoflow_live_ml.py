@@ -73,6 +73,10 @@ class LiveMLRuntime:
         self._last_off = None
         self._previous_duration = None
         self._prediction = None
+        # Only a confirmed OFF -> ON transition in this process can own a live
+        # cycle. A restart or telemetry gap deliberately leaves old rows pending.
+        self._cycle_entity_key = None
+        self._cycle_model_version = None
 
     @property
     def configured(self):
@@ -110,6 +114,66 @@ class LiveMLRuntime:
             self._burner_model_version = burner_version
             self._fuel_state, self._fuel = fuel_state, fuel
 
+    def _persist_live_prediction(self, model_version, entity_key, stamp, prediction):
+        """Insert one pending outcome for a SQLite-backed live prediction."""
+        if self._store is None or not model_version or not entity_key:
+            return False
+        payload = {
+            "value": prediction["prediction"], "unit": "minutes",
+            "features": prediction["features"], "mode": "live_shadow_only",
+            "source": "live_fire_transition",
+            "artifact_created_at": prediction.get("artifact_created_at"),
+        }
+        try:
+            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":"), allow_nan=False)
+            with self._store.connection() as db:
+                db.execute("BEGIN IMMEDIATE")
+                existing = db.execute(
+                    "SELECT prediction_json,evaluation_status FROM shadow_predictions "
+                    "WHERE model_name=? AND model_version=? AND entity_key=?",
+                    ("burner_cycle_duration", model_version, entity_key),
+                ).fetchone()
+                if existing is not None:
+                    return (existing["evaluation_status"] == "pending"
+                            and existing["prediction_json"] == encoded)
+                cursor = db.execute(
+                    "INSERT INTO shadow_predictions(model_name,model_version,entity_key,"
+                    "predicted_at,target_at,prediction_json,actual_json,evaluation_status) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    ("burner_cycle_duration", model_version, entity_key, stamp, None,
+                     encoded, None, "pending"),
+                )
+                return cursor.rowcount == 1
+        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+            # Persistence is observational; a DB problem must not affect polling.
+            return False
+
+    def _persist_live_actual(self, model_version, entity_key, started_at, ended_at, duration):
+        """Close only the exact pending prediction owned by this observed cycle."""
+        if self._store is None or not model_version or not entity_key:
+            return False
+        actual = {
+            "value": round(float(duration), 4), "unit": "minutes",
+            "source": "live_fire_transition",
+            "cycle_started_at": int(started_at), "cycle_ended_at": int(ended_at),
+            "complete_observed_cycle": True,
+        }
+        try:
+            encoded = json.dumps(actual, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":"), allow_nan=False)
+            with self._store.connection() as db:
+                db.execute("BEGIN IMMEDIATE")
+                cursor = db.execute(
+                    "UPDATE shadow_predictions SET target_at=?,actual_json=?,"
+                    "evaluation_status='evaluated' WHERE model_name=? AND model_version=? "
+                    "AND entity_key=? AND evaluation_status='pending' AND actual_json IS NULL",
+                    (int(ended_at), encoded, "burner_cycle_duration", model_version, entity_key),
+                )
+                return cursor.rowcount == 1
+        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+            return False
+
     def observe(self, payload):
         """Consume one fresh poll; gaps and disconnected reads break cycle evidence."""
         try:
@@ -128,6 +192,8 @@ class LiveMLRuntime:
                 self._last_off = None
                 self._previous_duration = None
                 self._prediction = None
+                self._cycle_entity_key = None
+                self._cycle_model_version = None
             return
 
         with self._lock:
@@ -140,6 +206,9 @@ class LiveMLRuntime:
                 self._last_off = None
                 self._previous_duration = None
                 self._prediction = None
+                # Never close a persisted cycle across a telemetry gap.
+                self._cycle_entity_key = None
+                self._cycle_model_version = None
 
             if self._last_fire is None:
                 self._last_fire = fire
@@ -153,6 +222,8 @@ class LiveMLRuntime:
                 if fire:
                     self._cycle_started = stamp
                     self._prediction = None
+                    self._cycle_entity_key = None
+                    self._cycle_model_version = None
                     if self._previous_duration is not None and self._last_off is not None:
                         idle = (stamp - self._last_off) / 60.0
                         if idle >= 0 and self._burner is not None:
@@ -169,16 +240,34 @@ class LiveMLRuntime:
                                 }
                             except (ValueError, TypeError, KeyError, OverflowError):
                                 self._prediction = None
+                            else:
+                                # Persist only predictions made by a registered
+                                # SQLite model; file fallback remains read-only.
+                                model_version = self._burner_model_version
+                                if model_version and self._store is not None:
+                                    entity_key = f"fire-cycle-live:{int(stamp)}"
+                                    if self._persist_live_prediction(
+                                        model_version, entity_key, int(stamp), self._prediction
+                                    ):
+                                        self._cycle_entity_key = entity_key
+                                        self._cycle_model_version = model_version
                 else:
                     if self._cycle_started is not None:
                         duration = (stamp - self._cycle_started) / 60.0
                         if 0 < duration <= MAX_BURNER_CYCLE_SECONDS / 60:
                             self._previous_duration = duration
+                            if self._cycle_entity_key and self._cycle_model_version:
+                                self._persist_live_actual(
+                                    self._cycle_model_version, self._cycle_entity_key,
+                                    int(self._cycle_started), int(stamp), duration,
+                                )
                         else:
                             self._previous_duration = None
                     self._last_off = stamp
                     self._cycle_started = None
                     self._prediction = None
+                    self._cycle_entity_key = None
+                    self._cycle_model_version = None
                 self._last_fire = fire
 
             self._last_timestamp = stamp
