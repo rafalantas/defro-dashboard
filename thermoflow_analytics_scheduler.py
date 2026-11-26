@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import threading
 import time
 from pathlib import Path
 
@@ -201,6 +203,65 @@ def run_scheduler(cycle, *, interval_seconds=DEFAULT_INTERVAL_SECONDS,
         if max_cycles is None or len(results) < max_cycles:
             wait(interval_seconds)
     return results
+
+
+
+def start_background_scheduler(
+    database_path: str | None = None,
+    *,
+    enabled: bool | None = None,
+    interval_seconds: int | None = None,
+    initial_delay_seconds: int | None = None,
+    thread_factory=threading.Thread,
+    wait=time.sleep,
+):
+    """Start one daemon worker inside the API process; return its thread."""
+    if enabled is None:
+        enabled = os.getenv("THERMOFLOW_ANALYTICS_ENABLED", "true").strip().lower() not in {
+            "0", "false", "no", "off",
+        }
+    if not enabled:
+        return None
+
+    if interval_seconds is None:
+        try:
+            interval_seconds = int(os.getenv(
+                "THERMOFLOW_ANALYTICS_INTERVAL_SECONDS",
+                str(DEFAULT_INTERVAL_SECONDS),
+            ))
+        except (TypeError, ValueError):
+            raise ValueError("THERMOFLOW_ANALYTICS_INTERVAL_SECONDS must be an integer") from None
+    if (type(interval_seconds) is not int
+            or not MIN_INTERVAL_SECONDS <= interval_seconds <= MAX_INTERVAL_SECONDS):
+        raise ValueError("analytics interval must be between 3600 and 86400 seconds")
+
+    if initial_delay_seconds is None:
+        try:
+            initial_delay_seconds = int(os.getenv(
+                "THERMOFLOW_ANALYTICS_INITIAL_DELAY_SECONDS", "120"
+            ))
+        except (TypeError, ValueError):
+            raise ValueError("THERMOFLOW_ANALYTICS_INITIAL_DELAY_SECONDS must be an integer") from None
+    if type(initial_delay_seconds) is not int or not 0 <= initial_delay_seconds <= 3600:
+        raise ValueError("analytics initial delay must be between 0 and 3600 seconds")
+
+    path = database_path or os.getenv("THERMOFLOW_DB_PATH", DEFAULT_DB_PATH)
+
+    def worker():
+        if initial_delay_seconds:
+            wait(initial_delay_seconds)
+        run_scheduler(
+            lambda: run_once(path),
+            interval_seconds=interval_seconds,
+        )
+
+    thread = thread_factory(
+        target=worker,
+        name="thermoflow-analytics",
+        daemon=True,
+    )
+    thread.start()
+    return thread
 
 
 def main(argv=None):
