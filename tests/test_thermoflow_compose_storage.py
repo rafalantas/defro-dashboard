@@ -19,8 +19,8 @@ class ThermoFlowComposeStorageTests(unittest.TestCase):
 
     def test_api_and_collector_share_the_ssd_database_directory(self):
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-        self.assertEqual(compose.count("source: /mnt/thermoflow/db"), 2)
-        self.assertEqual(compose.count("create_host_path: false"), 2)
+        self.assertEqual(compose.count("source: /mnt/thermoflow/db"), 3)
+        self.assertEqual(compose.count("create_host_path: false"), 3)
 
     def test_analytics_scheduler_runs_inside_api_without_extra_service(self):
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
