@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -59,7 +60,7 @@ def _parse_timestamp(value: str) -> datetime:
 def _channels_from_env(env: dict) -> tuple[dict, dict, str | None, str | None]:
     """Build channel configuration without returning or logging API keys."""
     ids = _csv_env(env, "THINGSPEAK_CHANNEL_IDS")
-    if len(ids) != 2 or any(not item for item in ids):
+    if len(ids) != 2 or any(not item or not item.isdigit() for item in ids):
         raise ValueError("THINGSPEAK_CHANNEL_IDS must contain the two configured channel IDs")
     keys = _csv_env(env, "THINGSPEAK_READ_KEYS")
     keys = (keys + ["", ""])[:2]
@@ -74,6 +75,8 @@ def _channels_from_env(env: dict) -> tuple[dict, dict, str | None, str | None]:
     }
     fire_id = str(env.get("THINGSPEAK_FIRE_CHANNEL_ID", "") or "").strip()
     fire_key = str(env.get("THINGSPEAK_FIRE_READ_KEY", "") or "").strip()
+    if fire_id and not fire_id.isdigit():
+        raise ValueError("THINGSPEAK_FIRE_CHANNEL_ID must be numeric")
     if fire_id:
         channels["fire"] = {
             "kind": "telemetry", "channel_id": fire_id, "read_key": fire_key,
@@ -81,6 +84,8 @@ def _channels_from_env(env: dict) -> tuple[dict, dict, str | None, str | None]:
 
     fuel_id = str(env.get("THINGSPEAK_FUEL_CHANNEL_ID", "") or "").strip()
     fuel_key = str(env.get("THINGSPEAK_FUEL_READ_KEY", "") or "").strip()
+    if fuel_id and not fuel_id.isdigit():
+        raise ValueError("THINGSPEAK_FUEL_CHANNEL_ID must be numeric")
     if fuel_id:
         # Keep the complete raw refill/void feed in telemetry_samples as well
         # as the structured, model-facing refill_events projection.
@@ -287,7 +292,7 @@ def run_once(
         "THERMOFLOW_THINGSPEAK_REQUEST_INTERVAL_SECONDS",
         DEFAULT_REQUEST_INTERVAL_SECONDS,
     ))
-    if not 0 <= request_interval <= 60:
+    if not math.isfinite(request_interval) or not 0 <= request_interval <= 60:
         raise ValueError("THERMOFLOW_THINGSPEAK_REQUEST_INTERVAL_SECONDS must be between 0 and 60")
 
     store = SQLiteStore(path)
@@ -398,7 +403,8 @@ def run_scheduler(
                 "status": "error",
                 "error_type": type(error).__name__,
             }
-        results.append(result)
+        if max_cycles is not None:
+            results.append(result)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False), flush=True)
         if max_cycles is None or len(results) < max_cycles:
             wait(interval_seconds)
