@@ -93,6 +93,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 | Ścieżka | Zastosowanie |
 | --- | --- |
 | `/api/health` | Status konfiguracji i połączenia |
+| `/api/thermoflow/data-readiness?days=30` | Read-only audyt wspólnego SQLite: zakresy i źródła telemetrii, historia ThingSpeak, kolektory, integralność i gotowość ML; zakres 1–90 dni. |
 | `/api/status` | Bieżące dane sterownika używane przez dashboard |
 | `/api/statistics?period=day\|week\|month\|year` | Historia ThingSpeak do wykresów i CSV |
 | `/api/history?hours=12&step=120&series=thermoflow-valve4d` | Historia ThingSpeak z filtrem serii, oknem 1–24 h, opcjonalnym próbkowaniem i gotową analizą cykli palnika oraz ochrony powrotu |
