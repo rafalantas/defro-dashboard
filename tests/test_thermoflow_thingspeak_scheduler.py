@@ -44,7 +44,7 @@ class ThingSpeakSchedulerTests(unittest.TestCase):
         def request(url, params):
             channel_id = url.split("/channels/")[1].split("/")[0]
             calls.append((channel_id, dict(params)))
-            stamp = self._local_epoch(params["start"]) + 60
+            stamp = self.now - 5 * 86400 - 60
             created = datetime.fromtimestamp(stamp, ZoneInfo("UTC")).isoformat().replace("+00:00", "Z")
             feed = {
                 "entry_id": int(channel_id) * 100000 + stamp,
