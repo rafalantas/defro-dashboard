@@ -111,3 +111,17 @@ file-artifact compatibility fallback does not write live outcomes. Persistence
 is observational and failures do not affect telemetry polling, predictions,
 or controller behavior. No migration, collector, training, or model promotion
 is started by the API runtime.
+
+
+## Fuel ML — verified SQLite artifacts
+
+The optional explicit Fuel ML importer stores the content-addressed verified
+refill dataset, checksum-protected inference artifact, holdout metrics and
+paired holdout predictions in the existing shared SQLite schema. It accepts
+only `as_issued` baselines and `verified_equal_fill_level` labels. Every
+training and holdout sample is checked against its source refill interval,
+adjacent verified period and calibration regime before persistence.
+
+The importer does not fetch ThingSpeak data, infer refill mass, train from the
+scheduler, change the existing fuel forecast, or promote a model. Model
+promotion remains a manual review decision.
