@@ -20,7 +20,7 @@ def _number(value):
     return type(value) in (int, float) and isfinite(value)
 
 
-def prepare_fibaro_daily_dataset(daily_rows, quality_report):
+def prepare_fibaro_daily_dataset(daily_rows, quality_report, *, minimum_training_samples=MIN_TRAINING_SAMPLES, holdout_samples=HOLDOUT_SAMPLES):
     """Create next-day event-count samples from consecutive observed local days.
 
     No absent days are synthesized. A pair is eligible only when both days have
@@ -86,8 +86,8 @@ def prepare_fibaro_daily_dataset(daily_rows, quality_report):
 
     dataset = prepare_chronological_dataset(
         samples, feature_keys=FEATURE_KEYS, target_key=TARGET_KEY,
-        minimum_training_samples=MIN_TRAINING_SAMPLES,
-        holdout_samples=HOLDOUT_SAMPLES,
+        minimum_training_samples=minimum_training_samples,
+        holdout_samples=holdout_samples,
     )
     dataset["source"] = "fibaro_hc3_persisted_daily_event_aggregates"
     dataset["rejected_days_or_pairs"] = rejected
