@@ -248,6 +248,7 @@ def build_curated_rows(db):
     signals = Counter()
     mapping = Counter()
     seen_transitions = set()
+    head_zone_verified = 0
 
     for row in rows:
         try:
@@ -296,6 +297,8 @@ def build_curated_rows(db):
         grouped.setdefault(timestamp, []).append(transition)
         signals[transition["signal"]] += 1
         mapping[transition["identity_basis"]] += 1
+        if transition["entity"] == "head":
+            head_zone_verified += 1
 
     features = []
     for timestamp, transitions in sorted(grouped.items()):
@@ -346,7 +349,7 @@ def build_curated_rows(db):
         },
         "historical_head_zone_mapping": "event_time_snapshot_only",
         "head_zone_mapping": {
-            "verified": mapping["snapshot_at_or_before_event"],
+            "verified": head_zone_verified,
             "unmapped": sum(
                 skipped[key] for key in (
                     "event_without_prior_snapshot",
@@ -359,7 +362,7 @@ def build_curated_rows(db):
         "raw_source_events_preserved": True,
         "content_sha256": digest,
     }
-    dataset_version = f"v2-{digest[:16]}"
+    dataset_version = f"v3-{digest[:16]}"
     for item in features:
         item["dataset_version"] = dataset_version
     return features, report
@@ -411,7 +414,7 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
     if not backup.get("ok"):
         raise RuntimeError("Backup SQLite nie przeszedł weryfikacji; przerwano.")
 
-    dataset_version = f"v2-{report['content_sha256'][:16]}"
+    dataset_version = f"v3-{report['content_sha256'][:16]}"
     manifest = {
         "schema": DATASET_SCHEMA,
         "source": "fibaro-hc3",
