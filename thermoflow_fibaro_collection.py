@@ -51,6 +51,7 @@ def collect_fibaro_once(provider, collector, *, start, end, collected_at=None,
         "coverage": {
             "status": "fetch_complete" if complete else "partial",
             **coverage,
+            "stored_events_in_window": coverage["stored_events"],
             "observed_span_seconds": (
                 coverage["last_event_timestamp"] - coverage["first_event_timestamp"]
                 if coverage["first_event_timestamp"] is not None
