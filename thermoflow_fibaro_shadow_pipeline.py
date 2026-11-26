@@ -8,6 +8,7 @@ from thermoflow_fibaro_data_quality import assess_fibaro_history_quality
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history
 from thermoflow_fibaro_shadow_evaluation import evaluate_fibaro_shadow
 from thermoflow_fibaro_shadow_ml import train_fibaro_daily_model
+from thermoflow_fibaro_rolling_validation import validate_fibaro_daily_rolling
 from thermoflow_fibaro_time_profile import build_fibaro_time_profile
 
 MAX_PIPELINE_SECONDS = 90 * 86400
@@ -106,6 +107,7 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
     daily_features.sort(key=lambda row: row["date"])
     model = train_fibaro_daily_model(daily_features, quality)
     backtest = evaluate_fibaro_shadow(model)
+    rolling_validation = validate_fibaro_daily_rolling(daily_features, quality)
     status = "evaluated" if backtest.get("status") == "evaluated" else (
         "blocked" if quality.get("status") == "blocked" else "collecting"
     )
@@ -125,6 +127,7 @@ def run_fibaro_shadow_pipeline(collector, *, start, end, timezone_name="Europe/W
         "daily_features": daily_features,
         "model": model,
         "backtest": backtest,
+        "rolling_validation": rolling_validation,
         "safety": {
             "read_only": True,
             "hc3_requests": False,
