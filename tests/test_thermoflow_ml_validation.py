@@ -40,7 +40,10 @@ class RollingValidationTests(unittest.TestCase):
 
     def test_requires_multiple_months_and_minimum_time_span(self):
         start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        result = self.validate(self.samples(55, start))
+        result = validate_rolling_origin(
+            self.samples(65, start), feature_keys=("outside_temp",),
+            target_key="target", minimum_span_days=70,
+        )
         self.assertEqual(result["status"], "collecting")
         self.assertEqual(result["reason"], "insufficient_seasonal_coverage")
         self.assertFalse(result["coverage"]["span_satisfied"])
