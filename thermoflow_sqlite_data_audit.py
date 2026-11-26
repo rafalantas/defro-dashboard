@@ -74,6 +74,29 @@ def _grouped_rows(db, table, group_column):
             for row in rows]
 
 
+def _source_inventory(db, table, source_column, timestamp_column, *, start, end):
+    columns = {row["name"] for row in db.execute(f'PRAGMA table_info("{table}")')}
+    if source_column not in columns or timestamp_column not in columns:
+        return []
+    rows = db.execute(
+        f'SELECT "{source_column}" AS name, COUNT(*) AS count, '
+        f'MIN("{timestamp_column}") AS first_at, MAX("{timestamp_column}") AS last_at, '
+        f'SUM(CASE WHEN "{timestamp_column}" >= ? AND "{timestamp_column}" <= ? THEN 1 ELSE 0 END) AS window_count, '
+        f'COUNT(DISTINCT CASE WHEN "{timestamp_column}" >= ? AND "{timestamp_column}" <= ? '
+        f'THEN date("{timestamp_column}",\\'unixepoch\\') END) AS observed_utc_days '
+        f'FROM "{table}" GROUP BY "{source_column}" ORDER BY "{source_column}"',
+        (start, end, start, end),
+    ).fetchall()
+    return [{
+        "name": str(row["name"] or "unknown"),
+        "count": int(row["count"]),
+        "first_at": int(row["first_at"]) if row["first_at"] is not None else None,
+        "last_at": int(row["last_at"]) if row["last_at"] is not None else None,
+        "window_count": int(row["window_count"] or 0),
+        "observed_utc_days": int(row["observed_utc_days"] or 0),
+    } for row in rows]
+
+
 def _verified_label_counts(db, tables):
     if "shadow_predictions" not in tables:
         return {"total": 0, "verified": 0, "pending": 0, "malformed": 0}
@@ -125,7 +148,12 @@ def read_sqlite_data_audit(database_path=DEFAULT_DB_PATH, *, now, days=30):
             name: _table_summary(db, name, start=start, end=now)
             for name in TABLES if name in tables
         }
-        telemetry_sources = _grouped_rows(db, "telemetry_samples", "source") if "telemetry_samples" in tables else []
+        telemetry_sources = _source_inventory(
+            db, "telemetry_samples", "source", "observed_at", start=start, end=now
+        ) if "telemetry_samples" in tables else []
+        refill_sources = _source_inventory(
+            db, "refill_events", "source", "occurred_at", start=start, end=now
+        ) if "refill_events" in tables else []
         dataset_registry = _grouped_rows(db, "datasets", "status") if "datasets" in tables else []
         model_registry = _grouped_rows(db, "model_versions", "model_name") if "model_versions" in tables else []
         collector_registry = _grouped_rows(db, "collection_runs", "collector_name") if "collection_runs" in tables else []
@@ -145,6 +173,12 @@ def read_sqlite_data_audit(database_path=DEFAULT_DB_PATH, *, now, days=30):
         "fibaro_events": inventory.get("fibaro_events", {}).get("count", 0),
         "fibaro_snapshots": inventory.get("fibaro_snapshots", {}).get("count", 0),
         "emodul_telemetry": sum(item["count"] for item in telemetry_sources if item["name"] == "emodul"),
+        "thingspeak_telemetry": sum(
+            item["count"] for item in telemetry_sources if item["name"].startswith("thingspeak:")
+        ),
+        "thingspeak_refill_events": sum(
+            item["count"] for item in refill_sources if item["name"].startswith("thingspeak")
+        ),
         "fuel_refill_events": inventory.get("refill_events", {}).get("count", 0),
         "weather_forecasts": inventory.get("weather_forecasts", {}).get("count", 0),
         "curated_feature_windows": inventory.get("feature_windows", {}).get("count", 0),
@@ -191,6 +225,7 @@ def read_sqlite_data_audit(database_path=DEFAULT_DB_PATH, *, now, days=30):
         "sources": sources,
         "inventory": inventory,
         "telemetry_by_source": telemetry_sources,
+        "refill_events_by_source": refill_sources,
         "dataset_registry_by_status": dataset_registry,
         "model_registry_by_name": model_registry,
         "collector_runs_by_name": collector_registry,
