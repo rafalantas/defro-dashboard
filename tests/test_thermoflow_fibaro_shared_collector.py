@@ -64,6 +64,26 @@ class SharedFibaroCollectorTests(unittest.TestCase):
         self.assertEqual(result["status"], "partial")
         self.assertEqual(self.collector.read_events()[0]["timestamp"], 1000)
 
+    def test_recorded_failure_does_not_advance_cursor_and_success_recovers(self):
+        failure = self.collector.record_failure(
+            error_type="TimeoutError", attempted_at=1150,
+            window_start=900, window_end=1100,
+        )
+        self.assertFalse(failure["cursor_advanced"])
+        self.assertIsNone(self.collector.status()["last_successful_end"])
+        result = self.collector.save_batch([], start=900, end=1100, collected_at=1200)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(self.collector.status()["last_successful_end"], 1100)
+
+    def test_event_coverage_uses_exact_sql_counts(self):
+        self.collector.save_batch(self.events, start=900, end=1100, collected_at=1200)
+        coverage = self.collector.event_coverage(start=900, end=1100)
+        self.assertEqual(coverage, {
+            "stored_events": 2,
+            "first_event_timestamp": 1000,
+            "last_event_timestamp": 1010,
+        })
+
     def test_partial_batch_does_not_advance_shared_cursor(self):
         bad = self.events + [{"id": 0, "timestamp": 1020, "type": "bad"}]
         result = self.collector.save_batch(bad, start=900, end=1100, collected_at=1200)
