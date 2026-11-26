@@ -1,13 +1,14 @@
-"""Fail-soft persistence for connected normalized eModul API snapshots.
+"""Curated eModul telemetry persistence for ThermoFlow AI/ML.
 
-This module never creates a missing database, applies migrations, starts a
-collector, or performs upstream network I/O. It only writes to an already
-initialized shared ThermoFlow SQLite schema.
+Only stable measurement and operating-context fields are stored. UI-only
+diagnostics (tiles, zones, menus, translations and statistics) are excluded.
+No migrations, collectors, network calls or device commands are performed.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import time
@@ -17,6 +18,29 @@ from pathlib import Path
 from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
 SOURCE = "emodul"
+SAMPLE_SCHEMA = "thermoflow-emodul-ml-input/1"
+
+# Explicit allow-list: fields useful for time-series diagnostics and ML.
+# Deliberately excludes raw tile/menu/zone structures and UI presentation data.
+FIELD_ALLOWLIST = {
+    "temperatures": {"co", "dhw", "flue", "outdoor", "room", "buffer_upper"},
+    "boiler_power_kw": None,
+    "boiler_power_at": None,
+    "pumps": {"floor", "valve4d", "dhw", "circulation"},
+    "valve": {"current", "return", "set", "opening", "set_correction",
+              "room_reduction", "set_after_correction"},
+    "fuel": {"percent", "hours"},
+    "controller_metrics": {"feeder_temperature_c", "instant_fuel_consumption"},
+    "fire": None,
+    "fire_signal": None,
+    "fire_brightness_estimate": None,
+    "fan": {"running", "percent", "rpm"},
+    "disinfection": {"active", "percent"},
+    "mode": None,
+    "controller_status": None,
+    "setpoints": {"co", "dhw", "room"},
+    "hysteresis": {"boiler", "dhw", "valve"},
+}
 
 
 def _timestamp(value):
@@ -32,9 +56,39 @@ def _timestamp(value):
     return stamp if stamp > 0 else None
 
 
+def _valid_value(value):
+    if value is None or isinstance(value, (str, bool, int)):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return False
+
+
+def select_ml_fields(data):
+    """Return only allow-listed scalar measurements, preserving useful groups."""
+    if not isinstance(data, dict):
+        return {}
+    selected = {}
+    for field, members in FIELD_ALLOWLIST.items():
+        value = data.get(field)
+        if members is None:
+            if _valid_value(value):
+                selected[field] = value
+            continue
+        if not isinstance(value, dict):
+            continue
+        group = {
+            key: item for key, item in value.items()
+            if key in members and _valid_value(item)
+        }
+        if group:
+            selected[field] = group
+    return selected
+
+
 def persist_emodul_snapshot(payload, *, database_path=None, module_id=None,
                             recorded_at=None):
-    """Persist one complete connected snapshot; return inserted/duplicate/conflict.
+    """Persist one curated ML input sample; return inserted/duplicate/conflict.
 
     A missing database or unapplied schema is a no-op. The API runtime must
     never initialize storage implicitly.
@@ -44,9 +98,9 @@ def persist_emodul_snapshot(payload, *, database_path=None, module_id=None,
     observed_at = _timestamp(payload.get("fetched_at"))
     if observed_at is None:
         return {"status": "skipped", "reason": "invalid_observation_timestamp"}
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        return {"status": "skipped", "reason": "snapshot_data_missing"}
+    selected = select_ml_fields(payload.get("data"))
+    if not selected:
+        return {"status": "skipped", "reason": "no_ml_fields"}
 
     path = str(database_path or os.getenv("THERMOFLOW_DB_PATH", DEFAULT_DB_PATH))
     if not Path(path).expanduser().is_file():
@@ -60,11 +114,18 @@ def persist_emodul_snapshot(payload, *, database_path=None, module_id=None,
     if type(now) is not int or now <= 0:
         return {"status": "skipped", "reason": "invalid_recorded_at"}
 
+    sample = {
+        "schema": SAMPLE_SCHEMA,
+        "source": SOURCE,
+        "module_id": module,
+        "observed_at": observed_at,
+        "data": selected,
+    }
     try:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+        encoded = json.dumps(sample, ensure_ascii=False, sort_keys=True,
                              separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError):
-        return {"status": "skipped", "reason": "invalid_json_payload"}
+        return {"status": "skipped", "reason": "invalid_ml_sample"}
     digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
     store = SQLiteStore(path)
     try:
@@ -95,7 +156,8 @@ def persist_emodul_snapshot(payload, *, database_path=None, module_id=None,
             )
         return {"status": "inserted", "source": SOURCE,
                 "source_key": source_key, "observed_at": observed_at,
-                "recorded_at": now, "payload_sha256": digest}
+                "recorded_at": now, "payload_sha256": digest,
+                "stored_fields": sorted(selected)}
     except sqlite3.Error:
         # Archival failures must not affect the existing live polling path.
         return {"status": "storage_error", "source": SOURCE}
