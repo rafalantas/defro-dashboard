@@ -111,13 +111,14 @@ def aggregate_heating_observations(aligned, *, timezone_name="Europe/Warsaw"):
                 observed = emodul.get("observed_at", {})
                 sample_stamp = observed.get("unix") if isinstance(observed, dict) else None
                 sample_key = (sample_stamp, emodul.get("source_key"))
-                if sample_stamp is not None:
+                is_new_sample = sample_stamp is not None and sample_key not in bucket["_samples"]
+                if is_new_sample:
                     bucket["_samples"].add(sample_key)
                     bucket["_timestamps"].add(sample_stamp)
-                data = emodul.get("data")
-                if isinstance(data, dict):
-                    for path in METRIC_PATHS:
-                        _add_metric(bucket, path, _path(data, path))
+                    data = emodul.get("data")
+                    if isinstance(data, dict):
+                        for path in METRIC_PATHS:
+                            _add_metric(bucket, path, _path(data, path))
     result = {}
     for period, values in buckets.items():
         result["hourly" if period == "hour" else "daily"] = [
