@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from thermoflow_store import SQLiteStore
 from thermoflow_analytics_scheduler import (
@@ -184,7 +184,7 @@ class AnalyticsSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduler.call_args.kwargs["interval_seconds"], 21600)
 
     def test_background_scheduler_can_be_disabled(self):
-        factory = unittest.mock.Mock()
+        factory = Mock()
         result = start_background_scheduler(
             enabled=False,
             thread_factory=factory,
