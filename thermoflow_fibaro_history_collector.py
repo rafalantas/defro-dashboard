@@ -143,7 +143,7 @@ class FibaroHistoryCollector:
                     ON CONFLICT(collector_name) DO UPDATE SET
                         cursor_value = CASE
                             WHEN CAST(excluded.cursor_value AS INTEGER) >
-                                 CAST(collector_state.cursor_value AS INTEGER)
+                                 COALESCE(CAST(collector_state.cursor_value AS INTEGER),0)
                             THEN excluded.cursor_value
                             ELSE collector_state.cursor_value
                         END,
@@ -486,7 +486,7 @@ class FibaroHistoryCollector:
                    VALUES(?,?,?,?)
                    ON CONFLICT(collector_name) DO UPDATE SET
                      cursor_value=CASE
-                       WHEN CAST(excluded.cursor_value AS INTEGER) > CAST(collector_state.cursor_value AS INTEGER)
+                       WHEN CAST(excluded.cursor_value AS INTEGER) > COALESCE(CAST(collector_state.cursor_value AS INTEGER),0)
                        THEN excluded.cursor_value ELSE collector_state.cursor_value END,
                      updated_at=excluded.updated_at,
                      metadata_json=excluded.metadata_json""",
