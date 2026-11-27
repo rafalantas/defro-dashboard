@@ -16,8 +16,12 @@ Falls back to ThingSpeak when:
 * the request is not a plain ``start``/``end``/``results`` range read (any
   server-side aggregation such as ``timescale`` or ``average`` is unsupported);
 * the channel has no mirrored rows, or the window starts before the first
-  mirrored sample (override with ``THERMOFLOW_LOCAL_FEEDS_START`` once it has been
-  verified that ThingSpeak holds nothing earlier);
+  mirrored sample and ThingSpeak has not been *proven* to hold nothing earlier.
+  The proof is one small ThingSpeak request per channel (any entries before the
+  first mirrored sample?), cached for the life of the process: an empty answer
+  lets such windows be served locally (they simply start with the first mirrored
+  row), while any entry, an error or an unreadable answer keeps using ThingSpeak.
+  ``THERMOFLOW_LOCAL_FEEDS_START`` remains an optional operator override;
 * the collector has not ingested up to (almost) the end of the window, so the
   mirror may be behind;
 * more rows match than ``results`` allows (ThingSpeak's truncation rule is not
@@ -34,6 +38,8 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LOGGER = logging.getLogger("thermoflow.local_feeds")
@@ -51,6 +57,13 @@ _lock = threading.Lock()
 _sources: dict[str, str] = {}       # channel id -> mirrored source name
 _warned: set[tuple[str, str]] = set()
 STATS: dict = {"local": 0, "fallback": {}}
+
+PROBE_START = "2010-01-01 00:00:00"        # before ThingSpeak existed
+PROBE_TIMEOUT_SECONDS = 15
+PROBE_RETRY_DATA_SECONDS = 3600            # entries exist before the mirror: ask again in an hour
+PROBE_RETRY_ERROR_SECONDS = 300            # probe failed or was unreadable: ask again in 5 minutes
+_proofs: dict[str, tuple] = {}             # channel -> (verified-empty-before epoch | None, retry_at)
+_channel_locks: dict[str, threading.Lock] = {}
 
 
 def read_mode() -> str:
@@ -119,6 +132,53 @@ def _feed(row):
     return {"created_at": created, "entry_id": entry_id, **payload}
 
 
+def _now():
+    return time.time()
+
+
+def _fetch_json(url, params):
+    request = Request(f"{url}?{urlencode(params)}",
+                      headers={"Accept": "application/json", "User-Agent": "defro-dashboard-local-feeds"})
+    with urlopen(request, timeout=PROBE_TIMEOUT_SECONDS) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _nothing_earlier(url, channel, floor, api_key, clock):
+    """True only if ThingSpeak itself returned no entry earlier than ``floor`` (epoch seconds).
+
+    One probe per channel; concurrent windows of the same channel wait for it instead of
+    repeating it. A proof for ``floor`` also covers any lower floor (a larger mirror).
+    Errors are logged by type only: the request URL and the read key never reach the log.
+    """
+    with _lock:
+        guard = _channel_locks.setdefault(channel, threading.Lock())
+    with guard:
+        with _lock:
+            verified, retry_at = _proofs.get(channel, (None, 0.0))
+        if verified is not None and verified >= floor:
+            return True
+        if verified is None and clock < retry_at:
+            return False
+        params = {"start": PROBE_START, "end": datetime.fromtimestamp(floor - 1, timezone.utc).strftime(_TIME_FORMAT),
+                  "results": 1}
+        if api_key:
+            params["api_key"] = api_key
+        proven, retry = False, PROBE_RETRY_ERROR_SECONDS
+        try:
+            payload = _fetch_json(url, params)
+            feeds = payload.get("feeds") if isinstance(payload, dict) else None
+            if isinstance(feeds, list):
+                if feeds:
+                    retry = PROBE_RETRY_DATA_SECONDS
+                else:
+                    proven = True
+        except Exception as error:
+            LOGGER.warning("ThingSpeak probe for channel %s failed (%s)", channel, type(error).__name__)
+        with _lock:
+            _proofs[channel] = (floor if proven else None, clock + retry)
+        return proven
+
+
 def try_serve(url, params, *, db_path=None, now=None):
     """Return a ThingSpeak-shaped ``{"channel", "feeds"}`` dict, or ``None`` to use ThingSpeak."""
     channel = "?"
@@ -152,7 +212,8 @@ def try_serve(url, params, *, db_path=None, now=None):
             if floor is None:
                 floor = db.execute("SELECT MIN(observed_at) FROM telemetry_samples WHERE source=?",
                                    (source,)).fetchone()[0]
-            if floor is None or start < floor:
+            if floor is None or (start < floor and not _nothing_earlier(
+                    str(url).split("?", 1)[0], channel, floor, params.get("api_key"), _now())):
                 return _fallback(channel, "before_local_history")
             cursor = db.execute("SELECT cursor_value FROM collector_state WHERE collector_name=?",
                                 (CURSOR_PREFIX + source[len(SOURCE_PREFIX):],)).fetchone()
@@ -183,5 +244,7 @@ def reset_state():
     with _lock:
         _sources.clear()
         _warned.clear()
+        _proofs.clear()
+        _channel_locks.clear()
         STATS["local"] = 0
         STATS["fallback"] = {}
