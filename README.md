@@ -222,6 +222,29 @@ Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktu
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
 
 
+### Zimno i dlaczego (reguły, tylko odczyt)
+
+Endpoint `GET /api/fibaro/comfort?hours=24` (1–72 h) zasila sekcję „Zimno i dlaczego" w zakładce
+Fibaro. Czyta wyłącznie lokalną bazę SQLite (nie łączy się z HC3, niczego nie zapisuje, nie wysyła
+poleceń), tak jak `/api/fibaro/dashboard`, i nie wymaga tokenu. Odpowiedź jest buforowana w pamięci
+przez 30 s.
+
+Źródłem stanu są udane przebiegi kolektora Fibaro co ok. 5 minut: stan w danej chwili to ostatnia
+zapisana migawka stref i głowic. Luka dłuższa niż 15 minut przerywa epizod i nie jest uzupełniana.
+HC3 nie zapisuje zmian `heatRequired` ani `windowOpened` w historii zdarzeń, dlatego zapotrzebowanie i
+okna są znane tylko z migawek (od początku ich zapisu).
+
+- **Zimno** to strefa co najmniej 0,5 K poniżej aktywnej nastawy przez co najmniej 20 minut;
+  krócej to „dogrzewa się". **Przegrzanie** to co najmniej 1,0 K ponad nastawę. Progi są stałymi
+  w `thermoflow_fibaro_comfort.py`.
+- **Przyczyna** to hipoteza z listą dowodów i poziomem pewności, nigdy dowód przyczynowości:
+  podniesiona nastawa tuż przed epizodem, otwarte okno wykryte przez głowicę, brak zapotrzebowania
+  mimo niedoboru, zapotrzebowanie zgłoszone a strefa nie dogrzewa się, spadek temperatury.
+  Gdy dowodów brak, wynik to „brak danych wskazujących przyczynę".
+- Odczyty temperatury poza zakresem 5–40 °C (np. 0 °C z zaniku łączności) są pomijane.
+- Wersja nie uwzględnia pracy kotła, zaworu 4D ani pogody, więc nie odróżnia braku mocy źródła
+  ciepła od innych przyczyn. To kolejny etap.
+
 ### Fibaro HC3 Telemetry Intelligence (shadow)
 
 Endpoint `GET /api/fibaro/telemetry` exposes a consolidated, read-only telemetry

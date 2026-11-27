@@ -62,8 +62,61 @@
     $('fibaroWindowMeta').textContent='Zakres '+days+' dni · '+visibleCount+' zdarzeń zmian temperatury · źródło: lokalna baza SQLite';
     renderSummary();renderZones();renderHistory();renderHeads();
   }
+  /* Cold zones and why: rule-based, advisory, from /api/fibaro/comfort */
+  let comfort=null, comfortHours=24, comfortLoading=false;
+  const STATUS_LABEL={cold:'ZIMNO',cooling:'DOGRZEWA SIĘ',ok:'OK',warm:'PRZEGRZANIE',unknown:'BRAK DANYCH'};
+  const STATUS_ORDER={cold:0,cooling:1,warm:2,unknown:3,ok:4};
+  const signed=value=>value==null?'—':(value>0?'+':'')+number(value);
+  function episodeHtml(ep,kind){
+    const range=esc(date(ep.start)+' – '+date(ep.end)), tail=ep.ongoing?' · trwa':'';
+    if(kind==='warm')return '<div class="comfort-episode"><strong>'+range+'</strong> · '+ep.duration_minutes+' min'+tail+' · maks. +'+number(ep.worst_gap_k)+' K ponad nastawę<ul><li>'+esc(ep.note||'')+'</li></ul></div>';
+    const causes=[ep.primary_cause,...(ep.other_causes||[])].map((c,i)=>'<li>'+(i===0?'<b>':'')+esc(c.label)+(i===0?'</b>':'')+' · pewność: '+esc(c.confidence)+(c.evidence&&c.evidence.length?'<br>'+c.evidence.map(esc).join('<br>'):'')+'</li>').join('');
+    return '<div class="comfort-episode"><strong>'+range+'</strong> · '+ep.duration_minutes+' min'+tail+' · maks. −'+number(ep.worst_gap_k)+' K od nastawy'+(ep.started_before_window?' · zaczął się przed oknem':'')+'<ul>'+causes+'</ul></div>';
+  }
+  function renderComfort(){
+    const banner=$('comfortBanner'), list=$('comfortList');
+    if(!comfort){return;}
+    const s=comfort.summary, cov=comfort.coverage, th=comfort.thresholds;
+    $('comfortMeta').textContent='Okno '+comfortHours+' h · '+cov.samples+' odczytów co ok. 5 min · zimno = ≥'+number(th.cold_gap_k)+' K poniżej nastawy przez ≥'+th.episode_min_minutes+' min';
+    let tone='', text='';
+    if(!cov.fresh){tone='';text='Brak świeżych odczytów kolektora Fibaro, więc stan stref jest nieznany. Sprawdź kolektor.';}
+    else if(s.cold_now.length){tone='cold';text='<b>Teraz zimno:</b> '+s.cold_now.map(esc).join(', ')+'.';}
+    else if(s.cooling_now.length){tone='';text='<b>Dogrzewa się</b> (poniżej nastawy krócej niż '+th.episode_min_minutes+' min): '+s.cooling_now.map(esc).join(', ')+'.';}
+    else{tone='ok';text='Żadna strefa nie jest teraz poniżej nastawy.';}
+    if(cov.fresh&&s.warm_now.length)text+=' <span class="overview-muted">Przegrzane (≥'+number(th.warm_gap_k)+' K ponad nastawę): '+s.warm_now.map(esc).join(', ')+'.</span>';
+    banner.className='comfort-banner'+(tone?' '+tone:'');banner.innerHTML=text;
+    const zones=[...comfort.zones].sort((a,b)=>(STATUS_ORDER[a.status]-STATUS_ORDER[b.status])||a.name.localeCompare(b.name,'pl'));
+    list.innerHTML=zones.length?zones.map(z=>{
+      const cur=z.current||{}, last=z.cold_episodes[z.cold_episodes.length-1];
+      const reading=cur.temperature==null?'brak odczytu':number(cur.temperature)+'° · cel '+(cur.setpoint==null?'—':number(cur.setpoint)+'°')+' · '+signed(cur.gap_k==null?null:-cur.gap_k)+' K'+(cur.heat_required===true?' · grzeje':cur.heat_required===false?' · bez zapotrzebowania':'');
+      const cause=last?esc(last.primary_cause.label)+'<small>ostatni epizod: '+esc(date(last.start))+' · '+last.duration_minutes+' min · pewność: '+esc(last.primary_cause.confidence)+'</small>':'Brak epizodów zimna w oknie';
+      const mins=z.cold_minutes?'zimno '+z.cold_minutes+' min':(z.warm_minutes?'ciepło '+z.warm_minutes+' min':'—');
+      const detail=[...z.cold_episodes].reverse().map(ep=>episodeHtml(ep,'cold')).join('')+[...z.warm_episodes].reverse().map(ep=>episodeHtml(ep,'warm')).join('')||'<p class="overview-muted">Brak epizodów w wybranym oknie.</p>';
+      const invalid=z.invalid_temperature_samples?'<p class="overview-muted">Pominięto '+z.invalid_temperature_samples+' odczytów temperatury poza zakresem (np. 0 °C z zaniku łączności).</p>':'';
+      return '<details class="comfort-row"><summary><span class="comfort-name">'+esc(z.name)+'<small>'+esc(reading)+'</small></span><span class="comfort-chip '+esc(z.status)+'">'+esc(STATUS_LABEL[z.status]||z.status)+'</span><span class="comfort-cause">'+cause+'</span><span class="comfort-mins">'+esc(mins)+'</span></summary><div class="comfort-detail">'+detail+invalid+'</div></details>';
+    }).join(''):'<p class="overview-muted">Brak stref w zapisanych odczytach.</p>';
+    $('comfortNote').textContent=(comfort.limitations||[]).join(' ');
+  }
+  async function loadComfort(){
+    if(comfortLoading)return;comfortLoading=true;
+    try{
+      const response=await ThermoFlowApi.get('/api/fibaro/comfort?hours='+comfortHours);
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'Nie udało się policzyć stanu stref');
+      comfort=data;renderComfort();
+    }catch(error){
+      $('comfortBanner').className='comfort-banner';$('comfortBanner').textContent=error.message||'Nie udało się pobrać analizy zimna.';
+      $('comfortList').innerHTML='';
+    }finally{comfortLoading=false;}
+  }
+  document.querySelectorAll('[data-comfort-hours]').forEach(button=>button.addEventListener('click',()=>{
+    comfortHours=Number(button.dataset.comfortHours);
+    document.querySelectorAll('[data-comfort-hours]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});
+    loadComfort();
+  }));
   async function load(){
     if(loading)return;loading=true;setStatus('ŁADOWANIE…');
+    loadComfort();
     try{
       const response=await ThermoFlowApi.get('/api/fibaro/dashboard?days=14');
       const data=await response.json();
