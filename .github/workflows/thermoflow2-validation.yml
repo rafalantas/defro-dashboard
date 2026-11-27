@@ -50,6 +50,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_fuel_prediction_accuracy.py' -v
       - name: Telemetry windows before first data regression
         run: python -m unittest discover -s tests -p 'test_fuel_telemetry_windows_before_data.py' -v
+      - name: Telemetry window slicing equivalence
+        run: python -m unittest discover -s tests -p 'test_fuel_telemetry_window_slicing.py' -v
       - name: Local ThingSpeak mirror reads regression
         run: python -m unittest discover -s tests -p 'test_thermoflow_local_feeds.py' -v
       - name: Fibaro comfort (cold zones) regression

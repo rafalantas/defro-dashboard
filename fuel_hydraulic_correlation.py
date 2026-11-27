@@ -5,8 +5,10 @@ or recommend/control pump and valve settings.
 """
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections import deque
 from datetime import timedelta
+from operator import itemgetter
 
 MAX_GAP_SECONDS = 300
 EVENT_WINDOW_MINUTES = 5
@@ -14,9 +16,29 @@ VALVE_MOVEMENT_THRESHOLD_PCT = 5.0
 PUMP_KEYS = ("pump_floor", "pump_dhw", "pump_circulation")
 REPORTED_EVENTS = 100
 
+_BY_TIME = itemgetter(0)
 
-def _window(samples, start, end):
-    return [(ts, value) for ts, value in samples if start <= ts <= end]
+
+def window_samples(samples, start, end, include_end=True):
+    """Samples with ``start <= ts <= end`` (``ts < end`` when ``include_end`` is false), in order.
+
+    ``samples`` must be sorted by timestamp, as ``fuel_telemetry_diagnostics._normalize`` returns them.
+    The window is then a slice found by binary search; filtering the whole series for every event made
+    the telemetry audit cost grow with events x samples (more than half of a cold fuel summary).
+    """
+    low = bisect_left(samples, start, key=_BY_TIME)
+    high = (bisect_right if include_end else bisect_left)(samples, end, key=_BY_TIME)
+    return samples[low:high]
+
+
+_window = window_samples
+
+
+def _sorted_by_time(samples):
+    """The same list when already ordered (the normal case), otherwise a stable sorted copy."""
+    if all(a[0] <= b[0] for a, b in zip(samples, samples[1:])):
+        return samples
+    return sorted(samples, key=_BY_TIME)
 
 
 def _mean(samples):
@@ -49,11 +71,9 @@ def _response(event_time, returns, valve):
     window = timedelta(minutes=EVENT_WINDOW_MINUTES)
     # Keep the event timestamp in the post-event window only. Including it
     # on both sides biases the delta and can make a one-sample side look valid.
-    before_return = [(ts, value) for ts, value in returns
-                     if event_time - window <= ts < event_time]
+    before_return = window_samples(returns, event_time - window, event_time, include_end=False)
     after_return = _window(returns, event_time, event_time + window)
-    before_valve = [(ts, value) for ts, value in valve
-                    if event_time - window <= ts < event_time]
+    before_valve = window_samples(valve, event_time - window, event_time, include_end=False)
     after_valve = _window(valve, event_time, event_time + window)
     return_covered = len(before_return) >= 2 and len(after_return) >= 2
     valve_covered = len(before_valve) >= 2 and len(after_valve) >= 2
@@ -113,8 +133,11 @@ def build_hydraulic_correlation(normalized):
             valve_count += 1
             valve_events.append((ts, event))
 
+    # Window lookups need ordered series; the event scans above keep using the input as given.
+    returns_by_time, valve_by_time = _sorted_by_time(returns), _sorted_by_time(valve)
+
     def with_responses(events):
-        return [dict(event, return_response=_response(ts, returns, valve))
+        return [dict(event, return_response=_response(ts, returns_by_time, valve_by_time))
                 for ts, event in events]
 
     return {
