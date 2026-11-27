@@ -32,10 +32,13 @@ from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_st
 from thermoflow_fibaro_dashboard import read_fibaro_dashboard
 from thermoflow_fibaro_comfort import read_fibaro_comfort
 from thermoflow_local_feeds import try_serve as try_serve_local_feeds
+from fuel_prediction_accuracy import accuracy_from_engine
 
 # Short in-memory cache (no disk writes): the projection parses stored snapshots.
 _COMFORT_CACHE = {}
 _COMFORT_CACHE_SECONDS = 30
+_FUEL_ACCURACY_CACHE = {}
+_FUEL_ACCURACY_CACHE_SECONDS = 300
 from thermoflow_heating_diagnostics import read_heating_analytics
 from thermoflow_analytics_scheduler import start_background_scheduler
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1513,11 +1516,41 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_fuel_accuracy(self, query: dict) -> None:
+        """Read-only accuracy of the production pellet forecast (archive vs counter actuals)."""
+        try:
+            days = int(query.get("days", ["30"])[0])
+        except ValueError:
+            self._send_json(400, {"error": "days musi być liczbą"})
+            return
+        cached = _FUEL_ACCURACY_CACHE.get(days)
+        if cached and time.time() - cached[0] < _FUEL_ACCURACY_CACHE_SECONDS:
+            self._send_json(200, cached[1])
+            return
+        engine = _load_fuel_engine()
+        if engine is None:
+            self._send_json(503, {"error": "Silnik paliwa jest chwilowo niedostępny"})
+            return
+        try:
+            status, payload = accuracy_from_engine(
+                engine, days,
+                database_path=os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
+                tz_name=os.getenv("FUEL_TZ", "Europe/Warsaw"),
+            )
+        except Exception as error:
+            status, payload = 500, {"error": str(error)[:180]}
+        if status == 200:
+            _FUEL_ACCURACY_CACHE[days] = (time.time(), payload)
+        self._send_json(status, payload)
+
     def _handle_fuel(self, method: str) -> bool:
         """Zużycie peletu: osobny moduł fuel.py, dane w osobnym kanale ThingSpeak."""
         parsed = urlsplit(self.path)
         if not parsed.path.startswith("/api/fuel/"):
             return False
+        if method == "GET" and parsed.path == "/api/fuel/accuracy":
+            self._send_fuel_accuracy(parse_qs(parsed.query))
+            return True
         try:
             length = min(int(self.headers.get("Content-Length") or 0), 65536)
         except ValueError:

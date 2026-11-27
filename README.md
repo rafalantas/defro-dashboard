@@ -222,6 +222,26 @@ Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktu
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
 
 
+### Trafność prognozy peletu (`/api/fuel/accuracy`)
+
+`GET /api/fuel/accuracy?days=30` (3–120) ocenia produkcyjną prognozę dobową względem faktycznego zużycia.
+Tylko odczyt: nic nie zapisuje i nie zmienia modelu. Wynik jest buforowany w pamięci przez 5 minut.
+
+- **Prognozy** pochodzą z archiwum `weather_forecasts`, gdzie przy każdej zmianie prognozy zapisywane jest pole
+  `estimated_pellet_kg_day` razem z chwilą wydania. Ostatni wiersz wydany nie później niż w danym momencie to dokładnie
+  prognoza obowiązująca wtedy, więc każda doba jest oceniana prognozą z chwili wydania, nigdy dopasowaną po fakcie.
+- **Faktyczne zużycie** to `kg_counter` z `/api/fuel/daily` (licznik podajnika).
+- Porównywane są trzy prognozy: `day_ahead` (ostatnia wydana przed początkiem doby), `24h` i `48h` (ostatnie wydane
+  co najmniej 24 i 48 godzin wcześniej). Dla każdej: średni błąd bezwzględny (`mae_kg`), przesunięcie (`bias_kg`),
+  odsetek dób z błędem do 2 kg.
+- **Odniesienie:** te same doby ocenia się też dwiema prostymi prognozami, „tyle co wczoraj" i „średnia z 7 dni".
+  `skill_vs` to `1 − błąd modelu / błąd prostej prognozy` (dodatnie: model lepszy). Model ma sens tylko wtedy,
+  gdy je pokonuje.
+- `assessment` to `collecting` (mniej niż 7 ocenionych dób), `better_than_naive`, `worse_than_naive` albo `inconclusive`.
+- Doby z tymczasowym współczynnikiem licznika (`estimate`) są wymienione w tabeli, ale nie wchodzą do oceny.
+- Doby bez zapisanej prognozy sprzed ich początku nie są oceniane (`forecast_kg` puste). Prognoza trafia do archiwum
+  przy budowie podsumowania paliwa, więc długa przerwa bez żadnej budowy oznacza lukę w serii.
+
 ### Odczyt telemetrii z lokalnej bazy (SQLite)
 
 Kolektor ThingSpeak kopiuje każdy wpis kanałów telemetrii do `telemetry_samples`. Odczyty zakresu
