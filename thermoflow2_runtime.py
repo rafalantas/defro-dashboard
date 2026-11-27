@@ -1087,6 +1087,28 @@ def _telemetry_fetch_windows(days: int, today: date) -> list[tuple[date, date, i
     return windows
 
 
+def _telemetry_fetch_windows_from_data_start(days: int, today: date) -> list[tuple[date, date, int]]:
+    """Planned windows without those that end before the channels' first day of data.
+
+    A cold summary asks for MAX_DAYS (120) of history in 3-day windows, i.e. 41 windows
+    per channel, while the channels hold only a couple of weeks: every window before the
+    first day of data is an empty request. The engine already assumes nothing exists
+    before ``_temps_data_start()`` (daily rows start the day after it), so those windows
+    are skipped. One day of margin keeps a second channel that started slightly earlier.
+    If the first day of data is unknown, nothing is skipped.
+    """
+    windows = _telemetry_fetch_windows(days, today)
+    try:
+        first_day = _temps_data_start()
+    except Exception:
+        first_day = None
+    if first_day is None:
+        return windows
+    cutoff = first_day - timedelta(days=1)
+    kept = [window for window in windows if window[1] > cutoff]
+    return kept or windows[-1:]      # never an empty plan (e.g. a first day set in the future)
+
+
 def _telemetry_history(days: int) -> dict:
     """Legacy facade: delegate history retrieval to the injectable provider."""
     with summary_build_stage("telemetry_fetch"):
@@ -1104,7 +1126,7 @@ def _telemetry_history_impl(days: int) -> dict:
         cache=_telemetry_history_cache,
         cache_ttl=TELEMETRY_HISTORY_CACHE_SECONDS,
         partial_cache_ttl=TELEMETRY_PARTIAL_CACHE_SECONDS,
-        fetch_windows=_telemetry_fetch_windows,
+        fetch_windows=_telemetry_fetch_windows_from_data_start,
         request_json=_request_json,
         analyze=fuel_telemetry.analyze,
         endpoint=TS_API,
