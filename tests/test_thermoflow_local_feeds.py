@@ -6,6 +6,7 @@ import os
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -54,6 +55,14 @@ class MirrorCase(unittest.TestCase):
         os.environ.pop("THERMOFLOW_READ_SOURCE", None)
         os.environ.pop("THERMOFLOW_LOCAL_FEEDS_START", None)
         local_feeds.reset_state()
+        # No test may reach the real ThingSpeak: the proof probe is blocked unless a test sets it.
+        probe = patch.object(local_feeds, "_fetch_json", side_effect=OSError("network blocked in tests"))
+        self.probe = probe.start()
+        self.addCleanup(probe.stop)
+        self.clock = [1_000_000.0]
+        clock = patch.object(local_feeds, "_now", side_effect=lambda: self.clock[0])
+        clock.start()
+        self.addCleanup(clock.stop)
 
     def mirror(self, feeds, *, channel=CHANNEL, name="temperatures_power", cursor=None, legacy=False):
         """Store feeds the way the ThingSpeak collector does."""
@@ -196,6 +205,136 @@ class FallbackTests(MirrorCase):
         self.serve({**self.params, "timescale": 10}, now=self.now)
         self.assertEqual(local_feeds.STATS["local"], 1)
         self.assertEqual(local_feeds.STATS["fallback"]["not_a_range_read"], 1)
+
+
+class ProofTests(MirrorCase):
+    """A window that starts before the first mirrored sample is served locally only when
+    ThingSpeak itself answered that it holds nothing earlier."""
+
+    def setUp(self):
+        super().setUp()
+        self.feeds = make_feeds(BASE, 40)
+        self.mirror(self.feeds)
+        self.floor = _timestamp(self.feeds[0]["created_at"])
+        self.early = {"start": utc(BASE - 86400), "end": utc(BASE + 39 * 300), "results": 8000}
+        self.now = BASE + 20000
+
+    def test_an_empty_thingspeak_answer_lets_the_window_be_served_locally(self):
+        self.probe.side_effect = None
+        self.probe.return_value = {"channel": {"id": int(CHANNEL)}, "feeds": []}
+        result = self.serve({**self.early, "api_key": "READKEY"}, now=self.now)
+        self.assertEqual(result["feeds"], self.feeds)               # exactly what ThingSpeak would hold
+        self.assertEqual(self.probe.call_count, 1)
+        url, params = self.probe.call_args.args
+        self.assertEqual(url, URL)
+        self.assertEqual(params, {"start": "2010-01-01 00:00:00", "end": utc(self.floor - 1),
+                                  "results": 1, "api_key": "READKEY"})
+
+    def test_probe_without_a_read_key_sends_none(self):
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": []}
+        self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.assertNotIn("api_key", self.probe.call_args.args[1])
+
+    def test_window_result_equals_what_thingspeak_would_return(self):
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": []}
+        lo, hi = BASE - 86400, BASE + 10 * 300
+        expected = [f for f in self.feeds if lo <= _timestamp(f["created_at"]) <= hi]
+        result = self.serve({"start": utc(lo), "end": utc(hi), "results": 8000}, now=self.now)
+        self.assertEqual(result["feeds"], expected)
+
+    def test_proof_is_asked_once_and_remembered(self):
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": []}
+        for _ in range(5):
+            self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.assertEqual(self.probe.call_count, 1)
+
+    def test_concurrent_windows_of_one_channel_share_a_single_probe(self):
+        def slow(url, params):
+            time.sleep(0.05)
+            return {"feeds": []}
+        self.probe.side_effect = slow
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda _: self.serve(self.early, now=self.now), range(8)))
+        self.assertTrue(all(result is not None for result in results))
+        self.assertEqual(self.probe.call_count, 1)
+
+    def test_entries_before_the_mirror_keep_using_thingspeak_and_are_rechecked_hourly(self):
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": [{"created_at": "2026-11-01T00:00:00Z", "entry_id": 1}]}
+        self.assertIsNone(self.serve(self.early, now=self.now))
+        self.assertIn("before_local_history", local_feeds.STATS["fallback"])
+        self.clock[0] += 3599
+        self.assertIsNone(self.serve(self.early, now=self.now))
+        self.assertEqual(self.probe.call_count, 1)                 # not asked again within the hour
+        self.clock[0] += 2
+        self.probe.return_value = {"feeds": []}                    # e.g. the mirror was backfilled meanwhile
+        self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.assertEqual(self.probe.call_count, 2)
+
+    def test_probe_errors_fall_back_and_are_retried_after_five_minutes(self):
+        self.probe.side_effect = OSError("timed out")
+        self.assertIsNone(self.serve(self.early, now=self.now))
+        self.clock[0] += 299
+        self.assertIsNone(self.serve(self.early, now=self.now))
+        self.assertEqual(self.probe.call_count, 1)
+        self.clock[0] += 2
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": []}
+        self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.assertEqual(self.probe.call_count, 2)
+
+    def test_unreadable_answers_are_never_taken_as_proof(self):
+        for bad in (None, {}, {"feeds": None}, {"feeds": "nope"}, "text", 5):
+            local_feeds.reset_state()
+            self.probe.reset_mock()
+            self.probe.side_effect = None
+            self.probe.return_value = bad
+            self.assertIsNone(self.serve(self.early, now=self.now), bad)
+
+    def test_a_proof_also_covers_a_larger_mirror_but_not_a_smaller_one(self):
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": []}
+        self.assertIsNotNone(self.serve(self.early, now=self.now))
+        earlier = make_feeds(BASE - 3600, 5, step=600, first_entry=900)      # mirror grows backwards
+        self.mirror(earlier, cursor=_timestamp(self.feeds[-1]["created_at"]))
+        self.assertIsNotNone(self.serve({**self.early, "start": utc(BASE - 90000)}, now=self.now))
+        self.assertEqual(self.probe.call_count, 1)                           # old proof still holds
+        with self.store.connection() as db:                                  # mirror shrinks: rows removed
+            db.execute("DELETE FROM telemetry_samples WHERE observed_at < ?", (BASE + 600,))
+        self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.assertEqual(self.probe.call_count, 2)                           # must be proven again
+
+    def test_each_channel_needs_its_own_proof(self):
+        other = make_feeds(BASE, 40, first_entry=500)
+        self.mirror(other, channel=OTHER_CHANNEL, name="valve_pumps_fuel")
+        self.probe.side_effect = None
+        self.probe.return_value = {"feeds": []}
+        other_url = f"https://api.thingspeak.com/channels/{OTHER_CHANNEL}/feeds.json"
+        self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.assertIsNotNone(self.serve(self.early, now=self.now, url=other_url))
+        self.assertEqual(self.probe.call_count, 2)
+        self.assertEqual({call.args[0] for call in self.probe.call_args_list}, {URL, other_url})
+
+    def test_the_operator_override_still_works_and_needs_no_probe(self):
+        with patch.dict(os.environ, {"THERMOFLOW_LOCAL_FEEDS_START": utc(BASE - 86400).replace(" ", "T")}):
+            self.assertIsNotNone(self.serve(self.early, now=self.now))
+        self.probe.assert_not_called()
+
+    def test_the_read_key_never_reaches_the_log(self):
+        self.probe.side_effect = RuntimeError("HTTP 500 for ...?api_key=SECRETKEY")
+        with self.assertLogs("thermoflow.local_feeds", level="WARNING") as logs:
+            self.assertIsNone(self.serve({**self.early, "api_key": "SECRETKEY"}, now=self.now))
+        text = "\n".join(logs.output)
+        self.assertIn("RuntimeError", text)
+        self.assertNotIn("SECRETKEY", text)
+
+    def test_a_window_inside_the_mirror_never_probes(self):
+        self.assertIsNotNone(self.serve({"start": utc(BASE), "end": utc(BASE + 39 * 300), "results": 8000},
+                                        now=self.now))
+        self.probe.assert_not_called()
 
 
 class FuelEngineIntegrationTests(MirrorCase):

@@ -254,7 +254,8 @@ Odpowiedź lokalna jest używana tylko wtedy, gdy jest równoważna. W każdym i
 ThingSpeaka jak dotąd, a pierwszy taki przypadek dla kanału trafia do logu (`Local feeds not used for channel …`):
 
 - zapytanie z agregacją po stronie ThingSpeaka (`timescale`, `average`, …) albo bez `results`;
-- okno zaczyna się przed pierwszą skopiowaną próbką kanału;
+- okno zaczyna się przed pierwszą skopiowaną próbką kanału, a ThingSpeak nie potwierdził, że nie ma tam wpisów
+  (patrz niżej);
 - kolektor nie dotarł jeszcze do końca okna (kopia może być spóźniona o więcej niż 15 minut);
 - pasuje więcej wpisów niż `results` (nie zgadujemy reguły ucinania ThingSpeaka).
 
@@ -266,7 +267,9 @@ wszystkie zapisy. Bieżący stan kotła nadal pochodzi z eModul na żywo; kopia 
 | Zmienna | Opis |
 | --- | --- |
 | `THERMOFLOW_READ_SOURCE` | `auto` (domyślnie): najpierw lokalna baza, ThingSpeak jako zapas. `thingspeak`: zawsze ThingSpeak (natychmiastowe wycofanie, bez zmiany obrazu). |
-| `THERMOFLOW_LOCAL_FEEDS_START` | Opcjonalnie: data/czas ISO (UTC), od którego kopia lokalna jest kompletna. Pozwala obsłużyć okna sprzed pierwszej skopiowanej próbki, gdy ThingSpeak i tak nie ma tam danych. Bez niej takie okna idą do ThingSpeaka. |
+| `THERMOFLOW_LOCAL_FEEDS_START` | Opcjonalne, zwykle zbędne: data/czas ISO (UTC), od którego operator ręcznie deklaruje kompletność kopii. Musi być **wcześniejsza** niż okna, które mają iść z bazy. Błędna deklaracja po cichu ukrywa dane, więc normalnie nie ustawiaj jej: moduł sam sprawdza to w ThingSpeaku (niżej). |
+
+**Okna sprzed pierwszego zapisu w bazie.** Silnik prosi o historię do 120 dni wstecz, a kanały mają dane od daty swojego utworzenia. Okno, które zaczyna się przed pierwszą skopiowaną próbką, moduł obsługuje lokalnie dopiero po sprawdzeniu w ThingSpeaku: raz na kanał pyta o wpisy sprzed pierwszej próbki w bazie (`results=1`, zakres od 2010 do chwili tuż przed pierwszą próbką). Pusta odpowiedź to dowód, więc takie okna zwracają to, co jest w bazie. Wpisy w odpowiedzi, błąd albo nieczytelna odpowiedź oznaczają dalszy odczyt z ThingSpeaka (ponowne pytanie po godzinie przy wpisach, po 5 minutach przy błędzie). Dowód jest pamiętany do restartu procesu i obejmuje także większą kopię, ale po zmniejszeniu kopii (np. usunięciu najstarszych wierszy) trzeba go zdobyć ponownie. Klucz odczytu nigdy nie trafia do logu.
 
 Historia kolektora: `THERMOFLOW_THINGSPEAK_HISTORY_DAYS` przyjmuje najwyżej 30 dni; dłuższy start ustaw przez
 `THERMOFLOW_THINGSPEAK_INITIAL_START` (Unix, sekundy).
