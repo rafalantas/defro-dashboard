@@ -82,7 +82,9 @@
     if(!cov.fresh){tone='';text='Brak świeżych odczytów kolektora Fibaro, więc stan stref jest nieznany. Sprawdź kolektor.';}
     else if(s.cold_now.length){tone='cold';text='<b>Teraz zimno:</b> '+s.cold_now.map(esc).join(', ')+'.';}
     else if(s.cooling_now.length){tone='';text='<b>Dogrzewa się</b> (poniżej nastawy krócej niż '+th.episode_min_minutes+' min): '+s.cooling_now.map(esc).join(', ')+'.';}
-    else{tone='ok';text='Żadna strefa nie jest teraz poniżej nastawy.';}
+    else if(s.zones>0&&s.unknown_now.length>=s.zones){tone='';text='<b>Brak danych do oceny.</b> Dla żadnej strefy nie ma porównania temperatury z nastawą, więc nie wiadomo, czy jest zimno.';}
+    else{tone='ok';text='Żadna z ocenianych stref nie jest teraz poniżej nastawy.';}
+    if(cov.fresh&&s.unknown_now.length&&s.unknown_now.length<s.zones)text+=' <span class="overview-muted">Bez oceny (brak danych): '+s.unknown_now.map(esc).join(', ')+'.</span>';
     if(cov.fresh&&s.warm_now.length)text+=' <span class="overview-muted">Przegrzane (≥'+number(th.warm_gap_k)+' K ponad nastawę): '+s.warm_now.map(esc).join(', ')+'.</span>';
     banner.className='comfort-banner'+(tone?' '+tone:'');banner.innerHTML=text;
     const zones=[...comfort.zones].sort((a,b)=>(STATUS_ORDER[a.status]-STATUS_ORDER[b.status])||a.name.localeCompare(b.name,'pl'));
