@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from thermoflow_fibaro_curate import dataset_version_for
 from thermoflow_store import SQLiteStore
 from thermoflow_analytics_scheduler import (
     DATASET_NAME,
@@ -80,7 +81,7 @@ class AnalyticsSchedulerTests(unittest.TestCase):
         digest = "a" * 64
         curate.side_effect = [
             {"status": "dry_run", "content_sha256": digest},
-            {"status": "applied", "dataset_version": "v2-" + digest[:16]},
+            {"status": "applied", "dataset_version": dataset_version_for(digest)},
         ]
         analytics.return_value = {
             "status": "available",
@@ -116,7 +117,7 @@ class AnalyticsSchedulerTests(unittest.TestCase):
     ):
         self._add_source_evidence()
         digest = "b" * 64
-        version = "v2-" + digest[:16]
+        version = dataset_version_for(digest)
         with self.store.connection() as db:
             db.execute(
                 "INSERT INTO datasets(name,version,created_at,manifest_json,"
