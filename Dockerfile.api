@@ -9,6 +9,7 @@ COPY thermoflow_fibaro_history_collector.py /app/thermoflow_fibaro_history_colle
 COPY thermoflow_fibaro_dashboard.py /app/thermoflow_fibaro_dashboard.py
 COPY thermoflow_fibaro_comfort.py /app/thermoflow_fibaro_comfort.py
 COPY thermoflow_local_feeds.py /app/thermoflow_local_feeds.py
+COPY fuel_prediction_accuracy.py /app/fuel_prediction_accuracy.py
 COPY thermoflow_fibaro_curate.py /app/thermoflow_fibaro_curate.py
 COPY thermoflow_dataset_retention.py /app/thermoflow_dataset_retention.py
 COPY thermoflow_fibaro_readiness.py /app/thermoflow_fibaro_readiness.py
