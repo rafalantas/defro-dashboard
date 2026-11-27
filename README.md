@@ -222,6 +222,35 @@ Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktu
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
 
 
+### Odczyt telemetrii z lokalnej bazy (SQLite)
+
+Kolektor ThingSpeak kopiuje każdy wpis kanałów telemetrii do `telemetry_samples`. Odczyty zakresu
+(`feeds.json` z parametrami `start`, `end`, `results`) są obsługiwane z tej kopii (`thermoflow_local_feeds.py`),
+w dokładnie tym samym kształcie co odpowiedź ThingSpeaka, więc modele i analizy nie wiedzą o zmianie. Dotyczy
+silnika paliwa (podsumowanie, model dobowy, zużycie dobowe, licznik), `/api/history` oraz odczytu kanału FIRE.
+Zimny start paliwa nie pobiera już kilkunastu MB JSON z internetu.
+
+Odpowiedź lokalna jest używana tylko wtedy, gdy jest równoważna. W każdym innym przypadku zapytanie idzie do
+ThingSpeaka jak dotąd, a pierwszy taki przypadek dla kanału trafia do logu (`Local feeds not used for channel …`):
+
+- zapytanie z agregacją po stronie ThingSpeaka (`timescale`, `average`, …) albo bez `results`;
+- okno zaczyna się przed pierwszą skopiowaną próbką kanału;
+- kolektor nie dotarł jeszcze do końca okna (kopia może być spóźniona o więcej niż 15 minut);
+- pasuje więcej wpisów niż `results` (nie zgadujemy reguły ucinania ThingSpeaka).
+
+Nadal z ThingSpeaka (bez zmian): statystyki miesięczne i roczne `/api/statistics` (używają `timescale`),
+dosypki z kanału „Pelet" (kolektor kopiuje tylko ostatnie dni, a dosypki sięgają kwietnia), Open-Meteo oraz
+wszystkie zapisy. Bieżący stan kotła nadal pochodzi z eModul na żywo; kopia lokalna może być spóźniona do ok.
+5 minut względem ThingSpeaka, co dla modeli nie ma znaczenia.
+
+| Zmienna | Opis |
+| --- | --- |
+| `THERMOFLOW_READ_SOURCE` | `auto` (domyślnie): najpierw lokalna baza, ThingSpeak jako zapas. `thingspeak`: zawsze ThingSpeak (natychmiastowe wycofanie, bez zmiany obrazu). |
+| `THERMOFLOW_LOCAL_FEEDS_START` | Opcjonalnie: data/czas ISO (UTC), od którego kopia lokalna jest kompletna. Pozwala obsłużyć okna sprzed pierwszej skopiowanej próbki, gdy ThingSpeak i tak nie ma tam danych. Bez niej takie okna idą do ThingSpeaka. |
+
+Historia kolektora: `THERMOFLOW_THINGSPEAK_HISTORY_DAYS` przyjmuje najwyżej 30 dni; dłuższy start ustaw przez
+`THERMOFLOW_THINGSPEAK_INITIAL_START` (Unix, sekundy).
+
 ### Zimno i dlaczego (reguły, tylko odczyt)
 
 Endpoint `GET /api/fibaro/comfort?hours=24` (1–72 h) zasila sekcję „Zimno i dlaczego" w zakładce
