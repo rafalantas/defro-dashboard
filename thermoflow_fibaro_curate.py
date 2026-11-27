@@ -24,6 +24,47 @@ FEATURE_SET = "fibaro_heating_event_v3"
 DATASET_NAME = "fibaro_heating_history_v3"
 DATASET_SCHEMA = "thermoflow-fibaro-curated-dataset/3"
 FEATURE_SCHEMA = "thermoflow-fibaro-heating-feature/3"
+DATASET_VERSION_PREFIX = "v3-"
+BACKUP_PREFIX = "thermoflow-before-fibaro-dataset-"
+DEFAULT_KEEP_BACKUPS = 2
+
+
+def dataset_version_for(content_sha256):
+    """Single source of truth for the stored dataset version of a content hash.
+
+    The analytics scheduler uses this to recognise an already-stored dataset;
+    keeping the name and prefix here prevents the two from drifting apart.
+    """
+    return f"{DATASET_VERSION_PREFIX}{content_sha256[:16]}"
+
+
+def prune_curation_backups(backup_dir, *, keep=DEFAULT_KEEP_BACKUPS, dry_run=False):
+    """Keep only the newest ``keep`` curation backups; touch nothing else.
+
+    Only files named ``thermoflow-before-fibaro-dataset-*.sqlite3`` are eligible.
+    Their timestamp suffix sorts chronologically. The database is append-only for
+    source evidence, so the newest backup is a superset of the older ones.
+    """
+    if type(keep) is not int or keep < 1:
+        raise ValueError("keep must be a positive integer")
+    directory = Path(backup_dir)
+    if not directory.is_dir():
+        return {"kept": [], "removed": [], "bytes_freed": 0, "dry_run": dry_run}
+    files = sorted(
+        path for path in directory.glob(f"{BACKUP_PREFIX}*.sqlite3") if path.is_file()
+    )
+    doomed = files[:-keep] if len(files) > keep else []
+    freed = 0
+    for path in doomed:
+        freed += path.stat().st_size
+        if not dry_run:
+            path.unlink()
+    return {
+        "kept": [path.name for path in files[len(doomed):]],
+        "removed": [path.name for path in doomed],
+        "bytes_freed": freed,
+        "dry_run": dry_run,
+    }
 
 DEVICE_PROPERTIES = {
     "heatingThermostatSetpoint": ("setpoint", "number", "C", 5.0, 35.0),
@@ -396,7 +437,8 @@ def build_curated_rows(db):
     return features, report
 
 
-def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
+def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None,
+                    keep_backups=DEFAULT_KEEP_BACKUPS):
     store = SQLiteStore(db_path)
     with store.connection() as db:
         tables = {
@@ -437,12 +479,12 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
 
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     target_dir = Path(backup_dir or (Path(db_path).parent / "backups"))
-    backup_path = target_dir / f"thermoflow-before-fibaro-dataset-{stamp}.sqlite3"
+    backup_path = target_dir / f"{BACKUP_PREFIX}{stamp}.sqlite3"
     backup = store.backup_to(backup_path)
     if not backup.get("ok"):
         raise RuntimeError("Backup SQLite nie przeszedł weryfikacji; przerwano.")
 
-    dataset_version = f"v3-{report['content_sha256'][:16]}"
+    dataset_version = dataset_version_for(report["content_sha256"])
     manifest = {
         "schema": DATASET_SCHEMA,
         "source": "fibaro-hc3",
@@ -575,9 +617,14 @@ def curate_database(db_path=DEFAULT_DB_PATH, *, apply=False, backup_dir=None):
                 "SQLite integrity_check nie przeszedł; transakcja wycofana."
             )
 
+    # Only after the transaction committed and verified: drop superseded backups.
+    backups = prune_curation_backups(target_dir, keep=keep_backups)
+
     result.update({
         "status": "applied",
         "backup": backup["path"],
+        "backups_kept": len(backups["kept"]),
+        "backups_removed": len(backups["removed"]),
         "backup_integrity": backup["integrity_check"],
         "raw_events_deleted": 0,
         "fibaro_events_remaining": report["raw_events"],

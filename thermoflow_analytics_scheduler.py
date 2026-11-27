@@ -14,7 +14,8 @@ import threading
 import time
 from pathlib import Path
 
-from thermoflow_fibaro_curate import curate_database
+from thermoflow_dataset_retention import retire_superseded_candidates
+from thermoflow_fibaro_curate import DATASET_NAME, curate_database, dataset_version_for
 from thermoflow_fibaro_history_collector import FibaroHistoryCollector
 from thermoflow_fibaro_shadow_pipeline import (
     MAX_PIPELINE_SECONDS,
@@ -23,7 +24,6 @@ from thermoflow_fibaro_shadow_pipeline import (
 from thermoflow_heating_diagnostics import read_heating_analytics
 from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
-DATASET_NAME = "fibaro_heating_history_v2"
 DEFAULT_INTERVAL_SECONDS = 6 * 60 * 60
 MIN_INTERVAL_SECONDS = 60 * 60
 MAX_INTERVAL_SECONDS = 24 * 60 * 60
@@ -109,7 +109,7 @@ def run_once(database_path: str = DEFAULT_DB_PATH, *, now: int | None = None) ->
             "writes": False,
         }
 
-    dataset_version = "v2-" + digest[:16]
+    dataset_version = dataset_version_for(digest)
     if _dataset_is_current(store, version=dataset_version, digest=digest):
         curation = {"status": "unchanged", "dataset_version": dataset_version}
     else:
@@ -147,9 +147,18 @@ def run_once(database_path: str = DEFAULT_DB_PATH, *, now: int | None = None) ->
         persist=True,
         recorded_at=clock,
     )
+    # Superseded candidate versions are fully regenerable; keep only the newest.
+    try:
+        retired = retire_superseded_candidates(str(path))
+        retention = {"status": retired["status"],
+                     "datasets_retired": retired["datasets_retired"],
+                     "feature_windows_removed": retired["feature_windows_removed"]}
+    except Exception as error:   # never let housekeeping hide a finished cycle
+        retention = {"status": "error", "error": type(error).__name__}
     return {
         "schema": "thermoflow-analytics-scheduler/1",
         "status": "completed",
+        "retention": retention,
         "window": {"start": start, "end": end},
         "source": source,
         "curation": curation,

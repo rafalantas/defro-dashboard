@@ -28,7 +28,25 @@ It performs three local stages:
   settings. Model promotion and production control are disabled.
 - A changing curated source hash creates a verified backup in
   `/var/lib/thermoflow/backups` before candidate data is written. An unchanged
-  hash skips the backup and curation write.
+  hash skips the backup and curation write. The scheduler recognises a stored
+  dataset through `dataset_version_for()` in `thermoflow_fibaro_curate.py`, so it
+  always matches the name and version curation actually writes (an earlier copy
+  of that rule looked for `v2` while curation stored `v3`, which made every cycle
+  look changed and back up the whole database).
+- Only the newest 2 curation backups (`thermoflow-before-fibaro-dataset-*.sqlite3`)
+  are kept; older ones are removed after a successful write. Other files in that
+  directory are never touched.
+- Dataset versions are named by a hash of their full content, so every new batch
+  of data would otherwise store a new full copy. After each cycle
+  `thermoflow_dataset_retention` keeps only the newest candidate version per
+  dataset (`fibaro_heating_history_v2/v3`, `thermoflow_heating_aggregates`) and
+  removes older candidate versions together with their feature windows. It
+  never touches raw evidence, promoted or otherwise non-candidate datasets,
+  versions referenced by a model evaluation or model version, or any dataset
+  outside that allow-list.
+- One-off cleanup of versions already stored (dry run by default):
+  `python -m thermoflow_dataset_retention /var/lib/thermoflow/thermoflow.sqlite3`
+  then add `--apply`.
 - SQLite write conflicts or a concurrent source change fail the current cycle
   safely; the next scheduled cycle retries.
 - The default cadence is six hours, with a 120-second initial delay after API
