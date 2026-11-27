@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fuel_hydraulic_correlation import build_hydraulic_correlation
+from fuel_hydraulic_correlation import build_hydraulic_correlation, window_samples
 from fuel_cycle_hydraulic_response import build_cycle_hydraulic_response
 
 MAX_GAP_SECONDS = 300
@@ -80,8 +80,8 @@ def _episodes(samples, predicate, close_predicate=None):
 def _window_stats(normalized, start, end):
     result = {}
     for key in CONTEXT_KEYS:
-        samples = [(ts, value) for ts, value in normalized.get(key, [])
-                   if start <= ts <= end]
+        # normalized series are sorted by timestamp (_normalize), so the window is a slice.
+        samples = window_samples(normalized.get(key, []), start, end)
         values = [value for _, value in samples]
         result[key] = _stats(values)
         result[key]["first"] = samples[0][0].isoformat() if samples else None
