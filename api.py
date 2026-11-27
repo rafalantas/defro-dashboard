@@ -31,6 +31,7 @@ from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HI
 from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_store_history, read_fibaro_store_shadow
 from thermoflow_fibaro_dashboard import read_fibaro_dashboard
 from thermoflow_fibaro_comfort import read_fibaro_comfort
+from thermoflow_local_feeds import try_serve as try_serve_local_feeds
 
 # Short in-memory cache (no disk writes): the projection parses stored snapshots.
 _COMFORT_CACHE = {}
@@ -702,8 +703,12 @@ def _read_thermoflow_fire_history(start: datetime, end: datetime, local_tz) -> d
         headers={"Accept": "application/json"},
     )
     try:
-        with urlopen(request, timeout=10) as response:
-            feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
+        local = try_serve_local_feeds(f"https://api.thingspeak.com/channels/{channel_id}/feeds.json", params)
+        if local is not None:
+            feeds = local.get("feeds", [])
+        else:
+            with urlopen(request, timeout=10) as response:
+                feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
     except Exception:
         # Optional FIRE telemetry must never make the core history unavailable.
         return {}
@@ -778,9 +783,14 @@ def _read_history(hours: int, requested_series: set[str] | None = None, requeste
             f"https://api.thingspeak.com/channels/{channel_id}/feeds.json?{urlencode(params)}",
             headers={"Accept": "application/json"},
         )
+        # Plain range reads come from the local SQLite mirror when provably equivalent.
+        local = try_serve_local_feeds(f"https://api.thingspeak.com/channels/{channel_id}/feeds.json", params)
         try:
-            with urlopen(request, timeout=10) as response:
-                feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
+            if local is not None:
+                feeds = local.get("feeds", [])
+            else:
+                with urlopen(request, timeout=10) as response:
+                    feeds = json.loads(response.read().decode("utf-8")).get("feeds", [])
         except HTTPError as error:
             raise RuntimeError(
                 f"ThingSpeak odrzucił odczyt kanału {channel_id} (HTTP {error.code}); sprawdź klucz Read API i prywatność kanału."

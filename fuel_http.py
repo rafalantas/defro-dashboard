@@ -7,11 +7,18 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from fuel_errors import FuelError
+from thermoflow_local_feeds import try_serve
 
 
 def request_json(url: str, params: dict | None = None, form: dict | None = None,
                  payload: dict | None = None, timeout: int = 10):
     """Perform a bounded JSON GET/POST and translate transport errors to FuelError."""
+    if params and form is None and payload is None and url.endswith("/feeds.json"):
+        # Plain ThingSpeak range reads come from the local SQLite mirror when it is
+        # provably equivalent; None means "use ThingSpeak as before".
+        local = try_serve(url, params)
+        if local is not None:
+            return local
     if params:
         url = f"{url}?{urlencode(params)}"
     headers = {"Accept": "application/json", "User-Agent": "defro-dashboard-fuel"}
