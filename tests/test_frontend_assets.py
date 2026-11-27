@@ -174,3 +174,12 @@ def test_comfort_section_is_read_only_and_never_presents_causes_as_certain():
     assert "pewność:" in script and "comfort.limitations" in script
     assert "BRAK DANYCH" in script                      # unknown is shown as unknown, not as OK
     assert ".comfort-chip.unknown" in css and ".comfort-row" in css
+
+
+def test_comfort_banner_never_reports_all_clear_when_zones_have_no_assessment():
+    script = (ROOT / "assets/js/fibaro.js").read_text(encoding="utf-8")
+    assert "Brak danych do oceny." in script
+    assert "unknown_now.length>=s.zones" in script          # all zones unknown -> not "all clear"
+    assert "Żadna z ocenianych stref" in script             # all-clear wording only covers assessed zones
+    assert "Bez oceny (brak danych):" in script             # partially unknown zones are named
+    assert "Żadna strefa nie jest teraz poniżej nastawy." not in script

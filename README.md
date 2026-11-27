@@ -241,6 +241,11 @@ okna są znane tylko z migawek (od początku ich zapisu).
   podniesiona nastawa tuż przed epizodem, otwarte okno wykryte przez głowicę, brak zapotrzebowania
   mimo niedoboru, zapotrzebowanie zgłoszone a strefa nie dogrzewa się, spadek temperatury.
   Gdy dowodów brak, wynik to „brak danych wskazujących przyczynę".
+- **Temperatura** to zmierzone `currentTemperature` strefy. **Nastawa** to `currentSetpointHeating`,
+  a gdy HC3 go nie podaje (tak jest w tej instalacji), `currentTemperatureHeating`, czyli aktywna nastawa
+  z harmonogramu (zmienia się np. z 20,5 na 19,5 °C w nocy). `handSetPointHeating` (ręczne nadpisanie)
+  nie jest używane. Ta sama reguła (`zone_reading` w `thermoflow_fibaro_diagnostics.py`) obowiązuje w
+  diagnostyce, kartach stref i tej sekcji. Źródło nastawy zwraca API w polu `setpoint_source`.
 - Odczyty temperatury poza zakresem 5–40 °C (np. 0 °C z zaniku łączności) są pomijane.
 - Wersja nie uwzględnia pracy kotła, zaworu 4D ani pogody, więc nie odróżnia braku mocy źródła
   ciepła od innych przyczyn. To kolejny etap.

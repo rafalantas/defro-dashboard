@@ -22,7 +22,8 @@ class FibaroDashboardTests(unittest.TestCase):
             "zones": [{
                 "id": 7, "name": "Parter", "active": True,
                 "properties": {
-                    "currentTemperatureHeating": 20.5,
+                    "currentTemperature": 20.5,
+                    "currentTemperatureHeating": 19.0,
                     "currentSetpointHeating": 21.0,
                     "handSetPointHeating": 20.0,
                     "devices": [101],
@@ -54,6 +55,21 @@ class FibaroDashboardTests(unittest.TestCase):
         self.assertTrue(result["read_only"])
         self.assertFalse(result["safety"]["sqlite_writes"])
         self.assertFalse(result["safety"]["historical_head_zone_mapping_inferred"])
+
+    def test_cards_read_measured_temperature_and_schedule_setpoint_like_the_real_hub(self):
+        """Real zone from the installation: no currentSetpointHeating; currentTemperatureHeating is the
+        active schedule target. Before the fix the card showed the target as the temperature."""
+        self.collector.save_snapshot({
+            "zones": [{"id": 6, "name": "Biuro", "active": True, "properties": {
+                "currentTemperature": 20.6, "currentTemperatureHeating": 20.5,
+                "currentSetpointHeating": None, "handSetPointHeating": 21.5, "devices": [101]}}],
+            "heads": [{"id": 101, "name": "Głowica 1", "properties": {"heatRequired": False}}],
+        }, captured_at=1150)
+        zone = read_fibaro_dashboard(self.path, days=1, now=1200)["zones"][0]
+        self.assertEqual(zone["temperature"], 20.6)
+        self.assertEqual(zone["setpoint"], 20.5)
+        self.assertEqual(zone["setpoint_source"], "currentTemperatureHeating")
+        self.assertEqual(zone["manual_setpoint"], 21.5)     # reported, but never the active target
 
     def test_invalid_window_and_missing_database_fail_closed(self):
         with self.assertRaises(ValueError):

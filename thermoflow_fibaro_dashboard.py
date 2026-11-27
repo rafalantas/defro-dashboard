@@ -5,6 +5,7 @@ import math
 import time
 from pathlib import Path
 
+from thermoflow_fibaro_diagnostics import zone_reading
 from thermoflow_fibaro_history_collector import FibaroHistoryCollector
 from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
@@ -86,13 +87,15 @@ def read_fibaro_dashboard(database_path=None, *, days=14, now=None):
                 "heat_required": hp.get("heatRequired") if isinstance(hp.get("heatRequired"), bool) else None,
                 "window_open": hp.get("windowOpened") if isinstance(hp.get("windowOpened"), bool) else None,
             })
+        reading = zone_reading(props)   # shared rule: measured temperature vs active setpoint
         zones.append({
             "id": zone_id,
             "name": str(zone.get("name") or f"Strefa {zone_id}"),
             "active": zone.get("active") if isinstance(zone.get("active"), bool) else None,
             "mode": zone.get("mode"),
-            "temperature": _number(props.get("currentTemperatureHeating", props.get("currentTemperature"))),
-            "setpoint": _number(props.get("currentSetpointHeating")),
+            "temperature": reading["temperature"],
+            "setpoint": reading["setpoint"],
+            "setpoint_source": reading["setpoint_source"],
             "manual_setpoint": _number(props.get("handSetPointHeating")),
             "hysteresis": _number(props.get("autoSetPointHysteresis")),
             "head_count": len(head_summary),

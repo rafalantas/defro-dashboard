@@ -25,6 +25,7 @@ import time
 from math import isfinite
 from pathlib import Path
 
+from thermoflow_fibaro_diagnostics import zone_reading
 from thermoflow_fibaro_history_collector import COLLECTOR_NAME, FibaroHistoryCollector
 from thermoflow_store import DEFAULT_DB_PATH, SQLiteStore
 
@@ -117,13 +118,17 @@ def parse_snapshot(payload):
             heads[item].get("properties") if isinstance(heads[item].get("properties"), dict) else {}
             for item in device_ids if item in heads
         ]
-        raw_temperature = props.get("currentTemperatureHeating", props.get("currentTemperature"))
+        # Shared rule: temperature is the measured currentTemperature only;
+        # currentTemperatureHeating is the active scheduled setpoint, not a reading.
+        reading = zone_reading(props)
+        raw_temperature = reading["temperature"]
         zones[zone_id] = {
             "name": str(zone.get("name") or f"Strefa {zone_id}"),
             "temperature": _ranged(raw_temperature, VALID_TEMPERATURE),
-            "temperature_invalid": _number(raw_temperature) is not None
+            "temperature_invalid": raw_temperature is not None
             and _ranged(raw_temperature, VALID_TEMPERATURE) is None,
-            "setpoint": _ranged(props.get("currentSetpointHeating"), VALID_SETPOINT),
+            "setpoint": _ranged(reading["setpoint"], VALID_SETPOINT),
+            "setpoint_source": reading["setpoint_source"],
             "heat_required": _tri_any(item.get("heatRequired") for item in head_props),
             "window_open": _tri_any(item.get("windowOpened") for item in head_props),
             "heads": len(head_props),
@@ -155,7 +160,7 @@ def _zone_samples(series):
                 gap = round(zone["setpoint"] - zone["temperature"], 2)
             entry["samples"].append({
                 "at": instant, "temperature": zone["temperature"], "setpoint": zone["setpoint"],
-                "gap": gap, "heat_required": zone["heat_required"],
+                "setpoint_source": zone["setpoint_source"], "gap": gap, "heat_required": zone["heat_required"],
                 "window_open": zone["window_open"], "invalid_temperature": zone["temperature_invalid"],
             })
     return zones
@@ -312,7 +317,7 @@ def build_comfort(snapshots, instants, *, start, now):
             "status": _status(latest, ongoing_cold, now),
             "current": None if latest is None else {
                 "at": latest["at"], "temperature": latest["temperature"], "setpoint": latest["setpoint"],
-                "gap_k": latest["gap"], "heat_required": latest["heat_required"],
+                "setpoint_source": latest["setpoint_source"], "gap_k": latest["gap"], "heat_required": latest["heat_required"],
                 "window_open": latest["window_open"],
             },
             "cold_minutes": sum(item["duration_minutes"] for item in cold),

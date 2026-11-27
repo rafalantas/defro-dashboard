@@ -6,6 +6,7 @@ from pathlib import Path
 from thermoflow_fibaro_comfort import (
     COLD_GAP_K, EPISODE_MIN_SECONDS, build_comfort, parse_snapshot, read_fibaro_comfort,
 )
+from thermoflow_fibaro_diagnostics import build_fibaro_zone_diagnostics
 from thermoflow_fibaro_history_collector import COLLECTOR_NAME, FibaroHistoryCollector
 from thermoflow_store import SQLiteStore
 
@@ -13,10 +14,15 @@ STEP = 300
 
 
 def snap(at, zones):
-    """zones: {zone_id: (name, temp, setpoint, heat_required, window_open)} with one head each."""
+    """zones: {zone_id: (name, temp, setpoint, heat_required, window_open)} with one head each.
+
+    Uses the real HC3 shape observed on this installation: ``currentTemperature`` is the
+    measured temperature and ``currentTemperatureHeating`` is the active scheduled setpoint;
+    ``currentSetpointHeating`` is absent.
+    """
     return {"captured_at": at, "payload": {
         "zones": [{"id": zid, "name": name, "properties": {
-            "currentTemperatureHeating": temp, "currentSetpointHeating": sp, "devices": [zid * 100]}}
+            "currentTemperature": temp, "currentTemperatureHeating": sp, "devices": [zid * 100]}}
             for zid, (name, temp, sp, heat, window) in zones.items()],
         "heads": [{"id": zid * 100, "properties": {"heatRequired": heat, "windowOpened": window}}
                   for zid, (name, temp, sp, heat, window) in zones.items()],
@@ -45,6 +51,67 @@ class ParseTests(unittest.TestCase):
         self.assertIs(zone["heat_required"], True)
         self.assertIs(zone["window_open"], False)
         self.assertEqual(zone["heads"], 2)
+
+
+class ZoneReadingTests(unittest.TestCase):
+    """Regression for reading the setpoint as the temperature (seen in production: every zone
+    showed its schedule target as the temperature and had no setpoint, hence 'brak danych')."""
+
+    # Real values from the installation, zone "Biuro", 27.11.2026.
+    REAL_NIGHT = {"currentTemperature": 20.3, "currentTemperatureHeating": 19.5,
+                  "currentSetpointHeating": None, "handSetPointHeating": 21.5}
+    REAL_DAY = {"currentTemperature": 20.6, "currentTemperatureHeating": 20.5,
+                "currentSetpointHeating": None, "handSetPointHeating": 21.5}
+
+    def parse(self, props):
+        payload = {"zones": [{"id": 6, "name": "Biuro", "properties": {**props, "devices": [60]}}],
+                   "heads": [{"id": 60, "properties": {"heatRequired": False}}]}
+        return parse_snapshot(payload)[6]
+
+    def test_temperature_is_the_measured_value_not_the_schedule_target(self):
+        zone = self.parse(self.REAL_DAY)
+        self.assertEqual(zone["temperature"], 20.6)       # was 20.5 (the target) before the fix
+        self.assertEqual(zone["setpoint"], 20.5)
+        self.assertEqual(zone["setpoint_source"], "currentTemperatureHeating")
+
+    def test_manual_setpoint_is_never_used(self):
+        zone = self.parse(self.REAL_NIGHT)
+        self.assertEqual(zone["setpoint"], 19.5)          # not handSetPointHeating 21.5
+
+    def test_explicit_setpoint_wins_over_the_heating_reference(self):
+        zone = self.parse({"currentTemperature": 20.0, "currentTemperatureHeating": 19.0,
+                           "currentSetpointHeating": 21.0})
+        self.assertEqual((zone["temperature"], zone["setpoint"]), (20.0, 21.0))
+        self.assertEqual(zone["setpoint_source"], "currentSetpointHeating")
+
+    def test_missing_measured_temperature_is_unknown_not_the_target(self):
+        zone = self.parse({"currentTemperatureHeating": 20.5})
+        self.assertIsNone(zone["temperature"])            # never fall back to a target
+        self.assertEqual(zone["setpoint"], 20.5)
+
+    def test_agrees_with_the_full_diagnostics(self):
+        for props in (self.REAL_DAY, self.REAL_NIGHT,
+                      {"currentTemperature": 20.0, "currentTemperatureHeating": 19.0, "currentSetpointHeating": 21.0},
+                      {"currentTemperatureHeating": 20.5}, {"currentTemperature": 21.0}):
+            payload = {"zones": [{"id": 6, "name": "Biuro", "properties": {**props, "devices": [60]}}],
+                       "heads": [{"id": 60, "properties": {"heatRequired": False}}]}
+            diag = build_fibaro_zone_diagnostics(payload)["zones"][0]
+            ours = parse_snapshot(payload)[6]
+            self.assertEqual((ours["temperature"], ours["setpoint"]),
+                             (diag["current_temperature_c"], diag["active_setpoint_c"]), props)
+
+    def test_real_morning_after_the_night_setback_is_a_setpoint_raise(self):
+        """27.11: target 19.5 overnight, back to 20.5 around 08:10 while the room sat at 20.0-20.3."""
+        # The room stayed at 20.0 from 03:36 until 08:12 while the target went back up to 20.5.
+        rows = [(20.3, 19.5, False, False)] * 4 + [(20.0, 20.5, False, False)] * 8 + [(20.3, 20.5, False, False)] * 3
+        snapshots, instants, start, now = timeline("Biuro", rows)
+        zone = build_comfort(snapshots, instants, start=start, now=now)["zones"][0]
+        self.assertEqual(len(zone["cold_episodes"]), 1)
+        cause = zone["cold_episodes"][0]["primary_cause"]
+        self.assertEqual(cause["code"], "setpoint_raised")
+        self.assertIn("19.5", cause["evidence"][0])
+        self.assertIn("20.5", cause["evidence"][0])
+        self.assertEqual(zone["current"]["setpoint_source"], "currentTemperatureHeating")
 
 
 class ColdEpisodeTests(unittest.TestCase):

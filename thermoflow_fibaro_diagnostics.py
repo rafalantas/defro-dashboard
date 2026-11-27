@@ -47,6 +47,23 @@ def _zone_temperature(properties):
     return _number(properties.get("currentTemperature"))
 
 
+def zone_reading(properties):
+    """Measured zone temperature and active heating setpoint, with the setpoint's source.
+
+    Single rule shared by the diagnostics, the dashboard cards and the cold-zone
+    analysis so they cannot drift apart. The temperature is only ever the measured
+    ``currentTemperature``; ``currentTemperatureHeating`` is the active scheduled
+    setpoint and is used as one only when ``currentSetpointHeating`` is absent.
+    ``handSetPointHeating`` (a manual override value) is never used.
+    """
+    setpoint = _number(properties.get("currentSetpointHeating"))
+    source = "currentSetpointHeating"
+    if setpoint is None:
+        setpoint = _number(properties.get("currentTemperatureHeating"))
+        source = "currentTemperatureHeating" if setpoint is not None else None
+    return {"temperature": _zone_temperature(properties), "setpoint": setpoint, "setpoint_source": source}
+
+
 def _head_consistency(properties):
     heat_required = _boolean(properties.get("heatRequired"))
     parameter3_heat_required = _boolean(properties.get("parameter3_heat_required"))
