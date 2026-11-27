@@ -30,6 +30,11 @@ from thermoflow_fibaro_telemetry import build_fibaro_telemetry
 from thermoflow_fibaro_event_history import analyze_fibaro_event_history, MAX_HISTORY_SECONDS
 from thermoflow_fibaro_store_api import read_fibaro_store_status, read_fibaro_store_history, read_fibaro_store_shadow
 from thermoflow_fibaro_dashboard import read_fibaro_dashboard
+from thermoflow_fibaro_comfort import read_fibaro_comfort
+
+# Short in-memory cache (no disk writes): the projection parses stored snapshots.
+_COMFORT_CACHE = {}
+_COMFORT_CACHE_SECONDS = 30
 from thermoflow_heating_diagnostics import read_heating_analytics
 from thermoflow_analytics_scheduler import start_background_scheduler
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1526,7 +1531,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if not path.startswith("/api/fibaro/"):
             return False
-        if path not in ("/api/fibaro/dashboard", "/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow", "/api/fibaro/store/analytics"):
+        if path not in ("/api/fibaro/dashboard", "/api/fibaro/comfort", "/api/fibaro/health", "/api/fibaro/snapshot", "/api/fibaro/diagnostics", "/api/fibaro/telemetry", "/api/fibaro/history", "/api/fibaro/store/status", "/api/fibaro/store/history", "/api/fibaro/store/shadow", "/api/fibaro/store/analytics"):
             self._send_json(404, {"error": "Nieznany endpoint Fibaro HC3"})
             return True
         if method != "GET":
@@ -1555,6 +1560,34 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._send_json(500, {"source": "shared-sqlite",
                                       "error": "Nie udało się odczytać danych Fibaro z lokalnej bazy"})
+            return True
+
+        # Rule-based "cold zones and why" projection; SQLite only, never contacts HC3.
+        if path == "/api/fibaro/comfort":
+            query = parse_qs(parsed.query)
+            try:
+                hours = int(query.get("hours", ["24"])[0])
+                cached = _COMFORT_CACHE.get(hours)
+                if cached and time.time() - cached[0] < _COMFORT_CACHE_SECONDS:
+                    result = cached[1]
+                else:
+                    result = read_fibaro_comfort(
+                        os.getenv("THERMOFLOW_DB_PATH", "/var/lib/thermoflow/thermoflow.sqlite3"),
+                        hours=hours,
+                    )
+                    _COMFORT_CACHE[hours] = (time.time(), result)
+                self._send_json(200, result)
+            except FileNotFoundError:
+                self._send_json(503, {"source": "shared-sqlite",
+                                      "error": "Baza ThermoFlow SQLite nie jest zainicjalizowana"})
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)[:180]})
+            except RuntimeError:
+                self._send_json(503, {"source": "shared-sqlite",
+                                      "error": "Schemat bazy ThermoFlow SQLite jest niegotowy"})
+            except Exception:
+                self._send_json(500, {"source": "shared-sqlite",
+                                      "error": "Nie udało się policzyć stanu stref z lokalnej bazy"})
             return True
 
         expected_token = os.getenv("FIBARO_HC3_API_TOKEN", "").strip()

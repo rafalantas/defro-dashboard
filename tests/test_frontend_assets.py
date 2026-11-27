@@ -161,3 +161,16 @@ def test_fuel_mobile_telemetry_panel_cannot_collapse_to_narrow_column():
     assert "#fuelCard .fuel-telemetry-quality-panel .fuel-detail-heading h4" in css
     assert "#fuelCard .fuel-quality-fields{grid-template-columns:minmax(0,1fr)}" in css
     assert "overflow-wrap:anywhere" in css
+
+
+def test_comfort_section_is_read_only_and_never_presents_causes_as_certain():
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "assets/js/fibaro.js").read_text(encoding="utf-8")
+    css = (ROOT / "assets/css/fibaro.css").read_text(encoding="utf-8")
+    for element_id in ("comfortSection", "comfortBanner", "comfortList", "comfortNote", "comfortMeta"):
+        assert f'id="{element_id}"' in html
+    assert "/api/fibaro/comfort?hours=" in script
+    assert "ThermoFlowApi.post" not in script          # the panel never writes
+    assert "pewność:" in script and "comfort.limitations" in script
+    assert "BRAK DANYCH" in script                      # unknown is shown as unknown, not as OK
+    assert ".comfort-chip.unknown" in css and ".comfort-row" in css
