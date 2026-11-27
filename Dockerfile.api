@@ -7,6 +7,7 @@ COPY thermoflow_storage_diagnostics.py /app/thermoflow_storage_diagnostics.py
 COPY thermoflow_storage_maintenance.py /app/thermoflow_storage_maintenance.py
 COPY thermoflow_fibaro_history_collector.py /app/thermoflow_fibaro_history_collector.py
 COPY thermoflow_fibaro_dashboard.py /app/thermoflow_fibaro_dashboard.py
+COPY thermoflow_fibaro_comfort.py /app/thermoflow_fibaro_comfort.py
 COPY thermoflow_fibaro_curate.py /app/thermoflow_fibaro_curate.py
 COPY thermoflow_dataset_retention.py /app/thermoflow_dataset_retention.py
 COPY thermoflow_fibaro_readiness.py /app/thermoflow_fibaro_readiness.py
