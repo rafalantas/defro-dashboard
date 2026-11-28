@@ -3,6 +3,10 @@ name: Build and publish dashboard images
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "backup/**"
+      - ".github/workflows/docker.yml"
   workflow_dispatch:
 
 permissions:
@@ -10,7 +14,17 @@ permissions:
   packages: write
 
 jobs:
+  backup-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run backup unit tests
+        run: python -m unittest discover -s backup/tests -v
+
   build-and-push:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,6 +78,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   redeploy-portainer:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
