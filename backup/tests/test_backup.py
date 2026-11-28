@@ -47,9 +47,10 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(list(self.backups.glob("*.tmp")), [])
 
     def test_integrity_failure_does_not_publish_snapshot(self):
-        with patch.object(backup, "sqlite3") as sqlite_mock:
-            sqlite_mock.connect.side_effect = [Mock(), Mock()]
-            sqlite_mock.connect.return_value.execute.return_value.fetchone.return_value = ("corrupt",)
+        source_connection = Mock()
+        destination_connection = Mock()
+        destination_connection.execute.return_value.fetchone.return_value = ("corrupt",)
+        with patch.object(backup.sqlite3, "connect", side_effect=[source_connection, destination_connection]):
             with self.assertRaises(RuntimeError):
                 backup.make_snapshot()
         self.assertEqual(list(self.backups.glob("thermoflow-hourly-*.sqlite3")), [])
@@ -59,8 +60,8 @@ class BackupTests(unittest.TestCase):
             Mock(returncode=10), Mock(returncode=0)
         ]) as runner:
             backup.ensure_repository()
-        self.assertEqual(runner.call_args_list[0].args[0], ("snapshots", "--json"))
-        self.assertEqual(runner.call_args_list[1].args[0], ("init",))
+        self.assertEqual(runner.call_args_list[0].args, ("snapshots", "--json"))
+        self.assertEqual(runner.call_args_list[1].args, ("init",))
 
     def test_repository_access_error_does_not_initialize(self):
         with patch.object(backup, "restic", return_value=Mock(returncode=12)) as runner:
