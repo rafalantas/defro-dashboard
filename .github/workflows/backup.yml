@@ -6,6 +6,10 @@ on:
     paths:
       - "backup/**"
       - ".github/workflows/backup.yml"
+  pull_request:
+    paths:
+      - "backup/**"
+      - ".github/workflows/backup.yml"
   workflow_dispatch:
 
 permissions:
