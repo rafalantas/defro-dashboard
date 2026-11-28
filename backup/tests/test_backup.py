@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 from zoneinfo import ZoneInfo
 
-import backup
+from backup import backup
 
 
 class BackupTests(unittest.TestCase):
