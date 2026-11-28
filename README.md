@@ -1,6 +1,6 @@
 # ThermoFLOW
 
-[![Build and publish images](https://github.com/rafalantas/defro-dashboard/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/rafalantas/defro-dashboard/actions/workflows/docker.yml)
+[![Build and publish images](https://github.com/rafalantas/thermoflow/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/rafalantas/thermoflow/actions/workflows/docker.yml)
 
 Nowoczesny panel do podglądu instalacji grzewczej z kotłem DEFRO i sterownikiem TECH/eModul. Pokazuje animowany schemat przepływu wody, obieg podłogowy z zaworem 3D, obieg grzejnikowy z zaworem 4D, zasobnik CWU oraz dostępne odczyty i stany sterownika.
 
@@ -36,7 +36,7 @@ Stack używa gotowych obrazów z GHCR. Workflow GitHub Actions publikuje je po k
 - `ghcr.io/rafalantas/thermoflow-dashboard-api:latest`
 
 1. W Portainerze wybierz **Stacks → Add stack → Git repository**.
-2. Podaj repozytorium `https://github.com/rafalantas/defro-dashboard`, gałąź `main` i ścieżkę Compose `docker-compose.yml`.
+2. Podaj repozytorium `https://github.com/rafalantas/thermoflow`, gałąź `main` i ścieżkę Compose `docker-compose.yml`.
 3. Dodaj zmienną stacka `TECH_API_TOKEN` z aktualnym tokenem eModul.
 4. Wdróż stack. Panel będzie dostępny pod `http://ADRES-DOCKERA:5001`.
 
@@ -110,6 +110,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 Osobny kontener `thermoflow-thingspeak-collector` pobiera surowe feedy GET z dwóch głównych kanałów ThingSpeak oraz skonfigurowanych kanałów ognia i dosypek. Pierwszy backfill obejmuje domyślnie 14 dni (konfigurowalne 1–30), w dwudniowych porcjach; odpowiedzi osiągające limit 8000 rekordów są automatycznie dzielone na mniejsze przedziały. Kolektor zachowuje oryginalne znaczniki czasu i identyfikatory wpisów, zapisuje surowe feedy z oznaczeniem kanału do `telemetry_samples`, a dosypki dodatkowo do istniejącego `refill_events`. Checkpointy i nakładka 120 sekund pozwalają bezpiecznie wznowić pracę po restarcie; ponowny odczyt nie nadpisuje istniejących wpisów. Kolektor używa wyłącznie kluczy Read API, nie kluczy zapisu. Dane Fibaro pozostają osobnym, niezmienianym archiwum zdarzeń w tej samej bazie SQLite.
 
 Backend pobiera dane eModul w tle co około 30 sekund; odpowiedź jest buforowana przez 20 sekund. Nowe próbki wysyłane są do dwóch kanałów ThingSpeak co 40 sekund (minimum 35 s), bez zapisywania historii na dysku Raspberry Pi. Wykres i CSV korzystają wyłącznie z ThingSpeak. Kanały muszą być prywatne lub publiczne z odpowiednimi kluczami odczytu; każde pole należy włączyć i nazwać zgodnie z listą poniżej. ThingSpeak zwraca starsze dane w agregowanych przedziałach: 10 minut dla miesiąca i 4 godziny dla roku; dlatego szczegóły przełączeń pomp najlepiej analizować dla krótszych zakresów. CSV używa separatora `;`, polskich przecinków dziesiętnych oraz czasu lokalnego `Europe/Warsaw` i odpowiadającego mu czasu UTC ISO 8601. Kolektor historii uzupełnia SQLite o wpisy, które faktycznie istnieją w skonfigurowanych kanałach i mieszczą się w zakresie backfillu; nie odtworzy pomiarów sprzed utworzenia kanału.
+
 Endpoint diagnostyczny pobiera dane bezpośrednio z eModul na żądanie. Oprócz kafelków i ich surowych parametrów zwraca całą strukturę `zones` (w tym `system`, `globalSchedules` i `controllerParameters`), wykryte pozycje menu MU/MI/MS/MP z informacją, które menu konto może odczytać, oraz zwarte podsumowanie serii statystyk. Pełne próbki zapisane w ThingSpeak są dostępne przez `/api/history?hours=12`. `hours` przyjmuje 1–24; alternatywnie można podać dokładne `start` i `end` w ISO 8601 (zakres maksymalnie 24 h). Parametr `series` filtruje serie, a `step=120` łączy je w przedziały 120-sekundowe: temperatury i moc są uśredniane, zaś nastawy, otwarcie, pompy i paliwo zachowują ostatnią wartość z przedziału. `step` może wynosić 60–3600 sekund. Domyślny format `compact` jest bezstratny: serie pomiarowe zawierają punkt `[unix_timestamp_seconds, value]` tylko przy zmianie wartości (wartość obowiązuje do następnego punktu) oraz ostatnią próbkę, a pompy są zwracane jako przedziały pracy `intervals: [[start, koniec], ...]` z łącznym czasem `on_minutes`. Każda seria ma `summary` (min, max, średnia, pierwsza i ostatnia wartość). `format=full` zwraca wszystkie próbki jak wcześniej. Zakresy dłuższe niż 12 h bez `step` są automatycznie łączone w przedziały 120 s (`step_automatic: true`), żeby cała doba mieściła się w jednej odpowiedzi. Blok `analysis` (wyłączany `analysis=0`) zawiera przebiegi palnika (start, koniec, minuty, maksymalna moc) oraz cykle ochrony powrotu: czas czekania na minimalnym otwarciu, czas otwierania do 80%, zimną przerwę liczoną do chwili, gdy temperatura zaworu 4D wraca do zadanej minus 5 K, minimalny powrót i stan pompy podłogówki, a także średnie zimne przerwy z włączoną i wyłączoną podłogówką. Alias `thermoflow-valve4d` wybiera temperaturę zaworu, otwarcie, powrót i zadaną po korekcie; działają też aliasy `valve-opening`, `return` i `setpoint`. Kolejność serii: zawór 4D, temperatura zewnętrzna i pokoju, kocioł, podłogówka i CWU, na końcu pompy i paliwo; zerowe odczyty temperatury pokoju są pomijane, a duplikaty łączone po serii i czasie. Menu serwisowe lub producenta może być niedostępne bez kodu albo na koncie użytkownika; diagnostyka pokaże wtedy błąd dostępności zamiast zakładać, że dane istnieją. Przy diagnozowaniu brakujących czujników otwórz `http://ADRES-DOCKERA:5001/api/diagnostics`.
 
 ## Konfiguracja
@@ -195,12 +196,10 @@ Import wykonaj przed pierwszym wpisem dodanym przez API. Nowe dosypki najwygodni
 │                                 # oraz opcjonalny Cloudflare Tunnel
 ├── docker-compose.local.yml      # lokalne budowanie obrazów
 ├── .env.example                  # szablon lokalnej konfiguracji
-├── .dockerignore
 └── .gitignore
 ```
 
 Repozytorium zawiera 15 plików źródłowych i konfiguracyjnych. Każdy jest używany przez aplikację, lokalne uruchomienie, CI albo ochronę sekretów; katalogu nie zaśmiecają kopie wynikowych obrazów ani wygenerowane pliki.
-
 
 ### Telemetria w eksperymentalnym modelu paliwa
 
@@ -209,7 +208,6 @@ Dobowe rekordy modelu AI są łączone z agregatami z dwóch kanałów ThingSpea
 Cechy analogowe są przyjmowane tylko przy co najmniej 1000 próbek na dobę, a czasy pomp tylko przy co najmniej 20 godzinach znanego stanu. Brakujące lub niepełne dane nie są interpolowane. Model AI porównuje wariant pogodowy z wariantem rozszerzonym o telemetrię na wspólnym zbiorze kompletnych dób i chronologicznym holdoucie. Cechy telemetryczne wymagają co najmniej 90 kompletnych dób treningowych i 14 testowych (minimum 104 kompletne doby); do tego czasu API raportuje status `collecting`, liczbę kompletnych i niekompletnych dób oraz progi. Doby z brakującą albo fizycznie niepoprawną telemetrią nie są interpolowane. Daty są walidowane jako rzeczywiste daty ISO `YYYY-MM-DD`, a wszystkie rekordy dla zduplikowanego dnia są wykluczane, aby nie nadawać tej dobie podwójnej wagi. API raportuje powody odrzucenia i luki między dniami. Wariant telemetryczny jest zaakceptowany wyłącznie przy poprawie MAE o co najmniej 3% w obu protokołach.
 
 Integracja `fuel_ai.py` działa w trybie shadow i nie zmienia produkcyjnych estymat paliwa. Obliczenia paliwa są obsługiwane przez runtime ThermoFlow 2.0, a prognoza dashboardu zachowuje dotychczasowy kontrakt. System pozostaje odczytowy i nie steruje kotłem. Publiczny audyt nadal ma limit 14 dni, natomiast wewnętrzny loader modelu pobiera historię do 120 dni i buforuje agregaty przez 6 godzin. Starsze rekordy paliwa bez dostępnej historii ThingSpeak pozostają bez cech instalacji.
-
 
 ### Diagnostyka cyklu rozpalenia (shadow)
 
@@ -220,7 +218,6 @@ Dedykowany kanał `THINGSPEAK_FIRE_CHANNEL_ID` zapisuje wyłącznie:
 Temperatura CO pochodzi z istniejącego kanału telemetrycznego ThingSpeak. Aktualna zadana CO i histereza kotła są pobierane bezpośrednio z bieżącego snapshotu API eModul i nie są dublowane w ThingSpeak. Ponieważ zadana i histereza są stałymi nastawami instalacji, audyt stosuje ich bieżące wartości do historycznych próbek CO. Nie zapisujemy ich cyklicznie w ThingSpeak; odpowiedź audytu oznacza to jawnie jako założenie stałości nastaw.
 
 Do odczytu kanału służy opcjonalna zmienna `THINGSPEAK_FIRE_READ_KEY` (pusty klucz dla kanału publicznego). Audyt wyznacza żądanie rozpalenia, gdy temperatura kotła przechodzi z wartości powyżej do wartości równej lub niższej niż `zadana - histereza`. Następnie koreluje je z pojawieniem się płomienia, aktywnością spalin i powrotem temperatury kotła do zadanej. Jest to wnioskowanie z próbek telemetrycznych, nie bezpośredni odczyt komendy sterownika. Diagnostyka jest wyłącznie read-only i nie zmienia sterowania ani nastaw.
-
 
 ### Trafność prognozy peletu (`/api/fuel/accuracy`)
 
@@ -234,7 +231,7 @@ Tylko odczyt: nic nie zapisuje i nie zmienia modelu. Wynik jest buforowany w pam
 - Porównywane są trzy prognozy: `day_ahead` (ostatnia wydana przed początkiem doby), `24h` i `48h` (ostatnie wydane
   co najmniej 24 i 48 godzin wcześniej). Dla każdej: średni błąd bezwzględny (`mae_kg`), przesunięcie (`bias_kg`),
   odsetek dób z błędem do 2 kg.
-- **Odniesienie:** te same doby ocenia się też dwiema prostymi prognozami, „tyle co wczoraj" i „średnia z 7 dni".
+- **Odniesienie:** te same doby ocenia się też dwiema prostymi prognozami, „tyle co wczoraj” i „średnia z 7 dni”.
   `skill_vs` to `1 − błąd modelu / błąd prostej prognozy` (dodatnie: model lepszy). Model ma sens tylko wtedy,
   gdy je pokonuje.
 - `assessment` to `collecting` (mniej niż 7 ocenionych dób), `better_than_naive`, `worse_than_naive` albo `inconclusive`.
@@ -260,7 +257,7 @@ ThingSpeaka jak dotąd, a pierwszy taki przypadek dla kanału trafia do logu (`L
 - pasuje więcej wpisów niż `results` (nie zgadujemy reguły ucinania ThingSpeaka).
 
 Nadal z ThingSpeaka (bez zmian): statystyki miesięczne i roczne `/api/statistics` (używają `timescale`),
-dosypki z kanału „Pelet" (kolektor kopiuje tylko ostatnie dni, a dosypki sięgają kwietnia), Open-Meteo oraz
+dosypki z kanału „Pelet” (kolektor kopiuje tylko ostatnie dni, a dosypki sięgają kwietnia), Open-Meteo oraz
 wszystkie zapisy. Bieżący stan kotła nadal pochodzi z eModul na żywo; kopia lokalna może być spóźniona do ok.
 5 minut względem ThingSpeaka, co dla modeli nie ma znaczenia.
 
@@ -276,7 +273,7 @@ Historia kolektora: `THERMOFLOW_THINGSPEAK_HISTORY_DAYS` przyjmuje najwyżej 30 
 
 ### Zimno i dlaczego (reguły, tylko odczyt)
 
-Endpoint `GET /api/fibaro/comfort?hours=24` (1–72 h) zasila sekcję „Zimno i dlaczego" w zakładce
+Endpoint `GET /api/fibaro/comfort?hours=24` (1–72 h) zasila sekcję „Zimno i dlaczego” w zakładce
 Fibaro. Czyta wyłącznie lokalną bazę SQLite (nie łączy się z HC3, niczego nie zapisuje, nie wysyła
 poleceń), tak jak `/api/fibaro/dashboard`, i nie wymaga tokenu. Odpowiedź jest buforowana w pamięci
 przez 30 s.
@@ -287,12 +284,12 @@ HC3 nie zapisuje zmian `heatRequired` ani `windowOpened` w historii zdarzeń, dl
 okna są znane tylko z migawek (od początku ich zapisu).
 
 - **Zimno** to strefa co najmniej 0,5 K poniżej aktywnej nastawy przez co najmniej 20 minut;
-  krócej to „dogrzewa się". **Przegrzanie** to co najmniej 1,0 K ponad nastawę. Progi są stałymi
+  krócej to „dogrzewa się”. **Przegrzanie** to co najmniej 1,0 K ponad nastawę. Progi są stałymi
   w `thermoflow_fibaro_comfort.py`.
 - **Przyczyna** to hipoteza z listą dowodów i poziomem pewności, nigdy dowód przyczynowości:
   podniesiona nastawa tuż przed epizodem, otwarte okno wykryte przez głowicę, brak zapotrzebowania
   mimo niedoboru, zapotrzebowanie zgłoszone a strefa nie dogrzewa się, spadek temperatury.
-  Gdy dowodów brak, wynik to „brak danych wskazujących przyczynę".
+  Gdy dowodów brak, wynik to „brak danych wskazujących przyczynę”.
 - **Temperatura** to zmierzone `currentTemperature` strefy. **Nastawa** to `currentSetpointHeating`,
   a gdy HC3 go nie podaje (tak jest w tej instalacji), `currentTemperatureHeating`, czyli aktywna nastawa
   z harmonogramu (zmienia się np. z 20,5 na 19,5 °C w nocy). `handSetPointHeating` (ręczne nadpisanie)
