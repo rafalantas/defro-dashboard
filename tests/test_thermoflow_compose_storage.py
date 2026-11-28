@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ThermoFlowComposeStorageTests(unittest.TestCase):
+    def test_docker_branding_uses_thermoflow_names_and_images(self):
+        compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertIn("name: thermoflow", compose)
+        self.assertIn("ghcr.io/rafalantas/thermoflow-dashboard:latest", compose)
+        self.assertIn("ghcr.io/rafalantas/thermoflow-dashboard-api:latest", compose)
+        self.assertIn("container_name: thermoflow-dashboard", compose)
+        self.assertIn("container_name: thermoflow-dashboard-api", compose)
+        self.assertIn("container_name: thermoflow-cloudflared", compose)
+        self.assertNotIn("ghcr.io/rafalantas/defro-dashboard", compose)
+        self.assertNotIn("container_name: defro-dashboard", compose)
+
     def test_api_uses_fixed_database_path_on_ssd_bind_mount(self):
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertIn(

@@ -1,4 +1,4 @@
-# DEFRO Dashboard
+# ThermoFLOW
 
 [![Build and publish images](https://github.com/rafalantas/defro-dashboard/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/rafalantas/defro-dashboard/actions/workflows/docker.yml)
 
@@ -20,11 +20,11 @@ Integracja z eModul działa tylko do odczytu. Dashboard nie steruje kotłem, pom
 
 | Kontener | Rola | Dostęp |
 | --- | --- | --- |
-| `defro-dashboard` | Nginx i interfejs WWW | Port `5001` na hoście |
-| `defro-dashboard-api` | Backend Python, odczyt eModul | Tylko wewnątrz sieci Docker |
+| `thermoflow-dashboard` | Nginx i interfejs WWW | Port `5001` na hoście |
+| `thermoflow-dashboard-api` | Backend Python, odczyt eModul | Tylko wewnątrz sieci Docker |
 | `thermoflow-fibaro-collector` | Historia HC3 w trybie wyłącznie GET | Tylko wewnątrz sieci Docker |
 | `thermoflow-thingspeak-collector` | Backfill i przyrostowy zapis historii ThingSpeak do wspólnego SQLite | Tylko wewnątrz sieci Docker |
-| `defro-dashboard-cloudflared` | Opcjonalny tunel Cloudflare | Profil Compose `cloudflare`, bez publikowania portu |
+| `thermoflow-cloudflared` | Opcjonalny tunel Cloudflare | Profil Compose `cloudflare`, bez publikowania portu |
 
 Przeglądarka łączy się z API przez Nginx. Token eModul pozostaje w środowisku kontenera API i nie jest wysyłany do przeglądarki. Tunel kieruje do Nginx; ścieżki `/api/...` dashboardu są dostępne przez ten sam adres, ale kontener API nie dostaje osobnego publicznego portu.
 
@@ -32,8 +32,8 @@ Przeglądarka łączy się z API przez Nginx. Token eModul pozostaje w środowis
 
 Stack używa gotowych obrazów z GHCR. Workflow GitHub Actions publikuje je po każdym pushu do `main`:
 
-- `ghcr.io/rafalantas/defro-dashboard:latest`
-- `ghcr.io/rafalantas/defro-dashboard-api:latest`
+- `ghcr.io/rafalantas/thermoflow-dashboard:latest`
+- `ghcr.io/rafalantas/thermoflow-dashboard-api:latest`
 
 1. W Portainerze wybierz **Stacks → Add stack → Git repository**.
 2. Podaj repozytorium `https://github.com/rafalantas/defro-dashboard`, gałąź `main` i ścieżkę Compose `docker-compose.yml`.
@@ -47,7 +47,7 @@ Tunel jest opcjonalny i nie wymaga przekierowania portów na routerze. W Cloudfl
 - `CLOUDFLARE_TUNNEL_TOKEN` — token tunelu z Cloudflare.
 - `COMPOSE_PROFILES` — wartość `cloudflare`, aby uruchomić kontener tunelu.
 
-W konfiguracji tunelu dodaj **Public Hostname** dla swojej domeny i ustaw usługę na `http://thermoflow:80`. To wewnętrzny adres serwisu dashboardu w sieci Compose. Ustaw też w Cloudflare Access regułę logowania (np. dozwolone adresy e-mail), żeby dashboard i jego ścieżki API nie były publicznie dostępne dla każdego. Po zapisaniu zmian zaktualizuj stack w Portainerze; kontener `defro-dashboard-cloudflared` połączy się z Cloudflare. Port `5001` pozostaje dostępny lokalnie tak jak wcześniej.
+W konfiguracji tunelu dodaj **Public Hostname** dla swojej domeny i ustaw usługę na `http://thermoflow:80`. To wewnętrzny adres serwisu dashboardu w sieci Compose. Ustaw też w Cloudflare Access regułę logowania (np. dozwolone adresy e-mail), żeby dashboard i jego ścieżki API nie były publicznie dostępne dla każdego. Po zapisaniu zmian zaktualizuj stack w Portainerze; kontener `thermoflow-cloudflared` połączy się z Cloudflare. Port `5001` pozostaje dostępny lokalnie tak jak wcześniej.
 
 Nie kieruj tunelu na API, Docker Engine ani Portainera. Ten stack udostępnia przez tunel tylko interfejs dashboardu wraz z jego wymaganym proxy API.
 

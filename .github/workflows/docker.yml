@@ -16,9 +16,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: ghcr.io/rafalantas/defro-dashboard
+          - image: ghcr.io/rafalantas/thermoflow-dashboard
             dockerfile: Dockerfile
-          - image: ghcr.io/rafalantas/defro-dashboard-api
+          - image: ghcr.io/rafalantas/thermoflow-dashboard-api
             dockerfile: Dockerfile.api
     steps:
       - name: Checkout
