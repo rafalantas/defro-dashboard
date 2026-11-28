@@ -2,65 +2,83 @@
 
 Independent Portainer stack for consistent SQLite snapshots and encrypted offsite backups to Cloudflare R2.
 
-## What it does
+## Backup behavior
 
-- Creates an initial SQLite snapshot on container start, then every hour at minute 05.
-- Uses Python's SQLite Online Backup API; it does not copy the live database file with `cp`.
-- Runs `PRAGMA integrity_check` on every snapshot before publishing it.
-- Keeps hourly local snapshots for 48 hours.
-- Uploads the latest verified snapshot to a Restic repository in Cloudflare R2 at 02:30 Europe/Warsaw.
-- Retains 90 daily Restic snapshots. Restic encrypts and deduplicates repository data.
+- Creates a transactionally consistent SQLite snapshot immediately after startup and then hourly (at minute 05).
+- Uses SQLite Online Backup API against the live database opened with `mode=ro`; committed WAL transactions are included.
+- Runs `PRAGMA integrity_check` before publishing each local snapshot.
+- Keeps local hourly snapshots for 48 hours by default.
+- Uploads one verified snapshot to the encrypted Restic repository in Cloudflare R2 daily at 02:30 Europe/Warsaw.
+- After every upload, restores the remote snapshot into a temporary directory and runs SQLite `integrity_check`. Retention pruning happens only after that restore check succeeds.
+- Keeps 90 daily Restic snapshots by default.
+- R2 failures do not stop hourly local snapshots. Failed offsite operations are retried after 15 minutes.
+- An optional Discord-compatible webhook receives failure notifications. Docker health becomes unhealthy if no local snapshot has been produced for two hours.
 
-If the initial R2 upload fails, the service logs the error and retries after 15 minutes. It never deletes the source database.
+The service never modifies or deletes the production database. Do not mount the production DB directory read-only: SQLite may need access to existing WAL shared-memory files for read-only WAL operation. The database connection itself is explicitly opened in read-only mode.
 
-## Portainer deployment
+## Deploy in Portainer
 
-Create a separate stack named `thermoflow-backup` using this repository:
+Create a separate stack named `thermoflow-backup`:
 
 - Repository: `https://github.com/rafalantas/thermoflow`
 - Branch: `main`
 - Compose path: `backup/compose.yml`
 
-The image is published by GitHub Actions as `ghcr.io/rafalantas/thermoflow-backup:latest` for amd64 and arm64.
+GitHub Actions publishes `ghcr.io/rafalantas/thermoflow-backup:latest` for `linux/amd64` and `linux/arm64`. Backup image builds and tests run in a separate workflow and do not trigger the dashboard/API Portainer webhook.
 
-Add these stack environment variables in Portainer:
+Set these stack environment variables:
 
-| Variable | Value |
-| --- | --- |
-| `R2_ACCOUNT_ID` | Cloudflare account ID |
-| `R2_BUCKET` | `thermoflow-backups` |
-| `R2_ACCESS_KEY_ID` | R2 token Access Key ID |
-| `R2_SECRET_ACCESS_KEY` | R2 token Secret Access Key |
-| `RESTIC_PASSWORD` | A strong, unique password generated for this repository |
-| `LOCAL_RETENTION_HOURS` | `48` |
-| `OFFSITE_RETENTION_DAYS` | `90` |
-| `OFFSITE_HOUR` | `2` |
-| `OFFSITE_MINUTE` | `30` |
-| `TZ` | `Europe/Warsaw` |
+| Variable | Required | Default / purpose |
+| --- | --- | --- |
+| `R2_ACCOUNT_ID` | yes | Cloudflare account ID |
+| `R2_ACCESS_KEY_ID` | yes | R2 S3 access key ID |
+| `R2_SECRET_ACCESS_KEY` | yes | R2 S3 secret |
+| `R2_BUCKET` | no | `thermoflow-backups` |
+| `RESTIC_PASSWORD` | yes | Strong unique encryption password |
+| `LOCAL_RETENTION_HOURS` | no | `48` |
+| `OFFSITE_RETENTION_DAYS` | no | `90` |
+| `OFFSITE_HOUR` | no | `2` |
+| `OFFSITE_MINUTE` | no | `30` |
+| `RESTIC_TIMEOUT_SECONDS` | no | `3600` |
+| `ALERT_WEBHOOK_URL` | no | Discord-compatible webhook URL |
+| `TZ` | no | `Europe/Warsaw` |
 
-Do not put credentials in Git, a committed `.env` file, image build arguments, or logs. Store the Restic password separately from the Raspberry Pi; without it the encrypted repository cannot be restored.
+Create an R2 API token scoped only to the backup bucket, with object read/write permissions. The Restic password is separate from the R2 credentials: store it outside the Raspberry Pi as well. If it is lost, the encrypted backup cannot be decrypted.
 
-## Storage
+Local snapshots are written to `/mnt/thermoflow/db/backups/automatic`. Ensure this directory has sufficient free space. The source bind mount is `/mnt/thermoflow/db`.
 
-The source directory is mounted at `/source`. The backup process opens the SQLite database read-only and writes snapshots only under `/backups`, mapped to:
+## Verify operation
 
-`/mnt/thermoflow/db/backups/automatic`
+In Portainer, check that the container health is `healthy`. Logs should show:
 
-The source bind mount is writable at the filesystem level to allow SQLite read-only WAL access to its shared-memory sidecar when needed. The backup code does not execute writes against the source database.
+- `Verified SQLite snapshot`
+- `Remote restore verification passed`
+- `Offsite backup and restore verification completed`
 
-## Restore
+A healthy container only confirms that recent local snapshots exist; it does not replace checking the daily remote-restore verification log. Configure `ALERT_WEBHOOK_URL` if you want immediate failure notifications.
 
-Do not restore over a running production database. First download a snapshot to a separate directory:
+## Manual restore procedure
+
+Never restore over the running production database. Stop the ThermoFLOW writers only during a planned cutover, and first restore to a separate directory.
+
+Install Restic on a trusted machine and provide the same four environment values used by the backup container:
 
 ```sh
-restic -r "$RESTIC_REPOSITORY" snapshots
-restic -r "$RESTIC_REPOSITORY" restore latest --target /tmp/thermoflow-restore
+export RESTIC_REPOSITORY="s3:https://ACCOUNT_ID.r2.cloudflarestorage.com/thermoflow-backups/thermoflow"
+export AWS_ACCESS_KEY_ID="R2_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="R2_SECRET_ACCESS_KEY"
+export AWS_DEFAULT_REGION="auto"
+export RESTIC_PASSWORD="the-original-restic-password"
+restic snapshots --tag thermoflow-sqlite
+mkdir -p /tmp/thermoflow-restore
+restic restore latest --tag thermoflow-sqlite --target /tmp/thermoflow-restore
+find /tmp/thermoflow-restore -type f -name 'thermoflow-hourly-*.sqlite3' -print
 ```
 
-Then run an integrity check against the restored SQLite file before planning a controlled restore:
+Restic preserves the backed-up path under the restore target. Use the exact path printed by `find` for an integrity check:
 
 ```sh
-python3 -c 'import sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro", uri=True); print(c.execute("PRAGMA integrity_check").fetchone()[0]); c.close()' /tmp/thermoflow-restore/source/thermoflow-hourly-YYYYMMDD-HHMMSS.sqlite3
+python3 -c 'import sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro", uri=True); print(c.execute("PRAGMA integrity_check").fetchone()[0]); c.close()' /tmp/thermoflow-restore/backups/thermoflow-hourly-YYYYMMDD-HHMMSS-ffffff.sqlite3
 ```
 
-The exact restored path is shown by Restic's restore output. Keep the original database and all existing backups until the restored copy has been checked and the application has been deliberately switched.
+Proceed with a controlled cutover only when the check returns `ok`. Preserve the original database and existing backup files until the application is running correctly on the restored copy.

@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 
-ARG RESTIC_VERSION=0.16.4
+ARG RESTIC_VERSION=0.17.3
 ARG TARGETARCH
 
 RUN apt-get update \
